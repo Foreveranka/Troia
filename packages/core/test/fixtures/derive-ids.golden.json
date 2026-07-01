@@ -1,0 +1,60 @@
+{
+  "_comment": "Golden vectors for deriveIds. Canonical input rules (pinned, cross-verified): order_id is NFC-normalized then UTF-8 (lone surrogates rejected); destination is opaque raw ASCII (non-ASCII rejected, no case-fold/trim; StrKey validity checked in PayoutIntent.build, NOT here); amount is i128 in [-2^127, 2^127-1] (out-of-range rejected), encoded 16-byte big-endian two's complement raw; memo is 32 raw bytes appended raw. Preimage: lp(b)=u32be(len)||b for variable-width fields. 'empty-order-id' and 'negative-amount-encoding-lock' pin byte encoding of degenerate inputs; real business inputs are non-empty with amount > 0 (enforced in build).",
+  "encoding": "memo=sha256(lp('troia.memo.v1')||lp(nfc(order_id))); tx_id=sha256(lp('troia.txid.v1')||lp(nfc(order_id))); idempotency_key=sha256(lp('troia.idem.v1')||lp(nfc(order_id))||lp(destination)||amount_be16||memo)",
+  "vectors": [
+    {
+      "name": "g-address-basic",
+      "order_id": "ord-001",
+      "destination": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW",
+      "amount": "15000000",
+      "memo": "7af6fe64886793c374425c084a03dbd3ee6bbae3cf5374c7a2756e49a1071691",
+      "tx_id": "86ac187f98a8bdc13e53cfc5450b9e89eb2a412945d20d86505a3c1e006d4f2d",
+      "idempotency_key": "03f53dd92db7c984a56a707b3d4991090010c3374060b9e6a1487b2160fcee7a"
+    },
+    {
+      "name": "c-address",
+      "order_id": "ord-002",
+      "destination": "CABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW",
+      "amount": "70000000",
+      "memo": "0712dc07565dc31c0a31e168faebe6a5ae9f9e6d67939fba8dd7155561faa327",
+      "tx_id": "d0ee3218891cf64af3f9ae66a8d61761019932409848375ba149662ee834b9c2",
+      "idempotency_key": "e9d65f2f41c6dad59ff98adeb9e5ab4c4393afaeefdf59f76e85cb6c1c44e187"
+    },
+    {
+      "name": "unicode-order-id",
+      "order_id": "sipariş-çğş-2026",
+      "destination": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW",
+      "amount": "1",
+      "memo": "0cb8500afba082d87f60fb7d86d4b65d119b15e723efb1c080f6d0969d9fbbe3",
+      "tx_id": "32ddd255cf83daef7c2422b9d9917ec6e720274703e0fcb3f2a586b9cd19dd7d",
+      "idempotency_key": "8f556325bfd7b82d7aa3aae14c4a54a7bc629391e8fe1fbeeba95c6ca51e3ee3"
+    },
+    {
+      "name": "empty-order-id",
+      "order_id": "",
+      "destination": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW",
+      "amount": "0",
+      "memo": "2347600b74fc92bfddbdc4846c8c614d32dc8c451f07b4d5a34a394e318a2676",
+      "tx_id": "afc4be7ceeffc20827a14ba31ab62b333543787933f997e9a028ce408a4c5c2c",
+      "idempotency_key": "88b8e4839148d9de79be1131f38242a749dc31780f4bfe82644acc2535e8082d"
+    },
+    {
+      "name": "max-i128-amount",
+      "order_id": "ord-large",
+      "destination": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW",
+      "amount": "170141183460469231731687303715884105727",
+      "memo": "b5dcf7b95eacb091b3e3340971ad5b03067c078b398d05cfbec63bd9aa994e14",
+      "tx_id": "a74feba3477620ab1ad316a6b6fd792a8bec8170c10144863fa933fb3de5bc30",
+      "idempotency_key": "bff298e50c16335f7b942884e7842d08e42abe6181eeb455c5f6c1ee503788b2"
+    },
+    {
+      "name": "negative-amount-encoding-lock",
+      "order_id": "ord-neg",
+      "destination": "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW",
+      "amount": "-1",
+      "memo": "78e2afea130ef92b21da4fad3f23e742e0c73d83e221139b42b65bb278e5c808",
+      "tx_id": "082b2f8e2a7c5018905e0d470060f2bd8bd196209be72e26ebca8f78a33bff7f",
+      "idempotency_key": "f04b5dbacc26deaaea1f4c4213dfdf7ed93c272be1693f16785ea549196a563c"
+    }
+  ]
+}

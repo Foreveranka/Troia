@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["contracts/troy_pool"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+
+# Overflow checks stay on in release: money math must never wrap silently.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

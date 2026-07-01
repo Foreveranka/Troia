@@ -1,0 +1,3 @@
+nodejs 22.18.0
+rust 1.95.0
+# stellar CLI 26.0.0 is not asdf-managed; install via `brew install stellar-cli` or cargo.

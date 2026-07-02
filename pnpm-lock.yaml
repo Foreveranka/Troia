@@ -42,6 +42,8 @@ importers:
         specifier: ^22.10.5
         version: 22.20.0
 
+  packages/ledger: {}
+
   packages/oracle: {}
 
   packages/pricing: {}

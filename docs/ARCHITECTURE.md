@@ -221,6 +221,27 @@ troia/
 Stack pins: `soroban-sdk 26.0.0`, stellar CLI 26.0.0, node 22, pnpm, `iyzipay 2.0.69` (+ `@types/iyzipay`),
 USDC = **7 decimals** (Stellar protocol).
 
+### 7a. Accounting ledger (`packages/ledger`) — double-entry, distinct from `ledger_evidence`
+
+Where the money went, not what we signed (that is §8's `ledger_evidence`). Pure/deterministic, append-only,
+fixed-point bigint — no clock, no network.
+
+- **Functional (reporting) currency = kuruş.** Every leg carries a `native` amount (kuruş for TRY accounts,
+  **stroops** for USDC) **and** its `kurus` value; a valid entry's kuruş legs balance on both sides
+  (`Σ debits.kurus == Σ credits.kurus`). This is the standard multi-currency ledger shape: the USDC leg's
+  native is stroops, its functional value is the TRY-at-mid.
+- **Accounts (fixed currency each):** `FIAT_CASH`, `USDC_POOL` (assets), `SPREAD_REVENUE` (income),
+  `PSP_FEE` (expense), `EXTERNAL_FUNDING` (pool-top-up counter). Chart is closed; a leg can't be mis-tagged.
+- **Balanced by construction:** `recordSettlement` derives `baseKurus = userTryKurus − spreadKurus`, so
+  `fiat_in == crypto_out(at mid) + spread (+ fee split out of cash as an expense)` holds by algebra — feeds
+  straight from `pricing`'s `PriceBreakdown`. Zero-valued legs are omitted (every leg strictly positive).
+- **On-chain = source of truth:** `detectDrift(observedPoolStroops)` compares the ledger's `USDC_POOL`
+  native total to the chain balance; nonzero drift is an alarm, never silently absorbed. The ledger holds no
+  rate, so USDC↔TRY valuation correctness is `pricing`'s invariant + the reconciler's job, not the ledger's.
+- **Fail-closed & immutable:** `post()` rejects empty/non-positive/valuation-mismatch/unbalanced/duplicate-ref
+  entries; stored entries + legs are `Object.freeze`d and `all()` returns a snapshot, so the append-only
+  journal can't be mutated even from plain JS (`readonly` alone is erased at runtime).
+
 ---
 
 ## 8. Reconciliation — the reviewer-verifiable centerpiece (three-artifact model)
@@ -284,3 +305,5 @@ Each ADR lives in `docs/adr/NNNN-*.md`. Index:
 12. Identity from one `order_id` via `deriveIds` (byte-exact, domain-separated); `tx_id` from order, not tx_hash.
 13. Reconciler three-artifact model; `signed ≠ settled` honest boundary; `just verify` offline.
 14. Three separate keypairs (admin/operator/issuer); testnet threshold=1, same multisig flow shape.
+15. Accounting ledger = double-entry, functional currency kuruş, native amounts per currency; balanced by
+    construction; on-chain drift detection; append-only + runtime-frozen. Distinct from §8 `ledger_evidence`.

@@ -59,10 +59,12 @@ step touches the network or iyzico.
 
 ## Phase 2 — The Soroban contract 🔴
 
-- **2.1 `TroyPool.pay()`** — signature + `Error` enum from ARCHITECTURE §5/§6. Atomic check-and-transfer
-  (balance guard + `Processed(tx_id)` in the same invocation, TOCTOU-free). `Processed` = Persistent storage +
-  `extend_ttl` on every access (never Temporary/Instance).
-- **2.2 Admin path** — `upgrade`/`pause`/`unpause`/`set_operator`/`set_admin` under `admin.require_auth`.
+- **2.1 `TroyPool.pay()`** ✅ — `Error` enum + `__constructor` + atomic check-and-transfer (balance guard +
+  `Processed(tx_id)` Persistent replay guard, same invocation, TOCTOU-free) + checks-effects-interactions
+  (mark processed before transfer) + `PaymentMade` event. **`pause`/`unpause` pulled in here** (pay()'s
+  `Paused` guard is untestable without them). 7 tests green (happy · replay-reverts-pays-once · insufficient ·
+  invalid-amount · paused · unauthorized · constructor); release WASM + clippy clean; 0 adversarial findings.
+- **2.2 Admin path** (remaining) — `upgrade`/`set_operator`/`set_admin` under `admin.require_auth`.
 - **2.3 Contract tests** — `AlreadyProcessed` reverts (not silent no-op), `InsufficientBalance`, `InvalidAmount`,
   `Paused`, `NotAuthorized`. Integration test against a real SAC. Fuzz: `pool_in == pool_out + reserved + fees`.
 

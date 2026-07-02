@@ -6,5 +6,6 @@ target/
 !.env.example
 *.wasm
 *.tsbuildinfo
+test_snapshots/
 .DS_Store
 *.log

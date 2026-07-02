@@ -307,3 +307,8 @@ Each ADR lives in `docs/adr/NNNN-*.md`. Index:
 14. Three separate keypairs (admin/operator/issuer); testnet threshold=1, same multisig flow shape.
 15. Accounting ledger = double-entry, functional currency kuruş, native amounts per currency; balanced by
     construction; on-chain drift detection; append-only + runtime-frozen. Distinct from §8 `ledger_evidence`.
+16. `TroyPool.pay()` money-safety: atomic check-and-transfer (no TOCTOU); checks-effects-interactions (mark
+    `Processed` before transfer, relying on Soroban's all-or-nothing revert); `Processed(tx_id)` in
+    **Persistent** storage — durability rests on archival-not-deletion (an aged-out guard must be restored
+    with value intact before `pay()` can read it), so the replay path deliberately does NOT re-bump TTL (an
+    `Err` return would roll the bump back). Deploy-time `__constructor` binds roles once (no re-init surface).

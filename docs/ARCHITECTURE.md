@@ -246,31 +246,61 @@ fixed-point bigint — no clock, no network.
 
 ## 8. Reconciliation — the reviewer-verifiable centerpiece (three-artifact model)
 
-Per order, three independent records:
+Per order, three independent records (`packages/reconciler`, keyless & buildless by construction — imports
+`@stellar/stellar-base` only to **decode/verify**, never to sign):
 
-- **(a) `business_intent`** (local DB row: amount/memo/destination) — "this was requested". Mutable.
-- **(b) `ledger_evidence`** (`signed_xdr` + `hash`) — "this is what we signed and submitted". A frozen
-  independent witness (opaque blob) — **never re-serialized** from business_intent at recon-time (else
-  corrupting the local row also corrupts the signature and the whole model collapses). Cryptographic truth.
-- **(c) `chain_evidence`** (`tx_hash` + `fetched_at_ledger` + frozen Horizon snapshot) — "the chain looked
-  like this when we observed it".
+- **(a) `business_intent`** (local DB row: `destination`/`amount_stroops`/`memo_hex`) — "this was requested".
+  **Mutable.** `local_value` in a diff always comes from HERE, never decoded from the XDR.
+- **(b) `ledger_evidence`** (`signed_xdr` + `hash`) — "this is what we signed and submitted". A frozen opaque
+  witness — **never re-serialized** from (a) at recon-time (else corrupting the local row also corrupts the
+  signature and the whole model collapses; enforced structurally by a grep-provenance test). `hash` is the
+  **Stellar transaction hash** = `hex(Transaction(signed_xdr, passphrase).hash())` =
+  `sha256(networkId ‖ ENVELOPE_TYPE_TX(0x00000002) ‖ xdr(innerTx))`. It is **NOT** `sha256(envelope)` nor
+  `sha256(decoded tx)` (empirically distinct). An optional `blob_sha256` is a pure integrity tripwire, never
+  equated to the tx hash (identity ≠ integrity).
+- **(c) `chain_evidence`** (`tx_hash` + `fetched_at_ledger` + frozen `horizon_snapshot` projection) — "the
+  chain looked like this when we observed it". The snapshot is a **normalized projection** of the `pay()`
+  invocation (`tx_id`/`amount`/`applied_rate`/`merchant`/`memo`), produced by the SAME normalizer that
+  decodes (b), so the two sides can never disagree by format.
 
-The reconciler produces **evidence, not a verdict**: field-diff runs on **(a)↔(c)**. A separate deterministic
-rule `resolveGroundTruth` makes **(b)** the cryptographic tiebreaker:
+The report pins the trust anchors at top level: `network.passphrase` (needed to recompute the tx hash) and
+`network.operator_public` (the signer key — read as **data**, never from the mutable XDR). Field mapping:
+`business_intent.destination ⇄ pay() merchant (arg3)`, `amount_stroops ⇄ i128 arg1`, `memo_hex ⇄ BytesN<32>
+arg4`. `applied_rate` is carried but **excluded** from the diff (the ledger is its audit source).
+
+**`resolveGroundTruth` — total, ordered, role-split** (the earlier single AND-fold made `CHAIN_DIVERGENCE`
+unreachable). Let `S`=pinned-operator signature verifies over `tx.hash()` (by hint, any match — multisig
+seam); `HB`=`recomputed_hash === ledger_evidence.hash`; `BC`=`hash === chain.tx_hash` (bitwise); `DC`=decode
+== snapshot (semantic); `IC`=business_intent == snapshot (semantic: amount→stroops bigint, address→canonical
+StrKey, memo→hex):
 
 ```
-verify_sig(signed_xdr, source_pubkey) == false     ⇒ EVIDENCE_TAMPERED
-sha256(signed_xdr) == hash == tx_hash == false      ⇒ EVIDENCE_TAMPERED
-decode(signed_xdr) == horizon_snapshot == false     ⇒ CHAIN_DIVERGENCE (signed ≠ settled)
-business_intent == horizon_snapshot == true         ⇒ MATCHED
-business_intent == horizon_snapshot == false         ⇒ CORRUPT_LOCAL (authority = chain, via valid signature)
+1. decode fails / not a Transaction / func ≠ invokeContract('pay')  ⇒ EVIDENCE_TAMPERED
+2. !S                                                               ⇒ EVIDENCE_TAMPERED  (bad/absent operator sig)
+3. !HB   (recomputed hash ≠ recorded hash)                          ⇒ EVIDENCE_TAMPERED  (blob ↮ hash)
+   ── after 1–3, (b) is an authentic, self-consistent operator witness ──
+4. chain_evidence == null                                          ⇒ UNSETTLED          (signed proven; settlement NOT)
+5. !BC || !DC  (a DIFFERENT tx settled)                            ⇒ CHAIN_DIVERGENCE   (signed ≠ settled)
+6. IC                                                              ⇒ MATCHED
+7. else                                                            ⇒ CORRUPT_LOCAL      (authority = chain; ONLY reachable with S∧HB∧BC∧DC)
 ```
 
-`just verify` is an **offline assertion**: input is only the report file (no network, no DB). It recomputes
-`sha256(decode(signed_xdr)) == hash == tx_hash`, the Ed25519 signature, and the semantic (a)↔(c) equality;
-network is blocked in-process (monkeypatch `net`/`dns`/`tls` to throw — darwin-portable) and exit 0 proves
-self-verification. Honest boundary: `signed ≠ settled` — testnet reset erases chain history, so we never
-claim "settlement is provable after reset".
+Verdict enum: `MATCHED | CORRUPT_LOCAL | EVIDENCE_TAMPERED | CHAIN_DIVERGENCE | UNSETTLED`. `verdict→status`:
+`MATCHED→matched`; `CORRUPT_LOCAL|EVIDENCE_TAMPERED|CHAIN_DIVERGENCE→mismatch`; `UNSETTLED→unsettled`.
+`CORRUPT_LOCAL` is reachable ONLY after `S∧HB∧BC∧DC`, so it always carries `signature_valid==true` — exactly
+the ord-003 acceptance guarantee.
+
+**`just verify` — offline-armed assertion** (`node --import bin/block-net.mjs bin/verify.mjs report.json`):
+input is ONLY the report file (no network, no DB). It **recomputes** each order's `hash`/signature/decode and
+re-derives verdict/status/summary from the embedded evidence, asserting each equals the stored value.
+Network is blocked in-process by a preload that patches `net`/`tls`/`dns`/`http(s)`/`http2`/`dgram`/`fetch`/
+`WebSocket`/`undici` to throw and count attempts (darwin-portable; **not** an OS firewall). Exit 0 requires a
+**positive** proof, not mere absence: a startup canary must confirm the block is armed (a deliberate
+`net.connect` throws), `ordersVerified === N`, `networkAttempts === 0`, and every re-derivation matches.
+Honest boundary: **`signed ≠ settled`** — the fixture tx has no Soroban footprint (`tx.ext().switch()===0`),
+so it is real/verifiable/decodable but not network-submittable (Phase-4's `stellar-client` produces the
+submittable XDR); and a testnet reset erases chain history, surfaced per order as `UNSETTLED`. We never claim
+"settlement is provable after reset".
 
 ---
 

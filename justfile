@@ -39,5 +39,9 @@ demo:
     @echo "just demo — implemented in Phase 5.3"
 
 # Phase 3.4 — offline reconciliation verification.
+# Offline, network-blocked self-verification of the reconciliation report (Phase 3.4).
 verify:
-    @echo "just verify — implemented in Phase 3.4"
+    pnpm --filter @troia/reconciler build
+    node --import ./packages/reconciler/bin/block-net.mjs \
+         ./packages/reconciler/bin/verify.mjs \
+         ./packages/reconciler/test/fixtures/recon-report.json

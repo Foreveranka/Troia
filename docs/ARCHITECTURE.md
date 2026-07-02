@@ -346,3 +346,8 @@ Each ADR lives in `docs/adr/NNNN-*.md`. Index:
     `set_admin` is single-step by design (bricking on a bad address is an accepted footgun mitigated by
     mainnet multisig+timelock per ADR-14, not in-contract two-step), and arbitrary-wasm `upgrade` is the
     intended admin power of an upgradeable custody contract — both are unreachable by any non-admin.
+17. Reconciler crypto model (empirically locked): `hash := Transaction.hash()` (real Stellar tx hash, not
+    `sha256(envelope)`); pinned-operator Ed25519 over `tx.hash()` by hint; role-split verdict cascade with
+    `UNSETTLED`; keyless-&-buildless `packages/reconciler` (grep-provenance guard); offline `just verify` with
+    a positive-armed network block; semantic amount compare guarded by a canonical-decimal regex so `''`/`0`
+    are never conflated (adversarial fix). Fixture = real Soroban `pay()` (no footprint → not submittable).

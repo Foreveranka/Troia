@@ -87,15 +87,28 @@ step touches the network or iyzico.
 Built on **fixture XDR/tx_hash** so it stands before real `pay()` exists (ADR-13, J1: reconciler is the
 first shippable output).
 
-- **3.1 `settlement_evidence`** — append-only store `(order_id, tx_hash, signed_xdr, seq, ledger_hint, ts)`.
-- **3.2 Three-artifact reconciler** — field-diff (a)↔(c); `resolveGroundTruth` tiebreaker on (b). Verdict enum
-  `MATCHED | CORRUPT_LOCAL | EVIDENCE_TAMPERED | CHAIN_DIVERGENCE`; verdict→summary buckets.
-- **3.3 `recon-report.json`** — embeds all three artifacts (self-verifying, reset-proof for the signed parts).
-- **3.4 `just verify`** — offline assertion; in-process socket abort guard (monkeypatch net/dns/tls). Acceptance:
-  N=3 seed `troia-demo-0001` → `{total:3, matched:2, mismatch:1}`, `ord-003.verdict==CORRUPT_LOCAL`,
-  `signature_valid==true`, exit 0 with network blocked.
+Crypto model was locked by a pre-code design audit (empirically verified against `@stellar/stellar-base@15`)
+and the ARCHITECTURE §8 shorthand corrected first: `hash := Transaction.hash()` (real Stellar tx hash, NOT
+`sha256(envelope)`); sig over `tx.hash()` by pinned operator + hint; verdict cascade **role-split** (tamper
+vs divergence) + a 5th verdict `UNSETTLED`. Fixture = real Soroban `pay()` invocation (no footprint → real/
+decodable but not submittable). `packages/reconciler` is keyless & buildless by construction (grep-guard).
 
-**Done when:** `just verify` exits 0 offline on the seeded fixture set; the corrupt-local case is caught.
+- **3.1 `settlement_evidence`** ✅ — append-only, per-order-idempotent, `Object.freeze`d store of the opaque
+  signed blob (never recomputed from intent). `(order_id, tx_hash, signed_xdr, seq, ledger_hint, ts)`.
+- **3.2 Three-artifact reconciler** ✅ — `decode` (SCVal → projection) · `normalize` (one semantic comparator
+  set) · `verify-crypto` (P1 hash-self-consistency · P2 pinned-operator sig by hint · P3 chain-bound) ·
+  `resolveGroundTruth` (7-step total procedure) · `field-diff` (a↔c, `local_value` from the DB). 5-case
+  truth table green.
+- **3.3 `recon-report.json`** ✅ — embeds all three artifacts + `network.{passphrase, operator_public}` +
+  summary; self-verifying, reset-proof for the signed parts.
+- **3.4 `just verify`** ✅ — offline, positive-armed exit (`bin/block-net.mjs` patches net/tls/dns/http(s)/
+  http2/dgram/fetch/WebSocket; startup canary must throw; `networkAttempts==0`; every order re-derived).
+  Acceptance met: N=3 seed `troia-demo-0001` → `{total:3, matched:2, mismatch:1, unsettled:0}`,
+  `ord-003.verdict==CORRUPT_LOCAL` with `signature_valid==true`, **exit 0 network-blocked**; a tampered report
+  flips the exit code. Adversarial xhigh pass: 7 candidates → 1 confirmed (`amountEqual('','0')` conflation)
+  → fixed (canonical-decimal guard) + regression-tested.
+
+**Done when:** `just verify` exits 0 offline on the seeded fixture set; the corrupt-local case is caught. ✅
 
 ---
 

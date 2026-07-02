@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "seed": "troia-demo-0001",
+  "network": {
+    "network": "testnet",
+    "passphrase": "Test SDF Network ; September 2015",
+    "operator_public": "GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K"
+  },
+  "orders": [
+    {
+      "order_id": "ord-001",
+      "business_intent": {
+        "order_id": "ord-001",
+        "destination": "GANPUUONBBXJ5FOAS3BMSRT6HSPG6IAP5V5FTX5QMM3LWBTCVYABFB3T",
+        "amount_stroops": "10000000",
+        "memo_hex": "0180546582856eff2d32921c8d6a1b220eb031e609d54cdc20aafc2f188ecb13"
+      },
+      "ledger_evidence": {
+        "signed_xdr": "AAAAAgAAAAA8LVvOe5KcIiI24SZMf2ZqGdYM9AE1ufU10aAihrik0gAAAGQAAAAAAAAAZQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABScNop75MYmG0mECBHepjKmSEvP9+bHURCtkX7dzQliwAAAADcGF5AAAAAAUAAAANAAAAILLbD/Oqx32fQ5KggRxAhyV47JNg22h4lcW332Xf7iHpAAAACgAAAAAAAAAAAAAAAACYloAAAAAKAAAAAAAAAAAAAAAAGICBuAAAABIAAAAAAAAAABr6Uc0Ibp6VwJbCyUZ+PJ5vIA/telnfsGM2uwZirgASAAAADQAAACABgFRlgoVu/y0ykhyNahsiDrAx5gnVTNwgqvwvGI7LEwAAAAAAAAAAAAAAAYa4pNIAAABAp8OGyNi4RpFoiAqOFk/rUpkBFPZno18mz0yisAuVa3xyZnuyy9lpeVzkncRGZhXRtHxc2nVV2nhVl6RkNjkVBw==",
+        "hash": "f0ea13b0e0c17a15cd475e272663f5b869ff55ef59866a8943eacab552506a45"
+      },
+      "chain_evidence": {
+        "tx_hash": "f0ea13b0e0c17a15cd475e272663f5b869ff55ef59866a8943eacab552506a45",
+        "fetched_at_ledger": 2000100,
+        "horizon_snapshot": {
+          "function": "pay",
+          "contract_id": "CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB",
+          "source_account": "GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K",
+          "tx_id_hex": "b2db0ff3aac77d9f4392a0811c40872578ec9360db687895c5b7df65dfee21e9",
+          "amount_stroops": "10000000",
+          "applied_rate_stroops": "411075000",
+          "merchant": "GANPUUONBBXJ5FOAS3BMSRT6HSPG6IAP5V5FTX5QMM3LWBTCVYABFB3T",
+          "memo_hex": "0180546582856eff2d32921c8d6a1b220eb031e609d54cdc20aafc2f188ecb13"
+        }
+      },
+      "field_diff": [],
+      "verdict": "MATCHED",
+      "status": "matched",
+      "signature_valid": true,
+      "hash_consistent": true,
+      "chain_bound": true
+    },
+    {
+      "order_id": "ord-002",
+      "business_intent": {
+        "order_id": "ord-002",
+        "destination": "GD7UVUC27PSDB5WSQRAVW4RCKCIVWHPRNN3NQKJLN2SPIJZ67B2LGQYQ",
+        "amount_stroops": "25000000",
+        "memo_hex": "6b1fe79ef454986a7e4fa064277d7ef919a95b863f7747816f16fe6d7a6daf68"
+      },
+      "ledger_evidence": {
+        "signed_xdr": "AAAAAgAAAAA8LVvOe5KcIiI24SZMf2ZqGdYM9AE1ufU10aAihrik0gAAAGQAAAAAAAAAZgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABScNop75MYmG0mECBHepjKmSEvP9+bHURCtkX7dzQliwAAAADcGF5AAAAAAUAAAANAAAAIFIewl62yFeCcQdvpsHvw9aB3W99+IUQlhs3zmKX49vJAAAACgAAAAAAAAAAAAAAAAF9eEAAAAAKAAAAAAAAAAAAAAAAGICBuAAAABIAAAAAAAAAAP9K0Fr75DD20oRBW3IiUJFbHfFrdtgpK26k9Cc++HSzAAAADQAAACBrH+ee9FSYan5PoGQnfX75Galbhj93R4FvFv5tem2vaAAAAAAAAAAAAAAAAYa4pNIAAABA7OeBpz9ejjTZ7bKJCH/xuAAzCj1m0xBdjwq1QJV7rfDeYv+LQ+uu2/OMAOHNIciKN3Q0CH95VE2mwqNM1yL+DQ==",
+        "hash": "6a32e40c73adc48965786453c2edb1694596afbd4aac2a4897476af281e4c506"
+      },
+      "chain_evidence": {
+        "tx_hash": "6a32e40c73adc48965786453c2edb1694596afbd4aac2a4897476af281e4c506",
+        "fetched_at_ledger": 2000101,
+        "horizon_snapshot": {
+          "function": "pay",
+          "contract_id": "CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB",
+          "source_account": "GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K",
+          "tx_id_hex": "521ec25eb6c8578271076fa6c1efc3d681dd6f7df88510961b37ce6297e3dbc9",
+          "amount_stroops": "25000000",
+          "applied_rate_stroops": "411075000",
+          "merchant": "GD7UVUC27PSDB5WSQRAVW4RCKCIVWHPRNN3NQKJLN2SPIJZ67B2LGQYQ",
+          "memo_hex": "6b1fe79ef454986a7e4fa064277d7ef919a95b863f7747816f16fe6d7a6daf68"
+        }
+      },
+      "field_diff": [],
+      "verdict": "MATCHED",
+      "status": "matched",
+      "signature_valid": true,
+      "hash_consistent": true,
+      "chain_bound": true
+    },
+    {
+      "order_id": "ord-003",
+      "business_intent": {
+        "order_id": "ord-003",
+        "destination": "GBOCE4RI7FP5P6JTNHZKIOL2EI36EKLCDOYYUI334AMU3AUBY5D6MIPQ",
+        "amount_stroops": "6000000",
+        "memo_hex": "dce30674354aac9018cd03ba7cf1638a50df236e0822a4f45a8b3948d96212cd"
+      },
+      "ledger_evidence": {
+        "signed_xdr": "AAAAAgAAAAA8LVvOe5KcIiI24SZMf2ZqGdYM9AE1ufU10aAihrik0gAAAGQAAAAAAAAAZwAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABScNop75MYmG0mECBHepjKmSEvP9+bHURCtkX7dzQliwAAAADcGF5AAAAAAUAAAANAAAAIC5iCO1avc245y8pGtfCbt/Sjur123BsdTfpJmituKQRAAAACgAAAAAAAAAAAAAAAABMS0AAAAAKAAAAAAAAAAAAAAAAGICBuAAAABIAAAAAAAAAAFwicij5X9f5M2nypDl6IjfiKWIbsYoje+AZTYKBx0fmAAAADQAAACDc4wZ0NUqskBjNA7p88WOKUN8jbggipPRaizlI2WISzQAAAAAAAAAAAAAAAYa4pNIAAABAa1cDejN3PQpQ7ME2eG27YMY2lz4qw+wiMTpVxBb9xyK40hHCzY56HSeAB1cgesg1PngWaF/ltPyQljJJ0G9DDA==",
+        "hash": "0f4b14b8db9f2b043cf06dd18ba6b5da8f2cfa82601033ad5a5ce75b8d6cb7ef"
+      },
+      "chain_evidence": {
+        "tx_hash": "0f4b14b8db9f2b043cf06dd18ba6b5da8f2cfa82601033ad5a5ce75b8d6cb7ef",
+        "fetched_at_ledger": 2000102,
+        "horizon_snapshot": {
+          "function": "pay",
+          "contract_id": "CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB",
+          "source_account": "GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K",
+          "tx_id_hex": "2e6208ed5abdcdb8e72f291ad7c26edfd28eeaf5db706c7537e92668adb8a411",
+          "amount_stroops": "5000000",
+          "applied_rate_stroops": "411075000",
+          "merchant": "GBOCE4RI7FP5P6JTNHZKIOL2EI36EKLCDOYYUI334AMU3AUBY5D6MIPQ",
+          "memo_hex": "dce30674354aac9018cd03ba7cf1638a50df236e0822a4f45a8b3948d96212cd"
+        }
+      },
+      "field_diff": [
+        {
+          "field": "amount",
+          "local_value": "6000000",
+          "chain_value": "5000000",
+          "equal": false
+        }
+      ],
+      "verdict": "CORRUPT_LOCAL",
+      "status": "mismatch",
+      "signature_valid": true,
+      "hash_consistent": true,
+      "chain_bound": true
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "matched": 2,
+    "mismatch": 1,
+    "unsettled": 0
+  }
+}

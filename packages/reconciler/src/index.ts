@@ -1,0 +1,13 @@
+export * from './types.js';
+export { SettlementEvidenceStore, SettlementEvidenceError } from './evidence-store.js';
+export type { EvidenceRecord, EvidenceErrorCode } from './evidence-store.js';
+export { decodeSignedPay, EvidenceError } from './decode.js';
+export type { DecodedPay } from './decode.js';
+export { amountEqual, addressEqual, hexEqual, semanticEqualProjection } from './normalize.js';
+export { computeDiffs, intentEqualsChain, differing } from './field-diff.js';
+export { signatureValid, hashConsistent, chainBound } from './verify-crypto.js';
+export { resolveGroundTruth } from './resolve-ground-truth.js';
+export { buildReconReport, summarize } from './report.js';
+export type { OrderInput } from './report.js';
+export { verifyReport } from './verify.js';
+export type { VerifyResult } from './verify.js';

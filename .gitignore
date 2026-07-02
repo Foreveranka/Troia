@@ -9,3 +9,4 @@ target/
 test_snapshots/
 .DS_Store
 *.log
+recon-report.tampered.json

@@ -47,8 +47,13 @@ This is where the design earns its keep. Everything here is pure/deterministic a
   yet). Tests: n=3 median+outlier, n=2 deviation→`OracleDeviationExceeded`, n≤1 fail-closed; spread math.
   Locks ⑤ freeze + ADR-2/4.
 - **1.6 `ledger`** — double-entry append-only (fiat_in/crypto_out/spread/fee). Tests: entries balance.
+- **1.7 composition smoke** (`packages/integration`) — one happy-path order threaded through the WHOLE
+  core module-to-module (`deriveIds → build → allocate → state machine → oracle → pricing → ledger →
+  drift`), plus a fail-closed seam (tampered memo stops at `build`). Proves the modules **compose** —
+  each was only unit-tested in isolation. Cheap insurance inserted before the Phase-2 Rust mode-switch.
 
-**Done when:** the entire money core is green offline; no step touches the network or iyzico.
+**Done when:** the entire money core is green offline AND one order composes end-to-end through it; no
+step touches the network or iyzico.
 
 ---
 

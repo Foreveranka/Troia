@@ -64,7 +64,11 @@ step touches the network or iyzico.
   (mark processed before transfer) + `PaymentMade` event. **`pause`/`unpause` pulled in here** (pay()'s
   `Paused` guard is untestable without them). 7 tests green (happy · replay-reverts-pays-once · insufficient ·
   invalid-amount · paused · unauthorized · constructor); release WASM + clippy clean; 0 adversarial findings.
-- **2.2 Admin path** (remaining) — `upgrade`/`set_operator`/`set_admin` under `admin.require_auth`.
+- **2.2 Admin path** ✅ — `set_operator`/`set_admin`/`upgrade` under `admin.require_auth`; audit events
+  (`AdminChanged`/`OperatorChanged`/`PauseSet`/`Upgraded`). `set_admin` is **single-step by design** — a
+  fat-fingered handover bricking admin is an accepted operational footgun whose mitigation is mainnet
+  multisig+timelock (ADR-14), not in-contract two-step (testnet is redeployable; plan defers admin hardening).
+  Adversarial pass: 0 confirmed. 12 contract tests green; WASM + clippy clean.
 - **2.3 Contract tests** — `AlreadyProcessed` reverts (not silent no-op), `InsufficientBalance`, `InvalidAmount`,
   `Paused`, `NotAuthorized`. Integration test against a real SAC. Fuzz: `pool_in == pool_out + reserved + fees`.
 

@@ -312,3 +312,7 @@ Each ADR lives in `docs/adr/NNNN-*.md`. Index:
     **Persistent** storage — durability rests on archival-not-deletion (an aged-out guard must be restored
     with value intact before `pay()` can read it), so the replay path deliberately does NOT re-bump TTL (an
     `Err` return would roll the bump back). Deploy-time `__constructor` binds roles once (no re-init surface).
+    Admin path (`set_operator`/`set_admin`/`upgrade`) is `admin.require_auth`-gated with audit events;
+    `set_admin` is single-step by design (bricking on a bad address is an accepted footgun mitigated by
+    mainnet multisig+timelock per ADR-14, not in-contract two-step), and arbitrary-wasm `upgrade` is the
+    intended admin power of an upgradeable custody contract — both are unreachable by any non-admin.

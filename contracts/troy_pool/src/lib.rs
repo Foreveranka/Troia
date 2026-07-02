@@ -53,6 +53,29 @@ pub struct PaymentMade {
     pub memo: BytesN<32>,
 }
 
+/// Admin audit trail — role changes and pause toggles are security-critical, so each emits an event.
+#[contractevent]
+pub struct AdminChanged {
+    #[topic]
+    pub old_admin: Address,
+    pub new_admin: Address,
+}
+#[contractevent]
+pub struct OperatorChanged {
+    #[topic]
+    pub old_operator: Address,
+    pub new_operator: Address,
+}
+#[contractevent]
+pub struct PauseSet {
+    pub paused: bool,
+}
+#[contractevent]
+pub struct Upgraded {
+    #[topic]
+    pub wasm_hash: BytesN<32>,
+}
+
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
@@ -156,6 +179,7 @@ impl TroyPool {
         read_admin(&env).require_auth();
         env.storage().instance().set(&DataKey::Paused, &true);
         bump_instance(&env);
+        PauseSet { paused: true }.publish(&env);
         Ok(())
     }
 
@@ -164,6 +188,38 @@ impl TroyPool {
         read_admin(&env).require_auth();
         env.storage().instance().set(&DataKey::Paused, &false);
         bump_instance(&env);
+        PauseSet { paused: false }.publish(&env);
+        Ok(())
+    }
+
+    /// Admin: rotate the operator (the account allowed to sign `pay()`). A leaked/rotated hot key is
+    /// replaced without redeploying. Channel-account pools (Phase 2 concurrency) swap in the same way.
+    pub fn set_operator(env: Env, operator: Address) -> Result<(), Error> {
+        read_admin(&env).require_auth();
+        let old = read_operator(&env);
+        env.storage().instance().set(&DataKey::Operator, &operator);
+        bump_instance(&env);
+        OperatorChanged { old_operator: old, new_operator: operator }.publish(&env);
+        Ok(())
+    }
+
+    /// Admin: hand over admin control. The CURRENT admin must authorize the handover (a bad `new_admin`
+    /// value locks the contract, so this is the highest-trust operation — high multisig threshold on mainnet).
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        let old = read_admin(&env);
+        old.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        bump_instance(&env);
+        AdminChanged { old_admin: old, new_admin }.publish(&env);
+        Ok(())
+    }
+
+    /// Admin: swap the contract's own code to a previously-uploaded Wasm hash (in-place migration; the
+    /// C-address, stored state, and pool balance are preserved). Takes effect after this invocation.
+    pub fn upgrade(env: Env, wasm_hash: BytesN<32>) -> Result<(), Error> {
+        read_admin(&env).require_auth();
+        env.deployer().update_current_contract_wasm(wasm_hash.clone());
+        Upgraded { wasm_hash }.publish(&env);
         Ok(())
     }
 

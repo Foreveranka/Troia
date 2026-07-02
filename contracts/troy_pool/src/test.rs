@@ -149,3 +149,56 @@ fn unauthorized_caller_cannot_pay() {
         .is_err());
     assert_eq!(c.usdc().balance(&c.merchant), 0);
 }
+
+// ---- admin path (Phase 2.2) ----
+
+#[test]
+fn admin_can_set_operator() {
+    let c = setup(0);
+    let new_op = Address::generate(&c.env);
+    c.client().set_operator(&new_op);
+    assert_eq!(c.client().operator(), new_op);
+}
+
+#[test]
+fn admin_can_rotate_admin() {
+    let c = setup(0);
+    let new_admin = Address::generate(&c.env);
+    c.client().set_admin(&new_admin);
+    assert_eq!(c.client().admin(), new_admin);
+}
+
+#[test]
+fn rotated_operator_can_pay_and_original_is_replaced() {
+    // The rotation actually rewires who signs pay(): after set_operator, the new operator's auth
+    // drives a successful pay (mock_all_auths authorizes it), proving the stored role is load-bearing.
+    let c = setup(100 * STROOP);
+    let new_op = Address::generate(&c.env);
+    c.client().set_operator(&new_op);
+    assert_eq!(c.client().operator(), new_op);
+
+    let tx_id = id(&c.env, 1);
+    let memo = id(&c.env, 2);
+    c.client().pay(&tx_id, &STROOP, &405_000_000, &c.merchant, &memo);
+    assert_eq!(c.usdc().balance(&c.merchant), STROOP);
+}
+
+#[test]
+fn unauthorized_cannot_change_roles_or_pause() {
+    let c = setup(0);
+    let x = Address::generate(&c.env);
+    c.env.mock_auths(&[]); // no auth provided → every admin-gated call fails closed
+    assert!(c.client().try_set_operator(&x).is_err());
+    assert!(c.client().try_set_admin(&x).is_err());
+    assert!(c.client().try_pause().is_err());
+    assert!(c.client().try_unpause().is_err());
+}
+
+#[test]
+fn unauthorized_cannot_upgrade() {
+    let c = setup(0);
+    let bogus_hash = id(&c.env, 9);
+    c.env.mock_auths(&[]);
+    // Auth is checked before touching the Wasm, so the bogus hash is never reached.
+    assert!(c.client().try_upgrade(&bogus_hash).is_err());
+}

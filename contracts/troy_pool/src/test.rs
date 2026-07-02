@@ -202,3 +202,65 @@ fn unauthorized_cannot_upgrade() {
     // Auth is checked before touching the Wasm, so the bogus hash is never reached.
     assert!(c.client().try_upgrade(&bogus_hash).is_err());
 }
+
+// ---- Phase 2.3: real-SAC integration + conservation fuzz ----
+
+#[test]
+fn multi_order_integration_conserves_and_pays_each_merchant() {
+    // Several distinct orders against a real SAC: each merchant is paid exactly its amount and the pool
+    // is debited by the exact total — USDC is conserved (nothing created or lost).
+    let c = setup(100 * STROOP);
+    let m: [Address; 3] = core::array::from_fn(|_| Address::generate(&c.env));
+    let amounts = [10 * STROOP, 25 * STROOP, 5 * STROOP];
+    for k in 0..3 {
+        c.client()
+            .pay(&id(&c.env, k as u8 + 1), &amounts[k], &405_000_000, &m[k], &id(&c.env, 100 + k as u8));
+    }
+    assert_eq!(c.usdc().balance(&m[0]), 10 * STROOP);
+    assert_eq!(c.usdc().balance(&m[1]), 25 * STROOP);
+    assert_eq!(c.usdc().balance(&m[2]), 5 * STROOP);
+    assert_eq!(c.client().balance(), 60 * STROOP); // 100 - (10+25+5)
+
+    let paid: i128 = m.iter().map(|x| c.usdc().balance(x)).sum();
+    assert_eq!(c.client().balance() + paid, 100 * STROOP); // conservation
+}
+
+#[test]
+fn fuzz_conservation_and_pay_at_most_once() {
+    // A deterministic pseudo-random workload of pay() attempts — valid, duplicate (same tx_id), zero /
+    // negative, and over-balance amounts, to random merchants. Two invariants must hold at every step no
+    // matter the interleaving:
+    //   (1) CONSERVATION: pool_balance + Σ(merchant balances) == initial seed  (no USDC created or lost).
+    //   (2) PAY-AT-MOST-ONCE: any given tx_id is settled at most once (the double-pay shield).
+    const SEED: i128 = 100 * STROOP;
+    const N_TX: usize = 40; // distinct tx_ids → the workload forces replays
+    let c = setup(SEED);
+    let merchants: [Address; 5] = core::array::from_fn(|_| Address::generate(&c.env));
+    let mut succeeded = [false; N_TX];
+
+    let mut rng: u64 = 0x2545_F491_4F6C_DD1D; // fixed seed → reproducible
+    for _ in 0..400 {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        let r = rng;
+
+        let idx = (r % N_TX as u64) as usize;
+        let merchant = &merchants[((r >> 8) % merchants.len() as u64) as usize];
+        // range ~[-1 USDC, +3 USDC]: mixes InvalidAmount, valid, and over-balance cases.
+        let amount = ((r >> 16) % (4 * STROOP as u64)) as i128 - STROOP;
+
+        let res = c
+            .client()
+            .try_pay(&id(&c.env, idx as u8), &amount, &405_000_000, merchant, &id(&c.env, 200 - idx as u8));
+
+        if matches!(res, Ok(Ok(()))) {
+            assert!(!succeeded[idx], "tx_id {idx} settled twice — double-pay shield breached");
+            succeeded[idx] = true;
+        }
+
+        let paid: i128 = merchants.iter().map(|x| c.usdc().balance(x)).sum();
+        assert_eq!(c.client().balance() + paid, SEED, "conservation broken");
+        assert!(c.client().balance() >= 0, "pool went negative");
+    }
+}

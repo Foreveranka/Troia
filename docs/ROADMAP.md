@@ -69,10 +69,16 @@ step touches the network or iyzico.
   fat-fingered handover bricking admin is an accepted operational footgun whose mitigation is mainnet
   multisig+timelock (ADR-14), not in-contract two-step (testnet is redeployable; plan defers admin hardening).
   Adversarial pass: 0 confirmed. 12 contract tests green; WASM + clippy clean.
-- **2.3 Contract tests** — `AlreadyProcessed` reverts (not silent no-op), `InsufficientBalance`, `InvalidAmount`,
-  `Paused`, `NotAuthorized`. Integration test against a real SAC. Fuzz: `pool_in == pool_out + reserved + fees`.
+- **2.3 Contract tests** ✅ — 14 tests: every `Error` variant reverts (not a silent no-op), multi-order
+  real-SAC integration, and a deterministic **conservation fuzz** (`pool + Σ merchants == seed` and
+  pay-at-most-once, 400 random interleavings). Fuzz teeth proven by mutation: disabling the replay guard
+  makes it fail (`tx_id N settled twice`). On-chain conservation has no `reserved`/`fees` terms — those live
+  off-chain (backend reservations, `packages/ledger`); on-chain the invariant is `pool == seed − Σ paid`.
+  Positive `upgrade` swap (upload v2 wasm → upgrade → state preserved) is **deferred to Phase-4 deploy
+  verification** (needs a real 2nd wasm artifact; unit-testing it tests the host, not our logic — the
+  auth-gate is unit-tested here).
 
-**Done when:** contract test suite green (unit + integration + fuzz); `stellar contract build` clean.
+**Done when:** contract test suite green (unit + integration + fuzz); `stellar contract build` clean. ✅
 
 ---
 

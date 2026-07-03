@@ -1,0 +1,12 @@
+{
+  "_provenance": "PLACEHOLDER. Signature computed with the locked X-IYZ-SIGNATURE-V3 algorithm (HMAC-SHA256, lowercase hex, no separator, secretKey both the HMAC key and the leading field). REPLACE with a captured real sandbox event in Phase 4.5 to confirm the exact per-event preimage field order.",
+  "signingSecret": "sandbox-secret-BBB",
+  "event": {
+    "iyziEventType": "CHECKOUT_FORM_AUTH",
+    "iyziPaymentId": "12345",
+    "token": "tok-abc",
+    "paymentConversationId": "conv-1",
+    "status": "SUCCESS"
+  },
+  "signature": "c2dc2b26c81ecb6d561e3e45aab9096ae6a17ffc4c3a84b6a37de916114dc66d"
+}

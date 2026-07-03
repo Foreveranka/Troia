@@ -1,0 +1,9 @@
+{
+  "_provenance": "Generated from iyzipay@2.0.69 lib/utils.js generateAuthorizationHeaderV2 (IYZWSv2). Regenerate by re-running that util for these inputs.",
+  "apiKey": "sandbox-apiKey-AAA",
+  "secretKey": "sandbox-secret-BBB",
+  "randomKey": "rnd-123456789",
+  "uriPath": "/payment/preauth",
+  "requestBodyString": "{\"locale\":\"tr\",\"conversationId\":\"conv-1\",\"price\":\"10.0\",\"paidPrice\":\"10.0\",\"currency\":\"TRY\",\"paymentId\":\"pay-9\"}",
+  "authorization": "IYZWSv2 YXBpS2V5OnNhbmRib3gtYXBpS2V5LUFBQSZyYW5kb21LZXk6cm5kLTEyMzQ1Njc4OSZzaWduYXR1cmU6YzUwZTExNDllZWQ1Y2JiNjRkNWQwNDRhZTBlNTcyZGE0OWIwNzcxY2Y2N2YzYTM4NDRkN2QxY2RhNGY5Mzg1Yw=="
+}

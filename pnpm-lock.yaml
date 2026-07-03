@@ -50,6 +50,12 @@ importers:
 
   packages/pricing: {}
 
+  packages/psp:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.20.0
+
   packages/reconciler:
     dependencies:
       '@stellar/stellar-base':

@@ -1,0 +1,28 @@
+{
+  "name": "@troia/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@troia/config": "workspace:*",
+    "@troia/core": "workspace:*",
+    "@troia/psp": "workspace:*",
+    "@troia/reconciler": "workspace:*",
+    "@troia/stellar-client": "workspace:*",
+    "fastify": "5.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5"
+  }
+}

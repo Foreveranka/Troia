@@ -43,3 +43,10 @@ export { ReservationLedger } from './store/reservation-ledger.js';
 export type { Reservation } from './store/reservation-ledger.js';
 export { InMemoryStore } from './store/in-memory-store.js';
 export type { InMemoryStoreOptions } from './store/in-memory-store.js';
+
+export { createApp } from './http/app.js';
+export type { AppDeps } from './http/app.js';
+export { InMemoryOrderRegistry } from './http/order-registry.js';
+export type { OrderRegistry, OrderRecord } from './http/order-registry.js';
+export { toPublicStatus } from './http/public-status.js';
+export type { PublicStatus } from './http/public-status.js';

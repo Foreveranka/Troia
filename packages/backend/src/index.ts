@@ -36,3 +36,10 @@ export type {
   InFlightPatch,
   EvidenceRecord,
 } from './ports.js';
+
+export { Mutex, KeyedMutex } from './store/mutex.js';
+export type { Lock } from './store/mutex.js';
+export { ReservationLedger } from './store/reservation-ledger.js';
+export type { Reservation } from './store/reservation-ledger.js';
+export { InMemoryStore } from './store/in-memory-store.js';
+export type { InMemoryStoreOptions } from './store/in-memory-store.js';

@@ -14,7 +14,7 @@ import type {
   SubmitResult,
 } from '@troia/stellar-client';
 import type { PollVerdict } from '@troia/stellar-client';
-import type { RawIyzicoResult } from '@troia/psp';
+import type { RawIyzicoResult, RetrieveCheckoutFormParams } from '@troia/psp';
 import type { OrderCtx } from '../../src/ctx.js';
 import type { EngineConfig } from '../../src/engine/config.js';
 import type { EngineDeps } from '../../src/engine/events.js';
@@ -154,9 +154,19 @@ export class FakePspPort implements PspPort {
     this.trace.push('psp.initializeCheckoutForm');
     return this.init;
   }
-  async retrieveCheckoutFormResult(): Promise<RawIyzicoResult> {
+  retrievePaymentStatus = 'SUCCESS';
+  retrieveFraudStatus: number | undefined = 1; // 1 => preauthEvent -> preauthOk
+  async retrieveCheckoutFormResult(p: RetrieveCheckoutFormParams): Promise<RawIyzicoResult> {
     this.trace.push('psp.retrieveCheckoutFormResult');
-    return body({ status: 'success', token: 'tok-1', paymentId: 'pay-1', paymentStatus: 'SUCCESS', conversationId: 'cid' });
+    // echo the backend-issued token + conversationId so the webhook cross-checks pass
+    return body({
+      status: 'success',
+      token: p.token,
+      paymentId: 'pay-1',
+      paymentStatus: this.retrievePaymentStatus,
+      fraudStatus: this.retrieveFraudStatus,
+      conversationId: p.conversationId,
+    });
   }
   async createPreAuth(): Promise<RawIyzicoResult> {
     return body({ status: 'success', paymentId: 'pay-1', conversationId: 'cid' });
@@ -190,6 +200,7 @@ export function makeConfig(): EngineConfig {
       operatorPublic: 'GOPERATORPUBLICKEYPLACEHOLDER000000000000000000',
       troyPool: 'CTROYPOOLCONTRACTIDPLACEHOLDER00000000000000000000',
       passphrase: 'Test SDF Network ; September 2015',
+      usdcIssuer: 'GISSUER',
       feeStroops: '100',
       timeboundsSecs: 45,
     },
@@ -250,6 +261,7 @@ export function makeCtx(store: FakeStore, overrides: Partial<OrderCtx> = {}): Or
     appliedRateStroops: RATE,
     memoHex: ids.memoHex,
     paymentId: 'pay-1',
+    token: null,
     paidPriceTry: '3400.00',
     currency: 'TRY',
     ip: '1.2.3.4',

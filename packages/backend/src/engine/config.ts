@@ -13,6 +13,8 @@ export interface EngineStellarConfig {
   /** TroyPool contract C-address. */
   readonly troyPool: string;
   readonly passphrase: string;
+  /** the USDC issuer G-address; the allowlist PayoutIntent.build validates the destination trustline against. */
+  readonly usdcIssuer: string;
   /** classic inclusion fee (stroops, string); the Soroban resource fee is added later at assemble. */
   readonly feeStroops: string;
   /** tx validity window in seconds; maxTime = clock.nowUnix() + this (finite — never TimeoutInfinite). */

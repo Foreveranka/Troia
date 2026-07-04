@@ -13,6 +13,10 @@ export interface OrderCtx {
   readonly memoHex: string;
   /** iyzico-side facts (present after the hosted form completes). */
   readonly paymentId: string | null;
+  /** the hosted checkout-form token issued by start()'s initializeCheckoutForm side-output. The webhook
+   *  re-retrieves the form result by THIS backend-issued token (never the webhook-echoed one) — the V3
+   *  preimage concatenates fields with no separator, so a webhook token is not uniquely bound. */
+  readonly token: string | null;
   readonly paidPriceTry: string; // TRY amount to capture at PostAuth
   readonly currency: string;
   readonly ip: string;

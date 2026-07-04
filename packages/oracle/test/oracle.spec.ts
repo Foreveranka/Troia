@@ -126,6 +126,48 @@ describe('oracle — fail-closed guards', () => {
   });
 });
 
+describe('oracle — staleness rejects a FUTURE / forward-skewed timestamp (round-2 hardening)', () => {
+  // q(src, price, -ageMs) stamps asOfMs = NOW + ageMs — a future observation. Staleness must gate a source that
+  // lies about its own freshness, not accept it as "fresh" just because now - asOf is negative (<= maxAgeMs).
+  it('a future-dated source is dropped as unhealthy (below quorum → InsufficientSources)', () => {
+    const r = aggregate([q('a', 400_000_000n), q('b', 400_000_000n, -10_000)], P, NOW);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('InsufficientSources');
+  });
+
+  it('a future-dated source is excluded while the fresh majority still settles', () => {
+    const r = aggregate(
+      [q('a', 400_000_000n), q('b', 400_100_000n), q('c', 399_900_000n, -3_600_000)],
+      P,
+      NOW,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.quote.sources).not.toContain('c'); // future 'c' dropped; a+b meet the quorum
+  });
+});
+
+describe('oracle — quorum counts DISTINCT sources, not entries (round-2 hardening)', () => {
+  it('duplicate same-source quotes do NOT satisfy minQuorum with a single real feed', () => {
+    const r = aggregate([q('binance', 400_000_000n), q('binance', 400_000_000n)], P, NOW);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('InsufficientSources'); // 2 entries but 1 distinct source < minQuorum(2)
+  });
+
+  it('a duplicated source is collapsed to one — it neither pads the quorum nor double-weights the median', () => {
+    // {binance:402, binance:402, okx:400} → distinct {binance:402, okx:400}; lower-median of [400,402] = 400.
+    const r = aggregate(
+      [q('binance', 402_000_000n), q('binance', 402_000_000n), q('okx', 400_000_000n)],
+      P,
+      NOW,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.quote.sources).toHaveLength(2); // deduped, not 3
+      expect(r.quote.midTryPerUsdc).toBe(400_000_000n); // lower-median of the DISTINCT pair, not 402 (double-weighted)
+    }
+  });
+});
+
 describe('oracle — DeterministicOracle provider', () => {
   it('resolves to the aggregate result', async () => {
     const oracle = new DeterministicOracle(

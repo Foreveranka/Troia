@@ -100,7 +100,8 @@ export function deriveTryPerUsdc(tryPerUsdt: bigint, usdcPerUsdt: bigint): bigin
 
 /**
  * Aggregate source quotes into a single mid rate, fail-closed. `nowMs` is injected (deterministic).
- * Drop stale / non-positive quotes; require >= minQuorum healthy (else InsufficientSources); then either
+ * Drop stale / future-dated / non-positive quotes and collapse duplicate same-source entries; require
+ * >= minQuorum DISTINCT healthy sources (else InsufficientSources); then either
  * ALL healthy quotes agree within the deviation threshold of the median (accept mid = lower-median order
  * statistic, a real quoted price in [min,max]) or we FAIL CLOSED (DeviationExceeded) and the caller
  * retries. There is deliberately NO outlier-drop-and-settle: that is manipulable. Achievable guarantee:
@@ -114,11 +115,23 @@ export function aggregate(
   policy: OraclePolicy,
   nowMs: number,
 ): OracleResult {
-  const healthy = quotes.filter((q) => q.tryPerUsdc > 0n && nowMs - q.asOfMs <= policy.maxAgeMs);
-  if (healthy.length < policy.minQuorum) {
-    return fail('InsufficientSources', `only ${healthy.length} healthy source(s), need ${policy.minQuorum}`);
+  // Healthy = positive price AND a NON-FUTURE, non-stale timestamp. The lower bound (age >= 0) rejects a future /
+  // forward-skewed asOfMs: staleness must gate a source lying about its own freshness, not accept it as "fresh"
+  // just because now - asOf is negative (and thus trivially <= maxAgeMs).
+  const healthy = quotes.filter((q) => {
+    const age = nowMs - q.asOfMs;
+    return q.tryPerUsdc > 0n && age >= 0 && age <= policy.maxAgeMs;
+  });
+  // Collapse to ONE quote per DISTINCT source name (defense-in-depth): the live path fetches each source exactly
+  // once, so a duplicate only arises from a misconfigured `sources` list — and it must not let a single real feed
+  // satisfy the quorum nor double-weight the median. First occurrence wins.
+  const bySource = new Map<string, SourceQuote>();
+  for (const q of healthy) if (!bySource.has(q.source)) bySource.set(q.source, q);
+  const distinct = [...bySource.values()];
+  if (distinct.length < policy.minQuorum) {
+    return fail('InsufficientSources', `only ${distinct.length} distinct healthy source(s), need ${policy.minQuorum}`);
   }
-  const sorted = [...healthy].sort((a, b) => cmp(a.tryPerUsdc, b.tryPerUsdc));
+  const sorted = [...distinct].sort((a, b) => cmp(a.tryPerUsdc, b.tryPerUsdc));
 
   const prices = sorted.map((q) => q.tryPerUsdc);
   const mid = medianElement(prices);

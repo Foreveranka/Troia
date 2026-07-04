@@ -13,7 +13,7 @@ import {
   type BuildContext,
 } from '../../core/src/index.js';
 import { aggregate, type OraclePolicy, type SourceQuote } from '../../oracle/src/index.js';
-import { priceUsdc, STROOP } from '../../pricing/src/index.js';
+import { commissionBps, priceUsdc, STROOP, type ReturnStats } from '../../pricing/src/index.js';
 import { Ledger } from '../../ledger/src/index.js';
 
 // Faz 1.7 — COMPOSITION smoke test. One happy-path order is threaded through the whole money core,
@@ -108,10 +108,15 @@ describe('integration — one order through the whole money core', () => {
     const mid = rate.quote.midTryPerUsdc;
     expect(mid).toBe(405_000_000n); // 40.50 TRY/USDC — the median element, NOT the 405.33 mean
 
-    // (6) PRICING — the oracle mid feeds transparent spread pricing.
-    const price = priceUsdc(USDC_OUT, mid, 150);
-    expect(price.userTryKurus).toBe(4110n); // 41.10 TRY
-    expect(price.spreadRevenueKurus).toBe(60n); // 0.60 TRY margin
+    // (6) PRICING — the oracle mid feeds the FX-risk COMMISSION model (komisyon-modeli.docx), whose integer
+    // bps feeds transparent spread pricing. muDaily/sigmaDaily are computeReturnStats(6-month USD/TRY closes)
+    // in production; here we use the doc's measured calm-regime values. A T+15 valör prices to 229 bps (§4).
+    const stats: ReturnStats = { muDaily: 0.00055, sigmaDaily: 0.003 };
+    const spreadBps = commissionBps(stats, { valorDays: 15, z: 1, marginBps: 30 });
+    expect(spreadBps).toBe(229); // %2.29 — the honest price of 15 days of FX risk (drift + buffer + margin)
+    const price = priceUsdc(USDC_OUT, mid, spreadBps);
+    expect(price.userTryKurus).toBe(4142n); // 41.42 TRY
+    expect(price.spreadRevenueKurus).toBe(92n); // 0.92 TRY commission
 
     // (7) LEDGER — book the settlement straight from the pricing outputs; double-entry balances.
     const ledger = new Ledger();
@@ -123,7 +128,7 @@ describe('integration — one order through the whole money core', () => {
       spreadKurus: price.spreadRevenueKurus,
     });
     expect(entry.ref).toBe(intent.orderId); // ledger keyed by the SAME identity used everywhere
-    expect(ledger.totalSpreadRevenueKurus()).toBe(60n);
+    expect(ledger.totalSpreadRevenueKurus()).toBe(92n); // the commission booked as transparent margin
     expect(ledger.trialBalanceKurus()).toBe(0n);
 
     // (8) DRIFT — on-chain truth (100 funded − 1 paid = 99 USDC) matches the ledger.

@@ -4,21 +4,27 @@ import {
   ALL_STATES,
   initialState,
   isAbsoluteTerminal,
-  isVoidPending,
+  isManualReview,
+  isReversalPending,
   MUTATION_EFFECTS,
+  REVERSAL_PENDING_STATES,
   transition,
-  VOID_PENDING_STATES,
 } from '../src/index.js';
 import type { Effect, Event, State, TransitionResult } from '../src/index.js';
 
+// MONEY-FIRST model (Phase 4.6): reserve FIRST → charge the TRY (direct sale, no preauth) → submit the
+// irreversible USDC leg LAST → on USDC failure void the completed sale. No capture/hold machinery.
+
 const ALL_EVENTS: readonly Event[] = [
-  { type: 'preauthOk' },
-  { type: 'preauthRejected' },
-  { type: 'preauthUnknown' },
   { type: 'solvencyOk' },
   { type: 'solvencyFail' },
   { type: 'solvencyUnknown' },
+  { type: 'chargeOk' },
+  { type: 'chargeRejected' },
+  { type: 'chargeUnknown' },
+  { type: 'checkoutInitFailed' },
   { type: 'recover' },
+  { type: 'recoverResubmit' },
   { type: 'evidenceSuccess' },
   { type: 'evidenceReverted' },
   { type: 'evidencePending' },
@@ -29,17 +35,11 @@ const ALL_EVENTS: readonly Event[] = [
   { type: 'revertAlreadyProcessed' },
   { type: 'revertBalanceGuard' },
   { type: 'revertOther' },
-  { type: 'captureWriteAhead' },
-  { type: 'holdExpired' },
-  { type: 'captureSuccess' },
-  { type: 'captureUnknown' },
-  { type: 'captureFailed', retriesRemaining: true },
-  { type: 'captureFailed', retriesRemaining: false },
   { type: 'reconciled' },
-  { type: 'voidConfirmed' },
-  { type: 'voidUnknown' },
-  { type: 'voidNotVoided', retriesRemaining: true },
-  { type: 'voidNotVoided', retriesRemaining: false },
+  { type: 'reversalConfirmed' },
+  { type: 'reversalUnknown' },
+  { type: 'reversalNotDone', retriesRemaining: true },
+  { type: 'reversalNotDone', retriesRemaining: false },
 ];
 
 interface Edge {
@@ -58,11 +58,12 @@ function allEdges(): Edge[] {
   return out;
 }
 
+// Observe-only events must never carry an external mutation. recoverResubmit is DELIBERATELY excluded:
+// it is a positively-proven-safe same-seq resubmit of a never-sent pay(), not an observe-only stay.
 const OBSERVE_ONLY_EVENTS = new Set([
-  'preauthUnknown',
   'solvencyUnknown',
-  'captureUnknown',
-  'voidUnknown',
+  'chargeUnknown',
+  'reversalUnknown',
   'recover',
   'evidencePending',
   'pollStillPending',
@@ -80,24 +81,26 @@ describe('state machine — totality & shape', () => {
   it('state classes are disjoint and cover the terminals correctly', () => {
     for (const s of ABSOLUTE_TERMINAL_STATES) {
       expect(isAbsoluteTerminal(s)).toBe(true);
-      expect(isVoidPending(s)).toBe(false);
+      expect(isReversalPending(s)).toBe(false);
+      expect(isManualReview(s)).toBe(false);
     }
-    for (const s of VOID_PENDING_STATES) {
-      expect(isVoidPending(s)).toBe(true);
+    for (const s of REVERSAL_PENDING_STATES) {
+      expect(isReversalPending(s)).toBe(true);
       expect(isAbsoluteTerminal(s)).toBe(false);
     }
-    expect(ALL_STATES.length).toBe(15);
+    expect(isManualReview('LossReview')).toBe(true);
+    expect(ALL_STATES.length).toBe(12);
   });
 
-  it('initialState is Reserved and fires the preauth', () => {
+  it('initialState is Reserved and reserves solvency FIRST (before any charge)', () => {
     const init = initialState();
     expect(init.state).toBe('Reserved');
-    expect(init.effects).toEqual(['firePreauth']);
+    expect(init.effects).toEqual(['fireSolvencyCheck']);
   });
 });
 
 describe('state machine — reachability & terminals (D7)', () => {
-  it('every one of the 15 states is reachable from Reserved', () => {
+  it('every one of the 12 states is reachable from Reserved', () => {
     const reachable = new Set<State>(['Reserved']);
     let changed = true;
     while (changed) {
@@ -123,21 +126,27 @@ describe('state machine — reachability & terminals (D7)', () => {
     }
   });
 
-  it('every non-absolute-terminal state has at least one outgoing transition', () => {
+  it('LossReview is a manual sink — absorbs every event, never auto-advances', () => {
+    for (const e of ALL_EVENTS) {
+      expect(transition('LossReview', e).status).toBe('ignored');
+    }
+  });
+
+  it('every state that is not a terminal/sink has at least one outgoing transition', () => {
     for (const s of ALL_STATES) {
-      if (isAbsoluteTerminal(s)) continue;
+      if (isAbsoluteTerminal(s) || isManualReview(s)) continue;
       const hasOut = ALL_EVENTS.some((e) => transition(s, e).status === 'transition');
       expect(hasOut, `state ${s} has no outgoing transition`).toBe(true);
     }
   });
 
-  it('TryCaptured advances only on reconciled and ignores duplicates', () => {
-    expect(transition('TryCaptured', { type: 'reconciled' })).toEqual({
+  it('UsdcConfirmed advances only on reconciled and ignores duplicates', () => {
+    expect(transition('UsdcConfirmed', { type: 'reconciled' })).toEqual({
       status: 'transition',
       next: 'Reconciled',
       effects: [],
     });
-    expect(transition('TryCaptured', { type: 'captureSuccess' }).status).toBe('ignored');
+    expect(transition('UsdcConfirmed', { type: 'evidenceSuccess' }).status).toBe('ignored');
   });
 });
 
@@ -147,17 +156,29 @@ describe('state machine — money-safety invariants', () => {
       e.result.status === 'transition',
   );
 
-  it('Reconciled is reachable ONLY via TryCaptured + reconciled', () => {
+  it('Reconciled is reachable ONLY via UsdcConfirmed + reconciled', () => {
     const intoReconciled = transitions.filter((e) => e.result.next === 'Reconciled');
     expect(intoReconciled).toHaveLength(1);
-    expect(intoReconciled[0]!.state).toBe('TryCaptured');
+    expect(intoReconciled[0]!.state).toBe('UsdcConfirmed');
     expect(intoReconciled[0]!.event.type).toBe('reconciled');
   });
 
-  it('entering a void-pending state always fires the cancel (no stranded TRY hold)', () => {
-    const voidPending = new Set<State>(VOID_PENDING_STATES);
+  it('the irreversible USDC submit never fires before the TRY charge, nor on an unknown charge', () => {
+    const submits = new Set<Effect>(['submitPay', 'submitReplacementSameSeq']);
     for (const e of transitions) {
-      if (voidPending.has(e.result.next) && e.result.next !== e.state) {
+      const carriesSubmit = e.result.effects.some((eff) => submits.has(eff));
+      if (!carriesSubmit) continue;
+      // A submit may only be reached AFTER the charge (from a post-charge state), never from Reserved/
+      // SolvencyReserved on an ambiguous event.
+      expect(e.state, `submit fired from ${e.state}`).not.toBe('Reserved');
+      if (e.state === 'SolvencyReserved') expect(e.event.type).toBe('chargeOk');
+    }
+  });
+
+  it('entering a reversal-pending state always voids the completed sale (no stranded charge)', () => {
+    const pending = new Set<State>(REVERSAL_PENDING_STATES);
+    for (const e of transitions) {
+      if (pending.has(e.result.next) && e.result.next !== e.state) {
         expect(e.result.effects, `entry ${e.state}->${e.result.next} must void`).toContain('fireCancel');
       }
     }
@@ -174,29 +195,40 @@ describe('state machine — money-safety invariants', () => {
   it('DEAD reuses the SAME seq while REVERTED-other reallocates a NEW seq', () => {
     const deadRetry = transition('UsdcDead', { type: 'deadRetry', retriesRemaining: true });
     const revertOther = transition('UsdcReverted', { type: 'revertOther' });
-    expect(deadRetry.status).toBe('transition');
-    expect(revertOther.status).toBe('transition');
     if (deadRetry.status === 'transition') {
       expect(deadRetry.effects).toContain('submitReplacementSameSeq');
       expect(deadRetry.effects).not.toContain('reallocateSeq');
+    } else {
+      throw new Error('deadRetry should transition');
     }
     if (revertOther.status === 'transition') {
       expect(revertOther.effects).toContain('reallocateSeq');
       expect(revertOther.effects).not.toContain('submitReplacementSameSeq');
+    } else {
+      throw new Error('revertOther should transition');
     }
   });
 
-  it('UsdcReverted classify: AlreadyProcessed -> UsdcConfirmed, BalanceGuard -> SolvencyRejected', () => {
+  it('UsdcReverted classify: AlreadyProcessed -> UsdcConfirmed (no handToReconciler), BalanceGuard -> ChargeReversing', () => {
     const ap = transition('UsdcReverted', { type: 'revertAlreadyProcessed' });
     const bg = transition('UsdcReverted', { type: 'revertBalanceGuard' });
-    expect(ap.status === 'transition' && ap.next).toBe('UsdcConfirmed'); // NOT Reconciled (D2a)
-    expect(bg.status === 'transition' && bg.next).toBe('SolvencyRejected'); // NOT LossReview (D2b)
+    expect(ap).toEqual({ status: 'transition', next: 'UsdcConfirmed', effects: [] }); // reverted hash, no evidence append
+    expect(bg.status === 'transition' && bg.next).toBe('ChargeReversing');
+    if (bg.status === 'transition') expect(bg.effects).toContain('fireCancel');
   });
 
-  it('write-ahead precedes every entering submit/postauth (D5)', () => {
-    const writeGuarded: readonly Effect[] = ['submitPay', 'submitReplacementSameSeq', 'firePostauth'];
+  it('recoverResubmit resends the never-sent pay() on the SAME seq, write-ahead first', () => {
+    const r = transition('UsdcSubmitted', { type: 'recoverResubmit' });
+    expect(r).toEqual({
+      status: 'transition',
+      next: 'UsdcSubmitted',
+      effects: ['persistInFlight', 'submitReplacementSameSeq'],
+    });
+  });
+
+  it('write-ahead precedes every entering submit (D5), self-loops included', () => {
+    const writeGuarded: readonly Effect[] = ['submitPay', 'submitReplacementSameSeq'];
     for (const e of transitions) {
-      if (e.result.next === e.state) continue; // self-loop retries already persisted on entry
       const effects = e.result.effects;
       for (const guarded of writeGuarded) {
         const gi = effects.indexOf(guarded);
@@ -213,12 +245,10 @@ describe('state machine — money-safety invariants', () => {
 describe('state machine — canonical walks', () => {
   it('happy path: Reserved -> ... -> Reconciled', () => {
     const steps: [State, Event, State][] = [
-      ['Reserved', { type: 'preauthOk' }, 'TryPreauthed'],
-      ['TryPreauthed', { type: 'solvencyOk' }, 'UsdcSubmitted'],
+      ['Reserved', { type: 'solvencyOk' }, 'SolvencyReserved'],
+      ['SolvencyReserved', { type: 'chargeOk' }, 'UsdcSubmitted'],
       ['UsdcSubmitted', { type: 'evidenceSuccess' }, 'UsdcConfirmed'],
-      ['UsdcConfirmed', { type: 'captureWriteAhead' }, 'CaptureSubmitted'],
-      ['CaptureSubmitted', { type: 'captureSuccess' }, 'TryCaptured'],
-      ['TryCaptured', { type: 'reconciled' }, 'Reconciled'],
+      ['UsdcConfirmed', { type: 'reconciled' }, 'Reconciled'],
     ];
     for (const [from, event, to] of steps) {
       const r = transition(from, event);
@@ -227,38 +257,55 @@ describe('state machine — canonical walks', () => {
     }
   });
 
-  it('solvency-fail path voids the hold: TryPreauthed -> SolvencyRejected -> TryHoldVoided', () => {
-    const r1 = transition('TryPreauthed', { type: 'solvencyFail' });
-    expect(r1).toEqual({ status: 'transition', next: 'SolvencyRejected', effects: ['fireCancel'] });
-    const r2 = transition('SolvencyRejected', { type: 'voidConfirmed' });
-    expect(r2).toEqual({ status: 'transition', next: 'TryHoldVoided', effects: [] });
-  });
-
-  it('dead -> abandonment releases seq AND voids the hold (D1)', () => {
-    const r = transition('UsdcDead', { type: 'deadRetry', retriesRemaining: false });
-    expect(r.status).toBe('transition');
-    if (r.status === 'transition') {
-      expect(r.next).toBe('AbandonedSeqReturned');
-      expect(r.effects).toEqual(['releaseSeq', 'releaseReservation', 'fireCancel']);
-    }
-  });
-
-  it('void 3-valued: Unknown re-polls, NotVoided retries within budget then quiesces when exhausted', () => {
-    expect(transition('LossReview', { type: 'voidUnknown' })).toEqual({
+  it('solvency-fail is clean before any charge: Reserved -> FailedClean (release seq, no void)', () => {
+    expect(transition('Reserved', { type: 'solvencyFail' })).toEqual({
       status: 'transition',
-      next: 'LossReview',
+      next: 'FailedClean',
+      effects: ['releaseSeq'],
+    });
+  });
+
+  it('a declined sale is clean: SolvencyReserved -> FailedClean (release seq + reservation, no void)', () => {
+    expect(transition('SolvencyReserved', { type: 'chargeRejected' })).toEqual({
+      status: 'transition',
+      next: 'FailedClean',
+      effects: ['releaseSeq', 'releaseReservation'],
+    });
+  });
+
+  it('dead -> abandonment releases seq AND voids the completed sale', () => {
+    const r = transition('UsdcDead', { type: 'deadRetry', retriesRemaining: false });
+    expect(r).toEqual({
+      status: 'transition',
+      next: 'ChargeReversing',
+      effects: ['releaseSeq', 'releaseReservation', 'fireCancel'],
+    });
+  });
+
+  it('reversal 3-valued: Unknown re-polls, NotVoided retries within budget then escalates to LossReview', () => {
+    expect(transition('ChargeReversing', { type: 'reversalUnknown' })).toEqual({
+      status: 'transition',
+      next: 'ChargeReversing',
       effects: ['rePollObserveOnly'],
     });
-    // budget remaining -> bounded retry cancel
-    expect(transition('LossReview', { type: 'voidNotVoided', retriesRemaining: true })).toEqual({
+    // budget remaining -> bounded retry void
+    expect(transition('ChargeReversing', { type: 'reversalNotDone', retriesRemaining: true })).toEqual({
       status: 'transition',
-      next: 'LossReview',
+      next: 'ChargeReversing',
       effects: ['fireCancel'],
     });
-    // budget exhausted -> quiesce in place (no unbounded cancel loop); the hold expires naturally
-    expect(transition('LossReview', { type: 'voidNotVoided', retriesRemaining: false })).toEqual({
+    // budget exhausted -> DURABLE flag + LossReview (a failed refund does NOT self-heal; never silent-quiesce)
+    expect(transition('ChargeReversing', { type: 'reversalNotDone', retriesRemaining: false })).toEqual({
       status: 'transition',
       next: 'LossReview',
+      effects: ['flagLoss'],
+    });
+  });
+
+  it('reversal confirmed reaches the clean terminal ChargeReversed', () => {
+    expect(transition('ChargeReversing', { type: 'reversalConfirmed' })).toEqual({
+      status: 'transition',
+      next: 'ChargeReversed',
       effects: [],
     });
   });
@@ -266,8 +313,8 @@ describe('state machine — canonical walks', () => {
 
 describe('state machine — rejects undefined pairs', () => {
   it('rejects events that do not belong to the state', () => {
-    expect(transition('Reserved', { type: 'solvencyOk' }).status).toBe('rejected');
-    expect(transition('UsdcConfirmed', { type: 'captureSuccess' }).status).toBe('rejected');
-    expect(transition('TryPreauthed', { type: 'voidConfirmed' }).status).toBe('rejected');
+    expect(transition('Reserved', { type: 'chargeOk' }).status).toBe('rejected');
+    expect(transition('SolvencyReserved', { type: 'solvencyOk' }).status).toBe('rejected');
+    expect(transition('UsdcSubmitted', { type: 'reconciled' }).status).toBe('rejected');
   });
 });

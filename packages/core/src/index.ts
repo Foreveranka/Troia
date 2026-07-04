@@ -26,10 +26,11 @@ export {
   transition,
   initialState,
   isAbsoluteTerminal,
-  isVoidPending,
+  isReversalPending,
+  isManualReview,
   ALL_STATES,
   ABSOLUTE_TERMINAL_STATES,
-  VOID_PENDING_STATES,
+  REVERSAL_PENDING_STATES,
   MUTATION_EFFECTS,
 } from './state-machine.js';
 export type { State, Event, EventType, Effect, TransitionResult } from './state-machine.js';

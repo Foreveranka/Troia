@@ -10,8 +10,9 @@
 //   - escalate: a burned-but-unproven seq (verdictToCore INDETERMINATE_LOSS_REVIEW) has NO core event, so the
 //     driver writes a DURABLE indeterminateLossReview loss flag and quiesces WITHOUT burning/reusing the seq
 //     or moving money — quarantined for the reconciler. (4.3d recovery must not re-drive a loss-flagged order.)
-//   - start(): guarded, idempotent bootstrap — firePreauth (a MUTATION_EFFECT) fires ONLY on a fresh
-//     createIfAbsent, so an at-least-once /intent or a crash-retry can never open a second checkout session.
+//   - start(): guarded, idempotent bootstrap — the reserve->checkout-form sequence runs to quiescence ONLY on
+//     a fresh createIfAbsent, so an at-least-once /intent or a crash-retry can never double-reserve the pool
+//     or open a second checkout session.
 
 import { initialState, isAbsoluteTerminal, transition } from '@troia/core';
 import type { Event, State } from '@troia/core';
@@ -103,16 +104,19 @@ export async function run(
       event = decision;
       continue;
     }
-    event = null; // quiesce: durable wait (rePollObserveOnly / TryCaptured / firePreauth) or terminal
+    event = null; // quiesce: durable wait (rePollObserveOnly / UsdcConfirmed / fireCheckoutForm) or terminal
   }
 
   return finish(ctx, state, sideOutputs, escalate, isAbsoluteTerminal(state) ? 'terminal' : 'waiting');
 }
 
 /**
- * Guarded, idempotent bootstrap. initialState() = {Reserved, [firePreauth]} has NO triggering event, so the
- * bootstrap effects run directly (perform ignores the null entering event; firePreauth is start-and-wait).
- * createIfAbsent makes this crash-safe: 'exists' short-circuits WITHOUT re-firing firePreauth.
+ * Guarded, idempotent bootstrap. initialState() = {Reserved, [fireSolvencyCheck]} has NO triggering event, so
+ * the bootstrap effect runs directly (perform ignores the null entering event). Because fireSolvencyCheck FEEDS
+ * a core event (solvencyOk/Fail/Unknown), the bootstrap must then RUN TO QUIESCENCE via run(): solvencyOk
+ * drives Reserved->SolvencyReserved[fireCheckoutForm] and quiesces with the hosted-form side-output; solvencyFail
+ * ->FailedClean; solvencyUnknown stays in Reserved. createIfAbsent makes this crash-safe: 'exists' short-circuits
+ * WITHOUT re-reserving or re-opening a form. The reserve therefore happens BEFORE the customer can be charged.
  */
 export async function start(ctx: OrderCtx, deps: EngineDeps): Promise<RunResult> {
   const boot = initialState();
@@ -120,26 +124,29 @@ export async function start(ctx: OrderCtx, deps: EngineDeps): Promise<RunResult>
   if (created === 'exists') return finish(ctx, boot.state, [], null, 'alreadyStarted');
 
   let c = ctx;
-  const sideOutputs: SideOutput[] = [];
-  let escalate: { readonly reason: string } | null = null;
+  const bootSideOutputs: SideOutput[] = [];
+  let fed: Event | null = null;
   for (const effect of boot.effects) {
     const p = await perform(effect, c, boot.state, null, deps);
     if (p.ctxPatch) c = { ...c, ...p.ctxPatch };
-    if (p.sideOutput) sideOutputs.push(p.sideOutput);
-    if (p.escalate) escalate = p.escalate;
+    if (p.sideOutput) bootSideOutputs.push(p.sideOutput);
+    if (p.escalate) {
+      // Defensive: no bootstrap effect (fireSolvencyCheck) can escalate today, but if one ever does, quarantine
+      // money-safely rather than leave the order bricked. Nothing was charged at this point.
+      await applyEscalate(c, deps);
+      return finish(c, boot.state, bootSideOutputs, p.escalate, 'escalated');
+    }
+    if (p.event) fed = p.event;
   }
-  if (escalate) {
-    // The hosted-form init failed (timeout/malformed = UNKNOWN — the form MAY exist). createIfAbsent already
-    // committed the row, so a redelivered start() would short-circuit to 'alreadyStarted' and never re-fire.
-    // Write a DURABLE, non-money marker (no TRY hold, no USDC here) so the order is observable/recoverable by
-    // the 4.3d reconciler instead of silently bricked — and do NOT blind re-fire (could open a 2nd checkout).
-    await deps.store.flagLoss(c.orderId, 'checkoutInitFailed', null);
-    return finish(c, boot.state, sideOutputs, escalate, 'escalated');
+  // fireSolvencyCheck always feeds a solvency event → continue to quiescence (reserve, then the checkout form).
+  if (fed !== null) {
+    const rest = await run(c, boot.state, fed, deps);
+    return finish(rest.ctx, rest.state, [...bootSideOutputs, ...rest.sideOutputs], rest.escalate, rest.quiescence);
   }
-  return finish(c, boot.state, sideOutputs, null, 'waiting');
+  return finish(c, boot.state, bootSideOutputs, null, 'waiting');
 }
 
-/** Feed an external event: webhook (preauth/solvency), poll-worker (evidence/poll), or reconciler (reconciled). */
+/** Feed an external event: webhook (charge), poll-worker (evidence/poll/recovery), or reconciler (reconciled). */
 export function advance(ctx: OrderCtx, state: State, event: Event, deps: EngineDeps): Promise<RunResult> {
   return run(ctx, state, event, deps);
 }

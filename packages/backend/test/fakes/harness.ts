@@ -53,9 +53,9 @@ export class FakeStore implements Store {
   readonly losses: { orderId: string; bucket: LossBucket; usdcTxHash: string | null }[] = [];
   readonly evidence: { orderId: string; record: EvidenceRecord }[] = [];
   readonly deadRetries = new Map<string, number>();
-  readonly captureRetries = new Map<string, number>();
-  readonly voidRetries = new Map<string, number>();
+  readonly reversalRetries = new Map<string, number>();
   reserveResult: ReserveOutcome = { kind: 'reserved', reservationId: 'res-1' };
+  availableResult = 1_000_000_000_000n; // large by default (gate passes); scriptable for circuit-breaker tests
 
   constructor(
     private readonly trace: Trace,
@@ -98,15 +98,13 @@ export class FakeStore implements Store {
     this.deadRetries.set(orderId, n);
     return n;
   }
-  async bumpCaptureRetries(orderId: string): Promise<number> {
-    const n = (this.captureRetries.get(orderId) ?? 0) + 1;
-    this.captureRetries.set(orderId, n);
+  async bumpReversalRetries(orderId: string): Promise<number> {
+    const n = (this.reversalRetries.get(orderId) ?? 0) + 1;
+    this.reversalRetries.set(orderId, n);
     return n;
   }
-  async bumpVoidRetries(orderId: string): Promise<number> {
-    const n = (this.voidRetries.get(orderId) ?? 0) + 1;
-    this.voidRetries.set(orderId, n);
-    return n;
+  availableStroops(): bigint {
+    return this.availableResult;
   }
 }
 
@@ -145,7 +143,6 @@ export class FakeStellarPort implements StellarPort {
 
 export class FakePspPort implements PspPort {
   init: RawIyzicoResult = body({ status: 'success', token: 'tok-1', checkoutFormContent: '<html/>', conversationId: 'cid' });
-  postAuth: RawIyzicoResult = body({ status: 'success', paymentId: 'pay-1', conversationId: 'cid' });
   cancelResult: RawIyzicoResult = body({ status: 'success', conversationId: 'cid' });
 
   constructor(private readonly trace: Trace) {}
@@ -155,7 +152,8 @@ export class FakePspPort implements PspPort {
     return this.init;
   }
   retrievePaymentStatus = 'SUCCESS';
-  retrieveFraudStatus: number | undefined = 1; // 1 => preauthEvent -> preauthOk
+  retrieveFraudStatus: number | undefined = 1; // paymentStatus SUCCESS + fraudStatus 1 => chargeEvent -> chargeOk
+  retrievePhase: string | undefined = undefined; // undefined/AUTH => a captured sale; PRE_AUTH would read UNKNOWN
   async retrieveCheckoutFormResult(p: RetrieveCheckoutFormParams): Promise<RawIyzicoResult> {
     this.trace.push('psp.retrieveCheckoutFormResult');
     // echo the backend-issued token + conversationId so the webhook cross-checks pass
@@ -165,22 +163,13 @@ export class FakePspPort implements PspPort {
       paymentId: 'pay-1',
       paymentStatus: this.retrievePaymentStatus,
       fraudStatus: this.retrieveFraudStatus,
+      ...(this.retrievePhase !== undefined ? { phase: this.retrievePhase } : {}),
       conversationId: p.conversationId,
     });
-  }
-  async createPreAuth(): Promise<RawIyzicoResult> {
-    return body({ status: 'success', paymentId: 'pay-1', conversationId: 'cid' });
-  }
-  async createPostAuth(): Promise<RawIyzicoResult> {
-    this.trace.push('psp.createPostAuth');
-    return this.postAuth;
   }
   async cancel(): Promise<RawIyzicoResult> {
     this.trace.push('psp.cancel');
     return this.cancelResult;
-  }
-  async refund(): Promise<RawIyzicoResult> {
-    return body({ status: 'success', conversationId: 'cid' });
   }
 }
 
@@ -226,10 +215,9 @@ export function makeConfig(): EngineConfig {
     },
     policy: {
       maxDeadRetries: 3,
-      maxCaptureRetries: 3,
-      maxVoidRetries: 3,
+      maxReversalRetries: 3,
       reservationTtlMs: 600_000,
-      preauthValidityUnix: 4_102_444_800,
+      poolLowWatermarkStroops: 0n,
     },
   };
 }
@@ -270,7 +258,7 @@ export function makeCtx(store: FakeStore, overrides: Partial<OrderCtx> = {}): Or
     signedXdr: null,
     payMaxTimeUnix: null,
     deadRetries: 0,
-    captureRetries: 0,
+    reversalRetries: 0,
     ...overrides,
   };
 }

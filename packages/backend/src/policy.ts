@@ -3,22 +3,20 @@
 // PERSISTED deterministic counter (never a timer), so recovery/replay picks the same branch.
 
 export interface PolicyConfig {
-  /** max same-seq replacements of a dead USDC tx before abandoning the order. */
+  /** max same-seq replacements of a dead USDC tx before abandoning the order (then reversing the charge). */
   readonly maxDeadRetries: number;
-  /** max PostAuth (capture) retries before declaring LOSS_REVIEW. */
-  readonly maxCaptureRetries: number;
-  /** max iyzico.cancel (void) retries before quiescing the void-pending state (hold expires naturally). */
-  readonly maxVoidRetries: number;
+  /** max sale-reversal (iyzico.cancel / same-day void) retries before escalating the reversal to LossReview. */
+  readonly maxReversalRetries: number;
   /** how long a solvency reservation stays active (ms). */
   readonly reservationTtlMs: number;
-  /** conservative upper bound (unix seconds) after which a confirmed hold is treated as expired. */
-  readonly preauthValidityUnix: number;
+  /** money-first circuit-breaker: if pool `available()` is at/below this (stroops), the storefront is warned
+   *  the pool is low. The hard gate is separate — a per-order reserve failure fail-closes /intent regardless. */
+  readonly poolLowWatermarkStroops: bigint;
 }
 
 export const OFFLINE_DEFAULT_POLICY: PolicyConfig = {
   maxDeadRetries: 3,
-  maxCaptureRetries: 3,
-  maxVoidRetries: 3,
+  maxReversalRetries: 3,
   reservationTtlMs: 10 * 60 * 1000,
-  preauthValidityUnix: 4_102_444_800, // 2100-01-01 — offline placeholder; 4.5 measures the real window
+  poolLowWatermarkStroops: 0n, // offline placeholder; 4.5 sets a real low-water mark from the funded pool size
 };

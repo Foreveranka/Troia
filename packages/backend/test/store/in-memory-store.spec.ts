@@ -30,17 +30,17 @@ describe('InMemoryStore — Store interface conformance', () => {
   it('appendEvidence and flagLoss record durably', async () => {
     const s = mk();
     await s.appendEvidence('o1', { txHash: 'h', signedXdr: 'x', seq: '1001' });
-    await s.flagLoss('o1', 'captureFailed', 'h');
+    await s.flagLoss('o1', 'reversalExhausted', 'h');
     expect(s.evidenceRecords()).toEqual([{ orderId: 'o1', record: { txHash: 'h', signedXdr: 'x', seq: '1001' } }]);
-    expect(s.lossRecords()[0]).toMatchObject({ orderId: 'o1', bucket: 'captureFailed', usdcTxHash: 'h' });
+    expect(s.lossRecords()[0]).toMatchObject({ orderId: 'o1', bucket: 'reversalExhausted', usdcTxHash: 'h' });
   });
 
-  it('bump*Retries return the NEW post-increment value from 0', async () => {
+  it('bump*Retries return the NEW post-increment value from 0 (dead + reversal are independent counters)', async () => {
     const s = mk();
     expect(await s.bumpDeadRetries('o1')).toBe(1);
     expect(await s.bumpDeadRetries('o1')).toBe(2);
-    expect(await s.bumpCaptureRetries('o1')).toBe(1); // independent counter
-    expect(await s.bumpVoidRetries('o1')).toBe(1);
+    expect(await s.bumpReversalRetries('o1')).toBe(1); // independent counter, unaffected by deadRetries
+    expect(await s.bumpReversalRetries('o1')).toBe(2);
   });
 
   it('reserve is idempotent per order (one reservation, same id, counted once)', async () => {

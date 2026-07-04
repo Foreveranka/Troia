@@ -9,22 +9,23 @@ export type PublicStatus = 'pending' | 'processing' | 'completed' | 'failed' | '
 export function toPublicStatus(state: State): PublicStatus {
   switch (state) {
     case 'Reserved':
-    case 'TryPreauthed':
+    case 'SolvencyReserved':
+      // reserving / awaiting the customer's payment on the hosted form — nothing charged, nothing settled yet.
       return 'pending';
     case 'UsdcSubmitted':
     case 'UsdcPending':
-    case 'UsdcConfirmed':
     case 'UsdcDead':
     case 'UsdcReverted':
-    case 'CaptureSubmitted':
+      // charged; the USDC leg is in flight / being resolved.
       return 'processing';
-    case 'TryCaptured':
+    case 'UsdcConfirmed':
     case 'Reconciled':
+      // USDC landed at the merchant (the charge was already taken) — done from the customer's view.
       return 'completed';
+    case 'ChargeReversing':
+    case 'ChargeReversed':
     case 'FailedClean':
-    case 'TryHoldVoided':
-    case 'SolvencyRejected':
-    case 'AbandonedSeqReturned':
+      // the payment did not go through (declined, or USDC failed and the sale is being/was voided).
       return 'failed';
     case 'LossReview':
       return 'review';

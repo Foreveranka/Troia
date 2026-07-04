@@ -13,11 +13,11 @@ export interface OrderCtx {
   readonly memoHex: string;
   /** iyzico-side facts (present after the hosted form completes). */
   readonly paymentId: string | null;
-  /** the hosted checkout-form token issued by start()'s initializeCheckoutForm side-output. The webhook
-   *  re-retrieves the form result by THIS backend-issued token (never the webhook-echoed one) — the V3
+  /** the hosted DIRECT-SALE form token issued when fireCheckoutForm runs (after solvency is reserved). The
+   *  webhook re-retrieves the form result by THIS backend-issued token (never the webhook-echoed one) — the V3
    *  preimage concatenates fields with no separator, so a webhook token is not uniquely bound. */
   readonly token: string | null;
-  readonly paidPriceTry: string; // TRY amount to capture at PostAuth
+  readonly paidPriceTry: string; // TRY amount charged at the direct sale (money-first: taken up front)
   readonly currency: string;
   readonly ip: string;
   /** the order's currently-allocated sequence (decimal string), if any. */
@@ -32,5 +32,5 @@ export interface OrderCtx {
   readonly payMaxTimeUnix: number | null;
   /** persisted deterministic retry counters. */
   readonly deadRetries: number;
-  readonly captureRetries: number;
+  readonly reversalRetries: number;
 }

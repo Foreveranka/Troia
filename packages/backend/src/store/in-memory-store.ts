@@ -69,8 +69,7 @@ export class InMemoryStore implements Store {
   private readonly evidence: EvidenceRow[] = [];
   private readonly losses: LossRow[] = [];
   private readonly deadRetries = new Map<string, number>();
-  private readonly captureRetries = new Map<string, number>();
-  private readonly voidRetries = new Map<string, number>();
+  private readonly reversalRetries = new Map<string, number>();
 
   constructor(opts: InMemoryStoreOptions) {
     this.ledger = new ReservationLedger(opts.balanceStroops);
@@ -144,18 +143,14 @@ export class InMemoryStore implements Store {
     this.deadRetries.set(orderId, n);
     return n;
   }
-  async bumpCaptureRetries(orderId: string): Promise<number> {
-    const n = (this.captureRetries.get(orderId) ?? 0) + 1;
-    this.captureRetries.set(orderId, n);
-    return n;
-  }
-  async bumpVoidRetries(orderId: string): Promise<number> {
-    const n = (this.voidRetries.get(orderId) ?? 0) + 1;
-    this.voidRetries.set(orderId, n);
+  async bumpReversalRetries(orderId: string): Promise<number> {
+    const n = (this.reversalRetries.get(orderId) ?? 0) + 1;
+    this.reversalRetries.set(orderId, n);
     return n;
   }
 
-  // --- read-side helpers (for the composition root / tests; not on the Store interface) ---
+  // availableStroops satisfies the Store interface (money-first circuit-breaker read); the rest are read-side
+  // helpers for the composition root / tests only.
 
   availableStroops(): bigint {
     return this.ledger.available();

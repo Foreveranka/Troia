@@ -33,19 +33,18 @@ const NOW = 1_000_000;
 const POLICY: OraclePolicy = { maxAgeMs: 5_000, deviationThresholdBps: 100, minQuorum: 3 };
 const q = (source: string, tryPerUsdc: bigint): SourceQuote => ({ source, tryPerUsdc, asOfMs: NOW });
 
-// The happy path through the reducer: PreAuth → solvency → USDC confirmed → capture → reconciled.
+// The happy path through the reducer (money-first): solvency reserved → TRY charged → USDC confirmed →
+// reconciled. Reserved → SolvencyReserved → UsdcSubmitted → UsdcConfirmed → Reconciled.
 const HAPPY_PATH: readonly Event[] = [
-  { type: 'preauthOk' },
   { type: 'solvencyOk' },
+  { type: 'chargeOk' },
   { type: 'evidenceSuccess' },
-  { type: 'captureWriteAhead' },
-  { type: 'captureSuccess' },
   { type: 'reconciled' },
 ];
 
 /** Fold events through the pure reducer, asserting every step is a real (table-listed) transition. */
 function drive(events: readonly Event[]): { state: State; effects: readonly string[] } {
-  let { state } = initialState(); // Reserved (+ firePreauth)
+  let { state } = initialState(); // Reserved (+ fireSolvencyCheck)
   const effects: string[] = [];
   for (const e of events) {
     const r = transition(state, e);
@@ -90,13 +89,14 @@ describe('integration — one order through the whole money core', () => {
     // (4) STATE MACHINE — the pure reducer is EVENT-driven, so this section is control-flow-threaded,
     // not data-coupled to the order (data-coupling arrives with the Phase-4 orchestrator that produces
     // these events from real calls). What it does prove: the happy path reaches the absolute terminal,
-    // and the K1 ordering invariant holds — the USDC-moving effect (submitPay) STRICTLY precedes the
-    // capture effect (firePostauth), i.e. capture is last so float is zero.
+    // and the K1 ordering invariant holds — the reversible TRY-charge effect (fireCheckoutForm) STRICTLY
+    // precedes the irreversible USDC-moving effect (submitPay), i.e. USDC is last, so a failed send can
+    // still be unwound by voiding the already-secured sale rather than stranding money.
     const run = drive(HAPPY_PATH);
     expect(run.state).toBe('Reconciled');
     expect(isAbsoluteTerminal(run.state)).toBe(true);
     expect(run.effects).toContain('submitPay');
-    expect(run.effects.indexOf('firePostauth')).toBeGreaterThan(run.effects.indexOf('submitPay'));
+    expect(run.effects.indexOf('submitPay')).toBeGreaterThan(run.effects.indexOf('fireCheckoutForm'));
 
     // (5) ORACLE — deterministic mid from an agreeing trio (fail-closed otherwise). The trio is
     // ASYMMETRIC on purpose: median(403,405,408)=405.00 but mean=405.33, so pinning mid to 405.00

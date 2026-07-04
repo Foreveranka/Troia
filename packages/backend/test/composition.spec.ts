@@ -34,10 +34,18 @@ describe('buildEngineConfig — NetworkConfig -> EngineConfig, secret-free', () 
     expect(cfg.stellar.timeboundsSecs).toBe(e.timeboundsSecs);
     expect(cfg.psp).toBe(e.psp);
     expect(cfg.policy).toBe(e.policy);
+    // money-first policy shape: the reversal/pool fields replace the removed capture/preauth ones.
+    expect(cfg.policy.maxReversalRetries).toBe(e.policy.maxReversalRetries);
+    expect(cfg.policy.poolLowWatermarkStroops).toBe(e.policy.poolLowWatermarkStroops);
+    expect(cfg.policy).not.toHaveProperty('maxCaptureRetries');
+    expect(cfg.policy).not.toHaveProperty('maxVoidRetries');
+    expect(cfg.policy).not.toHaveProperty('preauthValidityUnix');
   });
 
   it('carries NO secret (no apiKey / secretKey anywhere)', () => {
-    const json = JSON.stringify(buildEngineConfig(network, extras()));
+    // poolLowWatermarkStroops is a bigint under the money-first policy, so serialize with a bigint replacer.
+    const bigintSafe = (_k: string, v: unknown): unknown => (typeof v === 'bigint' ? v.toString() : v);
+    const json = JSON.stringify(buildEngineConfig(network, extras()), bigintSafe);
     expect(json).not.toMatch(/secretKey|apiKey|secret/i);
     expect(Object.keys(buildEngineConfig(network, extras()))).toEqual(['stellar', 'psp', 'policy']);
   });

@@ -1,17 +1,17 @@
-// The Fastify HTTP shell + composition. Three routes: POST /intent (fail-closed ① order start -> hosted
-// checkout), GET /status/:orderId (coarse public status), POST /webhook (iyzico preauth result -> drive
-// settlement). The app OWNS the per-order KeyedMutex (single-writer per order across intent/webhook/poll) and
-// is handed injected deps (fakes offline; real adapters + durable registry at 4.3d).
+// The Fastify HTTP shell + composition. Three routes: POST /intent (money-first: reserve pool -> hosted DIRECT-
+// SALE checkout, fail-closed if the pool cannot cover), GET /status/:orderId (coarse public status), POST
+// /webhook (iyzico charge result -> submit the USDC leg). The app OWNS the per-order KeyedMutex (single-writer
+// per order across intent/webhook/poll) and is handed injected deps (fakes offline; real adapters at 4.4).
 //
 // WEBHOOK MONEY GATE (SPIKE-4): verifyWebhookSignature is the FIRST thing that runs; a forged/absent signature
 // returns 401 with ZERO side effects (no registry/store/psp/engine touch). A valid signature proves only
-// AUTHENTICITY — the USDC decision comes from a server-side re-retrieve keyed on the BACKEND-issued token
-// (never the webhook-echoed one) plus the state===Reserved guard, never the webhook's status field.
+// AUTHENTICITY — the charge outcome comes from a server-side re-retrieve keyed on the BACKEND-issued token
+// (never the webhook-echoed one) plus the state===SolvencyReserved guard, never the webhook's status field.
 
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
-import { PayoutIntent } from '@troia/core';
-import { preauthEvent, projectCheckoutFormResult, verifyWebhookSignature } from '@troia/psp';
+import { canonicalizeOrderId, PayoutIntent } from '@troia/core';
+import { chargeEvent, projectCheckoutFormResult, verifyWebhookSignature } from '@troia/psp';
 import type { WebhookEvent } from '@troia/psp';
 import type { OrderCtx } from '../ctx.js';
 import { advance, start } from '../engine/driver.js';
@@ -55,7 +55,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const raw = request.body;
     if (typeof raw !== 'object' || raw === null) return reply.code(400).send({ error: 'BadRequest' });
     const body = raw as Record<string, unknown>;
-    const orderId = optStr(body, 'orderId');
+    const rawOrderId = optStr(body, 'orderId');
     const destination = optStr(body, 'destination');
     const amountStr = optStr(body, 'amountStroops');
     const assetIssuer = optStr(body, 'assetIssuer');
@@ -65,12 +65,17 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const currency = optStr(body, 'currency');
     const ip = optStr(body, 'ip');
     if (
-      orderId === undefined || orderId.length === 0 || destination === undefined || amountStr === undefined ||
+      rawOrderId === undefined || rawOrderId.length === 0 || destination === undefined || amountStr === undefined ||
       assetIssuer === undefined || memoHex === undefined || rateStr === undefined || paidPriceTry === undefined ||
       currency === undefined || ip === undefined
     ) {
       return reply.code(400).send({ error: 'BadRequest' });
     }
+    // Canonicalize the orderId at the trust boundary (derive-ids.ts contract): the SequenceAllocator keys on the
+    // canonical (NFC) form, so the lock / registry / store / reservation MUST too — else two NFC-equivalent but
+    // byte-different orderIds collapse to one sequence yet split into two locks/orders/reservations/forms
+    // (a double pool-reserve + a second charge surface). One identity for every per-order guard.
+    const orderId = canonicalizeOrderId(rawOrderId);
 
     let amount: bigint;
     let appliedRate: bigint;
@@ -94,6 +99,13 @@ export function createApp(deps: AppDeps): FastifyInstance {
     );
     if (!built.ok) return reply.code(400).send({ error: built.error }); // fail-closed ①: no seq, no order
 
+    // money-first circuit-breaker (HARD gate): never allocate a seq / start an order the pool cannot cover, so
+    // the customer is never charged for USDC we cannot deliver. Best-effort fast-fail; reserve() inside start()
+    // is the authoritative atomic gate (a race that slips past here still fails closed at the reserve).
+    if (engine.store.availableStroops() < amount) {
+      return reply.code(409).send({ error: 'PoolInsufficient' }); // fail-closed ①: no seq, no order, no charge
+    }
+
     const ids = built.value.fields.ids;
     const seq = engine.store.sequences.allocate(orderId);
     const ctx: OrderCtx = {
@@ -113,7 +125,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       signedXdr: null,
       payMaxTimeUnix: null,
       deadRetries: 0,
-      captureRetries: 0,
+      reversalRetries: 0,
     };
     // pre-lock: register the conversationId -> orderId index so a webhook can find the order. GUARD against
     // clobbering an already-started order — a duplicate/retried /intent must not reset its persisted token
@@ -136,20 +148,27 @@ export function createApp(deps: AppDeps): FastifyInstance {
       if (outcome.token === null) return reply.code(409).send({ error: 'AlreadyStarted' });
       return reply.send({ orderId, token: outcome.token, alreadyStarted: true });
     }
-    if (outcome.quiescence === 'escalated') return reply.code(502).send({ error: 'CheckoutInitFailed' });
-    if (outcome.checkout === undefined) return reply.code(502).send({ error: 'NoCheckout' });
+    if (outcome.checkout === undefined) {
+      // no form issued: the atomic reserve lost a race with the gate, the reserve was unknown, or the form init
+      // malformed. All are fail-closed (nothing charged) and transient — the storefront may retry.
+      return reply.code(503).send({ error: 'CheckoutUnavailable' });
+    }
+    // low-water WARNING (money-first "uyar"): surface a low pool so the storefront can warn before it empties.
+    const poolLow = engine.store.availableStroops() <= engine.config.policy.poolLowWatermarkStroops;
     return reply.send({
       orderId,
       token: outcome.checkout.token,
       checkoutFormContent: outcome.checkout.formContent,
+      poolLow,
     });
   });
 
   // GET /status/:orderId — coarse public status; NEVER the internal crypto state.
   app.get('/status/:orderId', async (request, reply) => {
     const params = request.params as { orderId?: string };
-    const orderId = params.orderId;
-    if (typeof orderId !== 'string' || orderId.length === 0) return reply.code(400).send({ error: 'BadRequest' });
+    const rawOrderId = params.orderId;
+    if (typeof rawOrderId !== 'string' || rawOrderId.length === 0) return reply.code(400).send({ error: 'BadRequest' });
+    const orderId = canonicalizeOrderId(rawOrderId); // key on the same canonical identity /intent registered under
     const rec = registry.getByOrderId(orderId);
     if (rec === undefined) return reply.code(404).send({ error: 'NotFound' });
     return reply.send({ orderId, status: toPublicStatus(rec.state) });
@@ -189,8 +208,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
     const result = await orderLocks.run(orderId, async () => {
       const current = registry.getByConversationId(conv) ?? rec;
-      // idempotent: only the preauth-pending state consumes a CHECKOUT_FORM_AUTH; anything else is a no-op.
-      if (current.state !== 'Reserved') return { status: 'noop' as const };
+      // idempotent: only the charge-pending state (SolvencyReserved: reserved + form shown) consumes a
+      // CHECKOUT_FORM_AUTH; anything else is a no-op.
+      if (current.state !== 'SolvencyReserved') return { status: 'noop' as const };
       // the webhook-echoed token must match the backend-issued one; re-retrieve by the PERSISTED token.
       if (current.ctx.token === null || event.token !== current.ctx.token) {
         return { status: 'tokenMismatch' as const };
@@ -199,7 +219,13 @@ export function createApp(deps: AppDeps): FastifyInstance {
       const proj = projectCheckoutFormResult(retrieved);
       if (proj.kind === 'ok' && proj.conversationId !== conv) return { status: 'convMismatch' as const };
       const patchedCtx: OrderCtx = proj.kind === 'ok' ? { ...current.ctx, paymentId: proj.paymentId } : current.ctx;
-      const r = await advance(patchedCtx, 'Reserved', preauthEvent(retrieved), engine);
+      // Advance to the IRREVERSIBLE USDC leg ONLY when the projector validated the sale AND extracted a durable
+      // paymentId into ctx (needed to void the sale later). A malformed retrieve — even one whose raw looks
+      // successful — is chargeUnknown (stay), NEVER a chargeOk with a null paymentId that we could not unwind.
+      // chargeEvent then decides: chargeOk submits the USDC leg (money LAST); chargeRejected fails clean;
+      // chargeUnknown stays (re-driven by the poll worker's re-retrieve worklist).
+      const coreEvent = proj.kind === 'ok' ? chargeEvent(retrieved) : { type: 'chargeUnknown' as const };
+      const r = await advance(patchedCtx, 'SolvencyReserved', coreEvent, engine);
       registry.put(r.ctx, r.state); // in-lock single-writer
       return { status: 'ok' as const, quiescence: r.quiescence };
     });

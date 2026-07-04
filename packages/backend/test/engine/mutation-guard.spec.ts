@@ -9,13 +9,15 @@ import {
 
 // A representative value of EVERY event type (the 3-valued families + backend-decision + recovery events).
 const ALL_EVENTS: readonly Event[] = [
-  { type: 'preauthOk' },
-  { type: 'preauthRejected' },
-  { type: 'preauthUnknown' },
   { type: 'solvencyOk' },
   { type: 'solvencyFail' },
   { type: 'solvencyUnknown' },
+  { type: 'chargeOk' },
+  { type: 'chargeRejected' },
+  { type: 'chargeUnknown' },
+  { type: 'checkoutInitFailed' },
   { type: 'recover' },
+  { type: 'recoverResubmit' },
   { type: 'evidenceSuccess' },
   { type: 'evidenceReverted' },
   { type: 'evidencePending' },
@@ -26,17 +28,11 @@ const ALL_EVENTS: readonly Event[] = [
   { type: 'revertAlreadyProcessed' },
   { type: 'revertBalanceGuard' },
   { type: 'revertOther' },
-  { type: 'captureWriteAhead' },
-  { type: 'holdExpired' },
-  { type: 'captureSuccess' },
-  { type: 'captureUnknown' },
-  { type: 'captureFailed', retriesRemaining: true },
-  { type: 'captureFailed', retriesRemaining: false },
   { type: 'reconciled' },
-  { type: 'voidConfirmed' },
-  { type: 'voidUnknown' },
-  { type: 'voidNotVoided', retriesRemaining: true },
-  { type: 'voidNotVoided', retriesRemaining: false },
+  { type: 'reversalConfirmed' },
+  { type: 'reversalUnknown' },
+  { type: 'reversalNotDone', retriesRemaining: true },
+  { type: 'reversalNotDone', retriesRemaining: false },
 ];
 
 describe('mutation-on-uncertainty guard (property over the whole core table)', () => {
@@ -67,9 +63,25 @@ describe('mutation-on-uncertainty guard (property over the whole core table)', (
     }
   });
 
+  // recoverResubmit is the NEW model's mutation-carrying recovery: a crash between the charge and submitPay
+  // left NO pay() witness, so a SAME-seq replacement is money-safe and MUST be allowed. It shares the
+  // 'recover' prefix with the observe-only 'recover', so the guard must distinguish them: recoverResubmit is
+  // NOT observe-only even though its transition emits a mutation (submitReplacementSameSeq).
+  it('recoverResubmit is NOT observe-only and its transition carries a mutation the guard allows', () => {
+    const resubmit: Event = { type: 'recoverResubmit' };
+    expect(isObserveOnlyEvent(resubmit)).toBe(false);
+    const r = transition('UsdcSubmitted', resubmit);
+    expect(r.status).toBe('transition');
+    if (r.status !== 'transition') return; // narrow for the type checker
+    expect(containsMutation(r.effects)).toBe(true);
+    expect(r.effects).toContain('submitReplacementSameSeq');
+    // A mutation on a non-observe-only event is legitimate → the guard must NOT dead-letter it.
+    expect(() => assertNoMutationOnUnknown(resubmit, r.effects)).not.toThrow();
+  });
+
   it('the guard THROWS if a mutation effect is ever paired with an observe-only event (synthetic)', () => {
     const oneMutation = MUTATION_EFFECTS.slice(0, 1);
-    expect(() => assertNoMutationOnUnknown({ type: 'preauthUnknown' }, oneMutation)).toThrow();
+    expect(() => assertNoMutationOnUnknown({ type: 'solvencyUnknown' }, oneMutation)).toThrow();
     expect(() => assertNoMutationOnUnknown({ type: 'recover' }, oneMutation)).toThrow();
     // a non-observe-only event with a mutation is fine
     expect(() => assertNoMutationOnUnknown({ type: 'solvencyOk' }, oneMutation)).not.toThrow();

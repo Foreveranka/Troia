@@ -1,26 +1,20 @@
 // perform() — the IMPURE effect executor. planEffect (wave-1) decided WHICH port call an effect becomes;
 // perform actually makes the call and PROJECTS its result into the next core Event using the already-tested
-// pure projectors (@troia/stellar-client verdictToCore, @troia/psp classify/voidEvent, ./classify-revert).
-// It holds NO money-branching of its own — every SUCCESS/FAILURE/UNKNOWN decision is delegated to those
-// pure functions, so the money-safety asymmetry proven in psp/stellar-client is preserved here verbatim.
+// pure projectors (@troia/stellar-client verdictToCore, @troia/psp classify, ./classify-revert). It holds NO
+// money-branching of its own — every SUCCESS/FAILURE/UNKNOWN decision is delegated to those pure functions, so
+// the money-safety asymmetry proven in psp/stellar-client is preserved here verbatim.
 //
 // Contract: at most ONE effect per core transition feeds an event (audited: it is always the LAST effect),
 // so the driver takes perform()'s `event` as THE next event. Local effects (persist/seq/release/flag/observe)
-// return event:null. firePreauth is start-and-wait (URL side-output, no event). submit escalate carries a
-// burned-but-unproven seq to the driver's durable quarantine (no core event exists for it).
+// return event:null. fireCheckoutForm is start-and-wait (URL side-output, no event) except an inline
+// checkoutInitFailed if the init malforms. submit escalate carries a burned-but-unproven seq to the driver's
+// durable quarantine (no core event exists for it).
 
 import { deriveIds } from '@troia/core';
 import type { Effect, Event, State } from '@troia/core';
 import type { PayRequest, ReducerState } from '@troia/stellar-client';
 import { verdictToCore } from '@troia/stellar-client';
-import type {
-  Address,
-  BasketItem,
-  Buyer,
-  CancelParams,
-  InitializeCheckoutFormParams,
-  PostAuthParams,
-} from '@troia/psp';
+import type { Address, BasketItem, Buyer, CancelParams, InitializeCheckoutFormParams } from '@troia/psp';
 import { classifyIyzicoResult, projectCheckoutFormInit } from '@troia/psp';
 import type { OrderCtx } from '../ctx.js';
 import type { InFlightPatch } from '../ports.js';
@@ -68,17 +62,6 @@ function checkoutFormParams(ctx: OrderCtx, deps: EngineDeps): InitializeCheckout
     shippingAddress: psp.shippingAddress as Address,
     billingAddress: psp.billingAddress as Address,
     basketItems,
-  };
-}
-
-function postAuthParams(ctx: OrderCtx, deps: EngineDeps): PostAuthParams {
-  return {
-    locale: deps.config.psp.locale,
-    conversationId: ctx.conversationId,
-    paymentId: requirePaymentId(ctx),
-    paidPrice: ctx.paidPriceTry,
-    currency: ctx.currency,
-    ip: ctx.ip,
   };
 }
 
@@ -143,8 +126,8 @@ async function doSubmitAndObserve(ctx: OrderCtx, coreState: State, deps: EngineD
 
 /**
  * Execute one effect. `coreState` is the state just ENTERED (r.next); `enteringEvent` is the event that
- * triggered the transition, or null for the eventless bootstrap (only firePreauth runs there, which does not
- * consult it). Total over the 14 effects.
+ * triggered the transition, or null for the eventless bootstrap (only fireSolvencyCheck runs there, which does
+ * not consult it). Total over the 13 effects.
  */
 export async function perform(
   effect: Effect,
@@ -154,12 +137,14 @@ export async function perform(
   deps: EngineDeps,
 ): Promise<PerformResult> {
   switch (effect) {
-    case 'firePreauth': {
-      // Hosted-form start-and-wait: return the checkout URL/token side-output; the preauth OUTCOME arrives
-      // later via the webhook (retrieve -> preauthEvent). NEVER feeds a core event here.
+    case 'fireCheckoutForm': {
+      // Hosted DIRECT-SALE start-and-wait: return the checkout URL/token side-output; the charge OUTCOME
+      // arrives later via the webhook (retrieve -> chargeEvent). The happy path feeds NO core event. If the
+      // form INIT itself malforms, emit a clean checkoutInitFailed (nothing was charged) -> FailedClean; this
+      // is a money-SAFE clean failure, never an indeterminate-loss escalate.
       const raw = await deps.psp.initializeCheckoutForm(checkoutFormParams(ctx, deps));
       const proj = projectCheckoutFormInit(raw);
-      if (proj.kind === 'malformed') return { event: null, escalate: { reason: `checkout init: ${proj.reason}` } };
+      if (proj.kind === 'malformed') return { event: { type: 'checkoutInitFailed' } };
       return {
         event: null,
         sideOutput: { kind: 'checkoutForm', token: proj.token, formContent: proj.checkoutFormContent },
@@ -212,38 +197,33 @@ export async function perform(
       await deps.store.releaseReservation(ctx.orderId, releaseReason(coreState));
       return NO_EVENT;
 
-    case 'firePostauth': {
-      const raw = await deps.psp.createPostAuth(postAuthParams(ctx, deps));
-      const cls = classifyIyzicoResult(raw, 'capture');
-      if (cls === 'SUCCESS') return { event: { type: 'captureSuccess' } };
-      if (cls === 'UNKNOWN') return { event: { type: 'captureUnknown' } };
-      // FAILURE (definitely-not-captured): consume the persisted retry budget, then decide retry vs LossReview.
-      const n = await deps.store.bumpCaptureRetries(ctx.orderId);
-      return { event: { type: 'captureFailed', retriesRemaining: n <= deps.config.policy.maxCaptureRetries } };
-    }
-
     case 'fireCancel': {
-      // Void the live TRY hold. A definite FAILURE is safe to re-drive (idempotent), but ONLY within a
-      // persisted budget — otherwise a permanently-declining cancel (e.g. an already-expired hold) would loop
-      // fireCancel forever. On budget exhaustion the core quiesces the void-pending state (hold expires).
+      // Void the completed TRY sale (same-day /payment/cancel), unwinding a charge whose USDC leg failed. Both a
+      // definite FAILURE and an UNKNOWN mean "the sale is NOT confirmed voided". UNLIKE the irreversible USDC
+      // leg, re-issuing a same-day void is money-SAFE — a second cancel of an already-voided sale cannot lose
+      // money — so BOTH re-drive within a persisted budget and, once exhausted, escalate to a DURABLE LossReview.
+      // (SUCCESS is the only confirming outcome.) There is no hold to expire in the money-first model, so an
+      // UNKNOWN must NEVER be a bare observe-only stay: nothing re-polls ChargeReversing, so a stay would strand
+      // a CHARGED order forever with no void and no loss flag. The bounded in-driver retry guarantees the
+      // reversal always converges (ChargeReversed or LossReview) within a single advance().
       const raw = await deps.psp.cancel(cancelParams(ctx, deps));
       const cls = classifyIyzicoResult(raw, 'void');
-      if (cls === 'SUCCESS') return { event: { type: 'voidConfirmed' } };
-      if (cls === 'UNKNOWN') return { event: { type: 'voidUnknown' } };
-      const n = await deps.store.bumpVoidRetries(ctx.orderId);
-      return { event: { type: 'voidNotVoided', retriesRemaining: n <= deps.config.policy.maxVoidRetries } };
+      if (cls === 'SUCCESS') return { event: { type: 'reversalConfirmed' } };
+      const n = await deps.store.bumpReversalRetries(ctx.orderId);
+      return { event: { type: 'reversalNotDone', retriesRemaining: n <= deps.config.policy.maxReversalRetries } };
     }
 
     case 'flagLoss':
-      // USDC was sent; record the one irreversible-loss bucket with the on-chain witness. The bucket is keyed
-      // off the entering event (holdExpired vs captureFailed), which is always present on a flagLoss path.
+      // A reversal budget was exhausted (a completed charge whose same-day void could not complete): record the
+      // durable stuck-refund bucket with the on-chain witness, so it is observable for manual action. The bucket
+      // is keyed off the entering event (reversalNotDone), which is always present on a flagLoss path.
       if (enteringEvent === null) throw new EngineError(`order ${ctx.orderId}: flagLoss without an entering event`);
       await deps.store.flagLoss(ctx.orderId, flagLossBucket(enteringEvent), ctx.hashHex);
       return NO_EVENT;
 
     case 'handToReconciler': {
-      // Append the landed witness ONLY — do NOT synthesize {reconciled}. The order quiesces in TryCaptured
-      // (a durable wait); the offline reconciler (4.3d) drives ->Reconciled only after verifyReport MATCHES.
+      // Append the landed witness ONLY — do NOT synthesize {reconciled}. The order quiesces in UsdcConfirmed
+      // (a durable wait); the offline reconciler drives ->Reconciled only after verifyReport MATCHES.
       if (ctx.hashHex === null || ctx.signedXdr === null || ctx.activeSeq === null) {
         throw new EngineError(`order ${ctx.orderId}: cannot append evidence — pay() witness missing`);
       }

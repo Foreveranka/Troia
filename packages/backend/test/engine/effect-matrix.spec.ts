@@ -4,8 +4,8 @@ import type { Effect } from '@troia/core';
 import { planEffect } from '../../src/engine/plan.js';
 
 const ALL_EFFECTS: readonly Effect[] = [
-  'firePreauth',
   'fireSolvencyCheck',
+  'fireCheckoutForm',
   'persistInFlight',
   'submitPay',
   'submitReplacementSameSeq',
@@ -13,7 +13,6 @@ const ALL_EFFECTS: readonly Effect[] = [
   'confirmBurnedSeq',
   'releaseSeq',
   'releaseReservation',
-  'firePostauth',
   'fireCancel',
   'flagLoss',
   'handToReconciler',
@@ -30,8 +29,9 @@ const LOCAL_EFFECTS: readonly Effect[] = [
   'rePollObserveOnly',
 ];
 
-describe('effect matrix — all 14 effects map, and `mutates` mirrors core MUTATION_EFFECTS', () => {
+describe('effect matrix — all 13 effects map, and `mutates` mirrors core MUTATION_EFFECTS', () => {
   it('every effect has a total plan', () => {
+    expect(ALL_EFFECTS).toHaveLength(13);
     for (const e of ALL_EFFECTS) {
       const plan = planEffect(e);
       expect(plan, e).toBeDefined();

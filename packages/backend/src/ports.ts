@@ -13,10 +13,7 @@ import type {
 import type {
   CancelParams,
   InitializeCheckoutFormParams,
-  PostAuthParams,
-  PreAuthParams,
   RawIyzicoResult,
-  RefundParams,
   RetrieveCheckoutFormParams,
 } from '@troia/psp';
 
@@ -32,14 +29,12 @@ export interface StellarPort {
   readRevertErrorCode(orderId: string): Promise<number | null>;
 }
 
-/** iyzico side: the shipped PaymentProvider verbatim. */
+/** iyzico side (money-first): the hosted DIRECT-SALE form + its retrieve, and cancel (same-day sale void).
+ *  No preauth/postauth — the customer is charged directly; a failed USDC send is unwound by voiding the sale. */
 export interface PspPort {
   initializeCheckoutForm(p: InitializeCheckoutFormParams): Promise<RawIyzicoResult>;
   retrieveCheckoutFormResult(p: RetrieveCheckoutFormParams): Promise<RawIyzicoResult>;
-  createPreAuth(p: PreAuthParams): Promise<RawIyzicoResult>;
-  createPostAuth(p: PostAuthParams): Promise<RawIyzicoResult>;
   cancel(p: CancelParams): Promise<RawIyzicoResult>;
-  refund(p: RefundParams): Promise<RawIyzicoResult>;
 }
 
 /** Timestamps + backoff ONLY — never consulted for deadness/expiry (that is ledger-close-time sourced). */
@@ -52,13 +47,13 @@ export type ReserveOutcome =
   | { readonly kind: 'insufficient'; readonly available: bigint; readonly requested: bigint }
   | { readonly kind: 'unknown' };
 
-export type ReleaseReason = 'abandoned' | 'balanceGuardRevert' | 'solvencyReject' | 'expired';
-/** captureFailed/holdExpired are core-emitted (USDC sent, TRY not captured); indeterminateLossReview is the
- *  out-of-band escalate marker for a burned-but-unproven sequence (verdictToCore INDETERMINATE_LOSS_REVIEW):
- *  a DURABLE quarantine record the reconciler must resolve, written WITHOUT moving money or touching the seq.
- *  checkoutInitFailed is the (NON-money) durable marker for a failed hosted-form bootstrap in start() — no TRY
- *  hold, no USDC; it makes a bricked pre-money order observable/recoverable rather than silently stuck. */
-export type LossBucket = 'captureFailed' | 'holdExpired' | 'indeterminateLossReview' | 'checkoutInitFailed';
+export type ReleaseReason = 'abandoned' | 'balanceGuardRevert' | 'expired';
+/** The two money-first loss buckets. indeterminateLossReview: a burned-but-unproven sequence (verdictToCore
+ *  INDETERMINATE_LOSS_REVIEW) whose USDC fate is genuinely unknown — a DURABLE quarantine written WITHOUT
+ *  moving money or touching the seq; the charge is NOT reversed (USDC may have landed). reversalExhausted: a
+ *  completed charge whose USDC failed AND whose same-day void could not be completed within budget — a real
+ *  stuck refund that must be surfaced for manual action (a failed refund does NOT self-heal). */
+export type LossBucket = 'indeterminateLossReview' | 'reversalExhausted';
 
 export interface InFlightPatch {
   readonly seq?: string;
@@ -76,8 +71,8 @@ export interface EvidenceRecord {
 /** Persistence + SPIKE-3 solvency. Every mutating method runs under the caller's withOrderLock (4.3b). */
 export interface Store {
   /** Idempotent write-ahead order creation. 'created' on the FIRST call for an orderId, 'exists' on any
-   *  redelivery — start() fires firePreauth (a MUTATION_EFFECT) ONLY on 'created', so an at-least-once
-   *  /intent trigger or a crash-retry can never open a second checkout session / duplicate TRY hold. */
+   *  redelivery — start() runs the reserve→checkout-form bootstrap ONLY on 'created', so an at-least-once
+   *  /intent trigger or a crash-retry can never double-reserve the pool or open a second checkout session. */
   createIfAbsent(orderId: string): Promise<'created' | 'exists'>;
   persistState(orderId: string, next: State, patch: InFlightPatch): Promise<void>;
   reserve(orderId: string, amountStroops: bigint, ttlMs: number, nowMs: number): Promise<ReserveOutcome>;
@@ -89,7 +84,11 @@ export interface Store {
    *  is `newCount <= policy.max*Retries`, so recovery/replay re-reads the same counter and picks the same
    *  branch (never a timer). Atomic under withOrderLock. */
   bumpDeadRetries(orderId: string): Promise<number>;
-  bumpCaptureRetries(orderId: string): Promise<number>;
-  bumpVoidRetries(orderId: string): Promise<number>;
+  bumpReversalRetries(orderId: string): Promise<number>;
+  /** Best-effort read of `balance − Σ held reservations` (stroops) for the money-first circuit-breaker: the
+   *  /intent hard gate (available < amount → 409, no charge) and the low-watermark warning. This is NOT the
+   *  authoritative solvency gate — reserve() is (atomic, under the pool mutex); a dirty read here only fast-
+   *  fails the obvious empty-pool case and surfaces the warning. */
+  availableStroops(): bigint;
   readonly sequences: SequenceProvider;
 }

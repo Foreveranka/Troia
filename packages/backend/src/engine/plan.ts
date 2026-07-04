@@ -2,10 +2,11 @@
 // becomes the next core Event. This is the unit-testable heart of the engine: the DECISION ("which call") is
 // pure and here; the CALL itself is impure and in perform.ts. `mutates` mirrors core MUTATION_EFFECTS exactly.
 //
-// Correction to the audit's draft (fix-design-first): firePreauth uses the HOSTED checkout form, which is
-// ASYNC — initializeCheckoutForm returns a form URL (a side output for the /api/intent response) and NO
-// immediate outcome. The preauth result arrives LATER via the webhook -> retrieveCheckoutFormResult ->
-// preauthEvent. So firePreauth feeds NO core event here (feedsEventVia:'none'); it is a start-and-wait.
+// Money-first (Phase 4.6): the FIRST effect is fireSolvencyCheck (reserve the pool BEFORE any charge). The
+// hosted form (fireCheckoutForm) is the DIRECT-SALE variant and is ASYNC — initializeCheckoutForm returns a
+// form URL (a side output for the /intent response) and NO immediate outcome; the charge result arrives LATER
+// via the webhook -> retrieveCheckoutFormResult -> chargeEvent. So fireCheckoutForm feeds NO core event on the
+// happy path (feedsEventVia:'none'); it only emits checkoutInitFailed inline if the form init itself malforms.
 
 import type { Effect } from '@troia/core';
 
@@ -16,29 +17,29 @@ export type FeedsEventVia =
   | 'reserveOutcome'
   | 'verdictToCore'
   | 'classifyRevertCause'
-  | 'captureEvent'
-  | 'voidEvent'
+  | 'reversalEvent'
   | 'reconcile';
 
 export interface EffectPlan {
   readonly port: Port;
   readonly call: string;
-  /** true iff this effect is a core MUTATION_EFFECT (moves money / places-or-voids an authorization). */
+  /** true iff this effect is a core MUTATION_EFFECT (moves money / places-or-voids a charge). */
   readonly mutates: boolean;
   readonly feedsEventVia: FeedsEventVia;
 }
 
 const TABLE: Readonly<Record<Effect, EffectPlan>> = {
-  // firePreauth: hosted form initialize -> URL side-output, NO event (outcome via webhook re-retrieve).
-  firePreauth: { port: 'psp', call: 'initializeCheckoutForm', mutates: true, feedsEventVia: 'none' },
-  // solvency reservation (SPIKE-3) -> solvencyOk|solvencyFail|solvencyUnknown.
+  // solvency reservation (SPIKE-3), FIRST — the pool must hold USDC before the customer can be charged.
   fireSolvencyCheck: { port: 'store', call: 'reserve', mutates: false, feedsEventVia: 'reserveOutcome' },
+  // hosted DIRECT-SALE form initialize -> URL side-output, no happy-path event (outcome via webhook). Inline
+  // checkoutInitFailed only if the init itself malforms. mutates:true so it can never fire on an Unknown/stay.
+  fireCheckoutForm: { port: 'psp', call: 'initializeCheckoutForm', mutates: true, feedsEventVia: 'none' },
   // write-ahead: persist the next state + in-flight artifact BEFORE the entering effect runs.
   persistInFlight: { port: 'store', call: 'persistState', mutates: false, feedsEventVia: 'none' },
   // submit pay() -> observe -> verdictToCore -> evidenceSuccess|evidenceReverted|evidencePending.
   submitPay: { port: 'stellar', call: 'submitPay', mutates: true, feedsEventVia: 'verdictToCore' },
-  // UsdcDead retry: the wire call is stellar.submitPay; perform() first does sequences.reuseOnDead(seq) then
-  // submitPay with the SAME seq + new timebounds (never a fresh seq) -> observe -> verdictToCore.
+  // UsdcDead retry / never-sent recovery: the wire call is stellar.submitPay; perform() first does
+  // sequences.reuseOnDead(seq) then submitPay with the SAME seq + new timebounds -> observe -> verdictToCore.
   submitReplacementSameSeq: {
     port: 'stellar',
     call: 'submitPay',
@@ -56,10 +57,8 @@ const TABLE: Readonly<Record<Effect, EffectPlan>> = {
   },
   releaseSeq: { port: 'sequences', call: 'release', mutates: false, feedsEventVia: 'none' },
   releaseReservation: { port: 'store', call: 'releaseReservation', mutates: false, feedsEventVia: 'none' },
-  // capture the frozen TRY -> captureSuccess|captureFailed|captureUnknown.
-  firePostauth: { port: 'psp', call: 'createPostAuth', mutates: true, feedsEventVia: 'captureEvent' },
-  // void the live TRY hold -> voidConfirmed|voidNotVoided|voidUnknown.
-  fireCancel: { port: 'psp', call: 'cancel', mutates: true, feedsEventVia: 'voidEvent' },
+  // void the completed TRY sale (same-day /payment/cancel) -> reversalConfirmed|reversalNotDone|reversalUnknown.
+  fireCancel: { port: 'psp', call: 'cancel', mutates: true, feedsEventVia: 'reversalEvent' },
   flagLoss: { port: 'store', call: 'flagLoss', mutates: false, feedsEventVia: 'none' },
   // record the landed witness + run reconciliation -> reconciled.
   handToReconciler: { port: 'store', call: 'appendEvidence', mutates: false, feedsEventVia: 'reconcile' },

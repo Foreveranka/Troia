@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { intentBody, makeHttpHarness } from './http-harness.js';
+import { TIMEOUT } from '../fakes/harness.js';
+import { AMOUNT, intentBody, makeHttpHarness } from './http-harness.js';
 
-describe('POST /intent — fail-closed ① order start', () => {
-  it('starts the order, returns the hosted checkout, and registers it as pending', async () => {
+describe('POST /intent — money-first ① order start', () => {
+  it('reserves the pool, returns the hosted direct-sale checkout, and registers it as pending', async () => {
     const h = makeHttpHarness();
     const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ orderId: 'order-1', token: 'tok-1', checkoutFormContent: '<html/>' });
+    // money-first response: backend-issued token + hosted form content + the low-water "uyar" flag
+    expect(res.json()).toEqual({ orderId: 'order-1', token: 'tok-1', checkoutFormContent: '<html/>', poolLow: false });
     // the backend-issued token is persisted for the later webhook re-retrieve
     expect(h.registry.getByOrderId('order-1')?.ctx.token).toBe('tok-1');
-    expect(h.registry.getByOrderId('order-1')?.state).toBe('Reserved');
+    // a successful start reserves the pool then quiesces at SolvencyReserved (charge pending, form shown)
+    expect(h.registry.getByOrderId('order-1')?.state).toBe('SolvencyReserved');
 
     const status = await h.app.inject({ method: 'GET', url: '/status/order-1' });
     expect(status.json()).toEqual({ orderId: 'order-1', status: 'pending' });
@@ -34,8 +37,50 @@ describe('POST /intent — fail-closed ① order start', () => {
     expect(second.json()).toMatchObject({ orderId: 'order-1', token: 'tok-1', alreadyStarted: true });
     // the registry record still carries the backend-issued token -> the webhook can still settle
     expect(h.registry.getByOrderId('order-1')?.ctx.token).toBe('tok-1');
-    // firePreauth fired exactly once across both calls (idempotent createIfAbsent)
+    // the hosted checkout form was initialized exactly once across both calls (idempotent createIfAbsent)
     expect(h.trace.filter((t) => t === 'psp.initializeCheckoutForm')).toHaveLength(1);
+  });
+
+  it('canonicalizes the orderId: NFC-equivalent orderIds are ONE order (no double reserve, no second form)', async () => {
+    const h = makeHttpHarness();
+    const nfd = 'order-caf' + 'e\u0301'; // 'e' + U+0301 combining acute (NFD)
+    const nfc = 'order-caf' + '\u00e9'; // precomposed acute e (NFC) - SAME canonical identity as nfd
+    const before = h.store.availableStroops();
+
+    const first = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody(nfd) });
+    expect(first.statusCode).toBe(200);
+    const afterFirst = h.store.availableStroops();
+    expect(before - afterFirst).toBe(AMOUNT); // exactly ONE reservation held
+
+    const second = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody(nfc) });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toMatchObject({ alreadyStarted: true }); // the SAME logical order, not a second one
+    expect(h.store.availableStroops()).toBe(afterFirst); // NO second pool reservation (double-reserve prevented)
+    expect(h.trace.filter((t) => t === 'psp.initializeCheckoutForm')).toHaveLength(1); // one checkout form only
+  });
+
+  it('circuit-breaker: 409 PoolInsufficient when the pool cannot cover the amount (no seq, no order, no charge)', async () => {
+    const h = makeHttpHarness(0n); // empty pool: availableStroops() (0) < amount
+    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'PoolInsufficient' });
+    // fail-closed ①: the HARD gate fires BEFORE createIfAbsent/reserve/allocate — nothing leaked, nothing charged
+    expect(h.registry.getByOrderId('order-1')).toBeUndefined();
+    expect(h.trace).not.toContain('store.createIfAbsent');
+    expect(h.trace).not.toContain('store.reserve');
+    expect(h.trace).not.toContain('psp.initializeCheckoutForm');
+    expect(h.trace).not.toContain('stellar.submitPay');
+  });
+
+  it('returns 503 CheckoutUnavailable when the hosted form init malforms (fail-closed: reserved but never charged)', async () => {
+    const h = makeHttpHarness();
+    h.psp.init = TIMEOUT; // init malforms -> checkoutInitFailed -> FailedClean, no checkout form issued
+    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: 'CheckoutUnavailable' });
+    // the form init WAS attempted, but the irreversible USDC leg was NEVER submitted (money-first: charge is last)
+    expect(h.trace).toContain('psp.initializeCheckoutForm');
+    expect(h.trace).not.toContain('stellar.submitPay');
   });
 
   it('rejects a non-numeric amount (400 BadAmount)', async () => {

@@ -1,10 +1,11 @@
 // The engine's shared vocabulary: the injected dependency bundle, the perform() result shape, and the two
 // PURE-decision helpers the driver auto-advances on. Split out so perform.ts and driver.ts share one source.
 //
-// decisionEvent is the ONLY place the engine SYNTHESIZES a core event that no port produced. It fires for
-// exactly the two states the core enters with [] effects whose forward step is a budget/time DECISION rather
-// than a port observation (audited complete: {UsdcConfirmed, UsdcDead}). Every other []-effect target is an
-// absolute terminal or a rePollObserveOnly durable wait, for which it returns null (the driver quiesces).
+// decisionEvent is the ONLY place the engine SYNTHESIZES a core event that no port produced. It fires for the
+// single state the core enters with [] effects whose forward step is a budget DECISION rather than a port
+// observation (money-first: {UsdcDead} — the same-seq replacement budget). UsdcConfirmed is now a reconciled-
+// only durable wait (no capture leg). Every other []-effect target is an absolute terminal / manual sink or a
+// rePollObserveOnly durable wait, for which it returns null (the driver quiesces).
 
 import type { Event, State } from '@troia/core';
 import type { OrderCtx } from '../ctx.js';
@@ -35,16 +36,12 @@ export interface PerformResult {
 }
 
 /**
- * PURE-decision auto-advance. UsdcConfirmed: proceed to capture unless the hold has (defensively) expired.
- * UsdcDead: consult the PERSISTED same-seq replacement budget (post-increment counter from 0, `<= max` =
- * exactly `max` replacements). Returns null for every non-decision state (terminals + durable waits).
+ * PURE-decision auto-advance. UsdcDead: consult the PERSISTED same-seq replacement budget (post-increment
+ * counter from 0, `<= max` = exactly `max` replacements). Returns null for every non-decision state (terminals,
+ * the manual sink, and durable waits — including UsdcConfirmed, which now waits for the reconciler).
  */
 export async function decisionEvent(coreState: State, ctx: OrderCtx, deps: EngineDeps): Promise<Event | null> {
   switch (coreState) {
-    case 'UsdcConfirmed':
-      return deps.clock.nowUnix() > deps.config.policy.preauthValidityUnix
-        ? { type: 'holdExpired' }
-        : { type: 'captureWriteAhead' };
     case 'UsdcDead': {
       const n = await deps.store.bumpDeadRetries(ctx.orderId);
       return { type: 'deadRetry', retriesRemaining: n <= deps.config.policy.maxDeadRetries };
@@ -54,22 +51,22 @@ export async function decisionEvent(coreState: State, ctx: OrderCtx, deps: Engin
   }
 }
 
-/** The one irreversible-loss bucket, keyed off the ENTERING event (flagLoss is emitted only from
- *  holdExpired->LossReview and captureFailed(false)->LossReview). */
-export function flagLossBucket(enteringEvent: Event): LossBucket {
-  return enteringEvent.type === 'holdExpired' ? 'holdExpired' : 'captureFailed';
+/** The one money-first loss bucket the flagLoss EFFECT records. flagLoss is emitted ONLY from
+ *  reversalNotDone(false) -> LossReview (a completed charge whose same-day void could not complete within budget
+ *  = a stuck refund). The other bucket, indeterminateLossReview, is written elsewhere (driver.applyEscalate),
+ *  never via this effect — so this is unconditional. */
+export function flagLossBucket(_enteringEvent: Event): LossBucket {
+  return 'reversalExhausted';
 }
 
-/** releaseReservation reason, injective by the state ENTERED (audited: FailedClean/AbandonedSeqReturned are
- *  clean abandonments; SolvencyRejected reaches releaseReservation ONLY via revertBalanceGuard). 'solvencyReject'
- *  is never used by this effect (solvencyFail emits fireCancel, no releaseReservation); 'expired' is the TTL
- *  reconciler's. */
+/** releaseReservation reason, by the state ENTERED. Money-first, releaseReservation is emitted only into
+ *  FailedClean (a declined/aborted sale — nothing charged) and ChargeReversing (the USDC attempt is abandoned
+ *  and the completed charge is being voided). Both free pool capacity for an order that will NOT send USDC.
+ *  'balanceGuardRevert' / 'expired' are reserved for the ledger's own annotations. */
 export function releaseReason(coreState: State): ReleaseReason {
   switch (coreState) {
-    case 'SolvencyRejected':
-      return 'balanceGuardRevert';
     case 'FailedClean':
-    case 'AbandonedSeqReturned':
+    case 'ChargeReversing':
       return 'abandoned';
     default:
       throw new Error(`releaseReservation emitted in unexpected state '${coreState}'`);

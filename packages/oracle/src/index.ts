@@ -5,6 +5,23 @@
 
 export const RATE_SCALE = 10_000_000n; // a rate of X TRY-per-USDC is stored as X * 1e7
 
+// Historical USD/TRY daily closes — the DATA SOURCE for the commission model (pricing.computeReturnStats).
+// The live Yahoo adapter takes an injected fetch (mocked in tests); the offline PoC uses StaticRateHistory.
+export { parseYahooChartCloses, YahooUsdTryHistory, StaticRateHistory } from './rate-history.js';
+export type { RateHistoryProvider, FetchLike, YahooOptions } from './rate-history.js';
+
+// Live-CEX SPOT oracle — the mainnet-ready TRY/USDC mid (Binance + Bybit + OKX, injected fetch, fail-closed).
+export {
+  parseDecimalToE7,
+  fetchCexQuote,
+  LiveCexOracle,
+  DEFAULT_CEX_SOURCES,
+  BINANCE_SOURCE,
+  BYBIT_SOURCE,
+  OKX_SOURCE,
+} from './cex-spot.js';
+export type { CexSource, CexOracleOptions } from './cex-spot.js';
+
 export interface SourceQuote {
   readonly source: string;
   /** TRY per 1 USDC, scaled by RATE_SCALE. */

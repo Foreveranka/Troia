@@ -1,3 +1,38 @@
-// Public surface of @troia/backend (composition layer). Scaffold — expanded in Phase 4.3a-d.
+// Public surface of @troia/backend (composition layer). Phase 4.3a: the pure decision core (plan / mutation
+// guard / revert classifier) + the impure engine (perform + driver). HTTP shell, Store impl, and composition
+// root arrive in 4.3b-d.
 export { initialState, transition } from '@troia/core';
 export type { Effect, Event, State } from '@troia/core';
+
+export { planEffect } from './engine/plan.js';
+export type { EffectPlan, Port, FeedsEventVia } from './engine/plan.js';
+export { classifyRevertCause, revertEvent } from './engine/classify-revert.js';
+export type { RevertCause, RevertEvent } from './engine/classify-revert.js';
+export {
+  isObserveOnlyEvent,
+  containsMutation,
+  assertNoMutationOnUnknown,
+} from './engine/mutation-guard.js';
+
+export { perform } from './engine/perform.js';
+export { run, start, advance } from './engine/driver.js';
+export type { RunResult, Quiescence } from './engine/driver.js';
+export { decisionEvent, flagLossBucket, releaseReason } from './engine/events.js';
+export type { EngineDeps, PerformResult, SideOutput } from './engine/events.js';
+export { EngineError } from './engine/errors.js';
+
+export type { EngineConfig, EngineStellarConfig, EnginePspConfig } from './engine/config.js';
+export type { OrderCtx } from './ctx.js';
+export type { PolicyConfig } from './policy.js';
+export { OFFLINE_DEFAULT_POLICY } from './policy.js';
+export type {
+  StellarPort,
+  PspPort,
+  Clock,
+  Store,
+  ReserveOutcome,
+  ReleaseReason,
+  LossBucket,
+  InFlightPatch,
+  EvidenceRecord,
+} from './ports.js';

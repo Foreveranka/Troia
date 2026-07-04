@@ -18,6 +18,11 @@ export interface OrderCtx {
   readonly ip: string;
   /** the order's currently-allocated sequence (decimal string), if any. */
   readonly activeSeq: string | null;
+  /** the landed USDC pay() witness — set by submitPay/submitReplacementSameSeq perform (from SubmitResult)
+   *  and consumed by handToReconciler (settlement_evidence) and flagLoss (loss bucket usdcTxHash). Null until
+   *  a pay() has been submitted. Threaded through ctx because Store is write-only (no evidence read-back). */
+  readonly hashHex: string | null;
+  readonly signedXdr: string | null;
   /** persisted deterministic retry counters. */
   readonly deadRetries: number;
   readonly captureRetries: number;

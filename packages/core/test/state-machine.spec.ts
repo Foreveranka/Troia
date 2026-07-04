@@ -38,7 +38,8 @@ const ALL_EVENTS: readonly Event[] = [
   { type: 'reconciled' },
   { type: 'voidConfirmed' },
   { type: 'voidUnknown' },
-  { type: 'voidNotVoided' },
+  { type: 'voidNotVoided', retriesRemaining: true },
+  { type: 'voidNotVoided', retriesRemaining: false },
 ];
 
 interface Edge {
@@ -242,16 +243,23 @@ describe('state machine — canonical walks', () => {
     }
   });
 
-  it('void 3-valued: Unknown stays (no new cancel), NotVoided retries', () => {
+  it('void 3-valued: Unknown re-polls, NotVoided retries within budget then quiesces when exhausted', () => {
     expect(transition('LossReview', { type: 'voidUnknown' })).toEqual({
       status: 'transition',
       next: 'LossReview',
       effects: ['rePollObserveOnly'],
     });
-    expect(transition('LossReview', { type: 'voidNotVoided' })).toEqual({
+    // budget remaining -> bounded retry cancel
+    expect(transition('LossReview', { type: 'voidNotVoided', retriesRemaining: true })).toEqual({
       status: 'transition',
       next: 'LossReview',
       effects: ['fireCancel'],
+    });
+    // budget exhausted -> quiesce in place (no unbounded cancel loop); the hold expires naturally
+    expect(transition('LossReview', { type: 'voidNotVoided', retriesRemaining: false })).toEqual({
+      status: 'transition',
+      next: 'LossReview',
+      effects: [],
     });
   });
 });

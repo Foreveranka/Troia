@@ -105,7 +105,7 @@ export type CaptureEvent =
   | { readonly type: 'captureUnknown' };
 export type VoidEvent =
   | { readonly type: 'voidConfirmed' }
-  | { readonly type: 'voidNotVoided' }
+  | { readonly type: 'voidNotVoided'; readonly retriesRemaining: boolean }
   | { readonly type: 'voidUnknown' };
 
 export function preauthEvent(raw: RawIyzicoResult): PreauthEvent {
@@ -131,12 +131,15 @@ export function captureEvent(raw: RawIyzicoResult, retriesRemaining: boolean): C
   }
 }
 
-export function voidEvent(raw: RawIyzicoResult): VoidEvent {
+/** retriesRemaining is a backend retry-budget decision (not an iyzico signal), so it is passed in — mirrors
+ *  captureEvent. A definite void FAILURE is safe to re-drive (idempotent), but only within a bounded budget:
+ *  once exhausted the core quiesces the void-pending state instead of looping cancel forever. */
+export function voidEvent(raw: RawIyzicoResult, retriesRemaining: boolean): VoidEvent {
   switch (classifyIyzicoResult(raw, 'void')) {
     case 'SUCCESS':
       return { type: 'voidConfirmed' };
     case 'FAILURE':
-      return { type: 'voidNotVoided' };
+      return { type: 'voidNotVoided', retriesRemaining };
     case 'UNKNOWN':
       return { type: 'voidUnknown' };
   }

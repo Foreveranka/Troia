@@ -103,9 +103,10 @@ describe('per-op mappers onto core §3 events', () => {
     expect(captureEvent({ kind: 'malformed', reason: 'x' }, true)).toEqual({ type: 'captureUnknown' });
   });
 
-  it('voidEvent maps SUCCESS/FAILURE/UNKNOWN -> voidConfirmed/NotVoided/Unknown', () => {
-    expect(voidEvent(body({ status: 'success' }))).toEqual({ type: 'voidConfirmed' });
-    expect(voidEvent(body({ status: 'failure' }))).toEqual({ type: 'voidNotVoided' });
-    expect(voidEvent({ kind: 'timeout' })).toEqual({ type: 'voidUnknown' });
+  it('voidEvent maps SUCCESS/FAILURE/UNKNOWN -> voidConfirmed/NotVoided/Unknown (FAILURE carries the budget)', () => {
+    expect(voidEvent(body({ status: 'success' }), true)).toEqual({ type: 'voidConfirmed' });
+    expect(voidEvent(body({ status: 'failure' }), true)).toEqual({ type: 'voidNotVoided', retriesRemaining: true });
+    expect(voidEvent(body({ status: 'failure' }), false)).toEqual({ type: 'voidNotVoided', retriesRemaining: false });
+    expect(voidEvent({ kind: 'timeout' }, true)).toEqual({ type: 'voidUnknown' });
   });
 });

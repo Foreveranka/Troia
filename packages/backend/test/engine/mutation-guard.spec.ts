@@ -35,7 +35,8 @@ const ALL_EVENTS: readonly Event[] = [
   { type: 'reconciled' },
   { type: 'voidConfirmed' },
   { type: 'voidUnknown' },
-  { type: 'voidNotVoided' },
+  { type: 'voidNotVoided', retriesRemaining: true },
+  { type: 'voidNotVoided', retriesRemaining: false },
 ];
 
 describe('mutation-on-uncertainty guard (property over the whole core table)', () => {

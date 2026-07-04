@@ -30,8 +30,8 @@ describe('psp classify -> core §3 events (one machine)', () => {
   });
 
   it('Void (from SolvencyRejected): Confirmed->TryHoldVoided, NotVoided->SolvencyRejected (retry), Unknown->SolvencyRejected (observe)', () => {
-    expectTransition('SolvencyRejected', voidEvent(body({ status: 'success' })), 'TryHoldVoided');
-    expectTransition('SolvencyRejected', voidEvent(body({ status: 'failure' })), 'SolvencyRejected');
-    expectTransition('SolvencyRejected', voidEvent({ kind: 'malformed', reason: 'x' }), 'SolvencyRejected');
+    expectTransition('SolvencyRejected', voidEvent(body({ status: 'success' }), true), 'TryHoldVoided');
+    expectTransition('SolvencyRejected', voidEvent(body({ status: 'failure' }), true), 'SolvencyRejected');
+    expectTransition('SolvencyRejected', voidEvent({ kind: 'malformed', reason: 'x' }, true), 'SolvencyRejected');
   });
 });

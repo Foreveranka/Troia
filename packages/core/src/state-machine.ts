@@ -119,7 +119,7 @@ export type Event =
   // void-pending (void is 3-valued — D1)
   | { readonly type: 'voidConfirmed' }
   | { readonly type: 'voidUnknown' }
-  | { readonly type: 'voidNotVoided' };
+  | { readonly type: 'voidNotVoided'; readonly retriesRemaining: boolean };
 
 export type EventType = Event['type'];
 
@@ -157,7 +157,10 @@ export function transition(state: State, event: Event): TransitionResult {
       case 'voidUnknown':
         return t(state, ['rePollObserveOnly']); // re-poll cancel, never a new cancel
       case 'voidNotVoided':
-        return t(state, ['fireCancel']); // bounded retry cancel
+        // Bounded retry: while the backend's void budget holds, re-fire cancel; once exhausted, quiesce in
+        // place (no effect) — the un-voided hold expires naturally (fail-SAFE) and the reconciler/expiry
+        // resolves it out-of-band. Never a synchronous unbounded cancel loop.
+        return event.retriesRemaining ? t(state, ['fireCancel']) : t(state, []);
       default:
         return rejected(state, event);
     }

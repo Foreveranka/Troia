@@ -56,7 +56,9 @@ function normalizeItems(items: readonly BasketItem[]): Record<string, unknown>[]
   }));
 }
 
-const CHECKOUT_INITIALIZE_PREAUTH_PATH = '/payment/iyzipos/checkoutform/initialize/preauth/ecom';
+// Money-first (Phase 4.6): the hosted form is the DIRECT-SALE (immediate-capture) checkout, NOT preauth.
+// The user is charged on submit — there is no hold/provision to capture later.
+const CHECKOUT_INITIALIZE_SALE_PATH = '/payment/iyzipos/checkoutform/initialize/ecom';
 const CHECKOUT_RETRIEVE_PATH = '/payment/iyzipos/checkoutform/auth/ecom/detail';
 
 export interface InitializeCheckoutFormParams {
@@ -74,10 +76,11 @@ export interface InitializeCheckoutFormParams {
   readonly basketItems: readonly BasketItem[];
 }
 
-/** Checkout-form initialize on the PREAUTH (block/hold) path — NOT the auth (immediate-capture) path. */
+/** Checkout-form initialize on the DIRECT-SALE (immediate-capture) path — NOT the preauth (block/hold) path.
+ *  The customer's TRY is charged when they submit; the pool only reserves USDC before this (money-first). */
 export function buildInitializeCheckoutFormRequest(p: InitializeCheckoutFormParams): BuiltRequest {
   requireConversationId(p.conversationId);
-  return finish(CHECKOUT_INITIALIZE_PREAUTH_PATH, {
+  return finish(CHECKOUT_INITIALIZE_SALE_PATH, {
     locale: p.locale ?? 'tr',
     conversationId: p.conversationId,
     price: formatPrice(p.price),

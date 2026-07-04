@@ -81,6 +81,25 @@ export function classifyIyzicoResult(raw: RawIyzicoResult, op: PspOp): IyzicoCla
       const phase = readString(body, 'phase');
       return paymentId !== undefined && !hasError && phase !== 'PRE_AUTH' ? 'SUCCESS' : 'UNKNOWN';
     }
+    case 'sale': {
+      // Money-first DIRECT SALE (no preauth): the TRY is genuinely CAPTURED only when the payment reached the
+      // terminal SUCCESS state, fraud approved it, it is NOT a still-live PRE_AUTH hold, AND it carries a real
+      // paymentId. The phase guard is the money-safety shield — if an uncaptured hold ever reaches here it must
+      // read UNKNOWN, never charged, else we would submit the irreversible USDC leg against money that was only
+      // held. The paymentId requirement (mirroring 'capture') is load-bearing too: a SUCCESS with no paymentId
+      // could not later be VOIDED (fireCancel needs it), so it must read UNKNOWN — never a chargeOk we cannot
+      // unwind. Any intermediate paymentStatus / fraud review -> UNKNOWN.
+      const paymentId = readString(body, 'paymentId');
+      const paymentStatus = readString(body, 'paymentStatus');
+      const fraudStatus = readNumber(body, 'fraudStatus');
+      const phase = readString(body, 'phase');
+      return paymentId !== undefined &&
+        paymentStatus === TERMINAL_SUCCESS_PAYMENT_STATUS &&
+        fraudStatus === FRAUD_STATUS_OK &&
+        phase !== 'PRE_AUTH'
+        ? 'SUCCESS'
+        : 'UNKNOWN';
+    }
     case 'void':
     case 'refund':
       // A success envelope acknowledges the void/refund. (A false-positive void merely lets the hold expire
@@ -95,52 +114,39 @@ export function classifyIyzicoResult(raw: RawIyzicoResult, op: PspOp): IyzicoCla
 // --- Per-op mappers onto the @troia/core state-machine events (§3). Typed structurally (not by importing
 // core) to keep this file dependency-light; the psp-to-core test proves core.transition accepts each event.
 
-export type PreauthEvent =
-  | { readonly type: 'preauthOk' }
-  | { readonly type: 'preauthRejected' }
-  | { readonly type: 'preauthUnknown' };
-export type CaptureEvent =
-  | { readonly type: 'captureSuccess' }
-  | { readonly type: 'captureFailed'; readonly retriesRemaining: boolean }
-  | { readonly type: 'captureUnknown' };
-export type VoidEvent =
-  | { readonly type: 'voidConfirmed' }
-  | { readonly type: 'voidNotVoided'; readonly retriesRemaining: boolean }
-  | { readonly type: 'voidUnknown' };
+export type ChargeEvent =
+  | { readonly type: 'chargeOk' }
+  | { readonly type: 'chargeRejected' }
+  | { readonly type: 'chargeUnknown' };
+export type ReversalEvent =
+  | { readonly type: 'reversalConfirmed' }
+  | { readonly type: 'reversalNotDone'; readonly retriesRemaining: boolean };
 
-export function preauthEvent(raw: RawIyzicoResult): PreauthEvent {
-  switch (classifyIyzicoResult(raw, 'preauth')) {
+/** The DIRECT-SALE outcome (money-first): SUCCESS means the TRY was captured (proven via the 'sale' shape),
+ *  so the backend may now submit the irreversible USDC leg. UNKNOWN keeps the order in SolvencyReserved and
+ *  is re-driven by the recovery worklist; a definitive decline is FAILURE (nothing was charged). */
+export function chargeEvent(raw: RawIyzicoResult): ChargeEvent {
+  switch (classifyIyzicoResult(raw, 'sale')) {
     case 'SUCCESS':
-      return { type: 'preauthOk' };
+      return { type: 'chargeOk' };
     case 'FAILURE':
-      return { type: 'preauthRejected' };
+      return { type: 'chargeRejected' };
     case 'UNKNOWN':
-      return { type: 'preauthUnknown' };
+      return { type: 'chargeUnknown' };
   }
 }
 
-/** retriesRemaining is a backend retry-budget decision (not an iyzico signal), so it is passed in. */
-export function captureEvent(raw: RawIyzicoResult, retriesRemaining: boolean): CaptureEvent {
-  switch (classifyIyzicoResult(raw, 'capture')) {
-    case 'SUCCESS':
-      return { type: 'captureSuccess' };
-    case 'FAILURE':
-      return { type: 'captureFailed', retriesRemaining };
-    case 'UNKNOWN':
-      return { type: 'captureUnknown' };
-  }
-}
-
-/** retriesRemaining is a backend retry-budget decision (not an iyzico signal), so it is passed in — mirrors
- *  captureEvent. A definite void FAILURE is safe to re-drive (idempotent), but only within a bounded budget:
- *  once exhausted the core quiesces the void-pending state instead of looping cancel forever. */
-export function voidEvent(raw: RawIyzicoResult, retriesRemaining: boolean): VoidEvent {
+/** The sale-REVERSAL (same-day /payment/cancel void) outcome. retriesRemaining is a backend retry-budget
+ *  decision (not an iyzico signal), so it is passed in. SUCCESS is the only confirming outcome; BOTH a definite
+ *  FAILURE and an UNKNOWN mean "not confirmed voided" and re-drive within a bounded budget — re-issuing a same-
+ *  day void is money-SAFE (idempotent, cannot lose money), and once the budget is exhausted the core escalates
+ *  to a DURABLE LossReview. There is NO reversalUnknown-stay: nothing re-polls a reversal, so a bare stay would
+ *  strand a CHARGED order forever with no void and no loss flag. */
+export function reversalEvent(raw: RawIyzicoResult, retriesRemaining: boolean): ReversalEvent {
   switch (classifyIyzicoResult(raw, 'void')) {
     case 'SUCCESS':
-      return { type: 'voidConfirmed' };
-    case 'FAILURE':
-      return { type: 'voidNotVoided', retriesRemaining };
-    case 'UNKNOWN':
-      return { type: 'voidUnknown' };
+      return { type: 'reversalConfirmed' };
+    default:
+      return { type: 'reversalNotDone', retriesRemaining };
   }
 }

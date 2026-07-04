@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  captureEvent,
+  chargeEvent,
   classifyIyzicoResult,
-  preauthEvent,
+  reversalEvent,
   TERMINAL_DECLINE_WHITELIST,
-  voidEvent,
 } from '../src/classify.js';
 import type { PspOp, RawIyzicoResult } from '../src/outcomes.js';
 
 const body = (b: Record<string, unknown>): RawIyzicoResult => ({ kind: 'body', body: b });
-const CHARGE_OPS: PspOp[] = ['preauth', 'checkout', 'capture'];
+const CHARGE_OPS: PspOp[] = ['preauth', 'checkout', 'capture', 'sale'];
 
 describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe default)', () => {
   it('never SUCCESS on ambiguity: transport/parse failures and empty envelopes are UNKNOWN for every op', () => {
@@ -54,6 +53,20 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
     expect(classifyIyzicoResult(body({ status: 'success', paymentId: 'p1', errorCode: 10051 as unknown as string }), 'capture')).toBe('UNKNOWN');
   });
 
+  it('sale (direct charge) is SUCCESS only on a captured shape with a paymentId, and NEVER on a PRE_AUTH hold', () => {
+    const captured = { status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 };
+    // a completed direct sale (phase absent or AUTH) with a paymentId is a real captured charge
+    expect(classifyIyzicoResult(body(captured), 'sale')).toBe('SUCCESS');
+    expect(classifyIyzicoResult(body({ ...captured, phase: 'AUTH' }), 'sale')).toBe('SUCCESS');
+    // the money-safety shield: a still-live PRE_AUTH hold must NEVER read as charged (would send USDC vs a hold)
+    expect(classifyIyzicoResult(body({ ...captured, phase: 'PRE_AUTH' }), 'sale')).toBe('UNKNOWN');
+    // a SUCCESS shape with NO paymentId must read UNKNOWN — a chargeOk we could not later void is money-unsafe
+    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }), 'sale')).toBe('UNKNOWN');
+    // intermediate paymentStatus or fraud-review -> UNKNOWN
+    expect(classifyIyzicoResult(body({ ...captured, paymentStatus: 'CALLBACK_THREEDS' }), 'sale')).toBe('UNKNOWN');
+    expect(classifyIyzicoResult(body({ ...captured, fraudStatus: 0 }), 'sale')).toBe('UNKNOWN');
+  });
+
   it('an out-of-enum op fails safe to UNKNOWN', () => {
     expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }), 'bogus' as PspOp)).toBe('UNKNOWN');
   });
@@ -90,23 +103,22 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
 });
 
 describe('per-op mappers onto core §3 events', () => {
-  it('preauthEvent maps SUCCESS/FAILURE/UNKNOWN -> preauthOk/Rejected/Unknown', () => {
-    expect(preauthEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }))).toEqual({ type: 'preauthOk' });
-    expect(preauthEvent(body({ status: 'failure', errorCode: '10051' }))).toEqual({ type: 'preauthRejected' });
-    expect(preauthEvent({ kind: 'timeout' })).toEqual({ type: 'preauthUnknown' });
+  it('chargeEvent maps SUCCESS/FAILURE/UNKNOWN -> chargeOk/Rejected/Unknown (captured shape only)', () => {
+    expect(chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 }))).toEqual({ type: 'chargeOk' });
+    expect(chargeEvent(body({ status: 'failure', errorCode: '10051' }))).toEqual({ type: 'chargeRejected' });
+    expect(chargeEvent({ kind: 'timeout' })).toEqual({ type: 'chargeUnknown' });
+    // a PRE_AUTH hold is never a completed charge -> Unknown (re-driven by the recovery worklist, no USDC)
+    expect(chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1, phase: 'PRE_AUTH' }))).toEqual({ type: 'chargeUnknown' });
+    // a SUCCESS shape with NO paymentId -> chargeUnknown (never a chargeOk we could not unwind)
+    expect(chargeEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }))).toEqual({ type: 'chargeUnknown' });
   });
 
-  it('captureEvent carries retriesRemaining on a failure', () => {
-    expect(captureEvent(body({ status: 'success', paymentId: 'p1' }), true)).toEqual({ type: 'captureSuccess' });
-    expect(captureEvent(body({ status: 'failure', errorCode: '10005' }), true)).toEqual({ type: 'captureFailed', retriesRemaining: true });
-    expect(captureEvent(body({ status: 'failure', errorCode: '10005' }), false)).toEqual({ type: 'captureFailed', retriesRemaining: false });
-    expect(captureEvent({ kind: 'malformed', reason: 'x' }, true)).toEqual({ type: 'captureUnknown' });
-  });
-
-  it('voidEvent maps SUCCESS/FAILURE/UNKNOWN -> voidConfirmed/NotVoided/Unknown (FAILURE carries the budget)', () => {
-    expect(voidEvent(body({ status: 'success' }), true)).toEqual({ type: 'voidConfirmed' });
-    expect(voidEvent(body({ status: 'failure' }), true)).toEqual({ type: 'voidNotVoided', retriesRemaining: true });
-    expect(voidEvent(body({ status: 'failure' }), false)).toEqual({ type: 'voidNotVoided', retriesRemaining: false });
-    expect(voidEvent({ kind: 'timeout' }, true)).toEqual({ type: 'voidUnknown' });
+  it('reversalEvent: only SUCCESS confirms; FAILURE and UNKNOWN both re-drive within budget (no reversalUnknown-stay)', () => {
+    expect(reversalEvent(body({ status: 'success' }), true)).toEqual({ type: 'reversalConfirmed' });
+    expect(reversalEvent(body({ status: 'failure' }), true)).toEqual({ type: 'reversalNotDone', retriesRemaining: true });
+    expect(reversalEvent(body({ status: 'failure' }), false)).toEqual({ type: 'reversalNotDone', retriesRemaining: false });
+    // an UNKNOWN (timeout) void re-drives within budget too — a same-day void is idempotent, so it must NEVER
+    // become a bare observe-only stay that strands a charged order (adversarial finding #1).
+    expect(reversalEvent({ kind: 'timeout' }, true)).toEqual({ type: 'reversalNotDone', retriesRemaining: true });
   });
 });

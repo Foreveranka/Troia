@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureEvent, preauthEvent, voidEvent } from '../src/classify.js';
+import { chargeEvent, reversalEvent } from '../src/classify.js';
 import type { RawIyzicoResult } from '../src/outcomes.js';
 import { transition } from '../../core/src/index.js';
 import type { Event, State } from '../../core/src/index.js';
@@ -12,26 +12,23 @@ function expectTransition(from: State, event: Event, to: State): void {
   if (r.status === 'transition') expect(r.next).toBe(to);
 }
 
-// Proves psp and the @troia/core state machine (§3) are ONE machine: every event the per-op mappers emit is
-// accepted by core.transition in the state it is meant for, and lands where the 3-valued design says.
+// Proves psp and the @troia/core state machine (§3) are ONE machine: every event the money-first mappers emit
+// is accepted by core.transition in the state it is meant for, and lands where the 3-valued design says.
 
-describe('psp classify -> core §3 events (one machine)', () => {
-  it('PreAuth (from Reserved): Ok->TryPreauthed, Rejected->FailedClean, Unknown->Reserved (observe)', () => {
-    expectTransition('Reserved', preauthEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 })), 'TryPreauthed');
-    expectTransition('Reserved', preauthEvent(body({ status: 'failure', errorCode: '10051' })), 'FailedClean');
-    expectTransition('Reserved', preauthEvent({ kind: 'timeout' }), 'Reserved');
+describe('psp classify -> core §3 events (one machine, money-first)', () => {
+  it('Charge (from SolvencyReserved): Ok->UsdcSubmitted, Rejected->FailedClean, Unknown->SolvencyReserved (observe)', () => {
+    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 })), 'UsdcSubmitted');
+    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'failure', errorCode: '10051' })), 'FailedClean');
+    expectTransition('SolvencyReserved', chargeEvent({ kind: 'timeout' }), 'SolvencyReserved');
+    // a PRE_AUTH hold or a paymentId-less success is not a completed charge -> Unknown -> stay (NEVER to USDC)
+    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1, phase: 'PRE_AUTH' })), 'SolvencyReserved');
+    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 })), 'SolvencyReserved');
   });
 
-  it('Capture (from CaptureSubmitted): Success->TryCaptured, Failed(retry)->CaptureSubmitted, Failed(no retry)->LossReview, Unknown->CaptureSubmitted', () => {
-    expectTransition('CaptureSubmitted', captureEvent(body({ status: 'success', paymentId: 'p1' }), true), 'TryCaptured');
-    expectTransition('CaptureSubmitted', captureEvent(body({ status: 'failure', errorCode: '10005' }), true), 'CaptureSubmitted');
-    expectTransition('CaptureSubmitted', captureEvent(body({ status: 'failure', errorCode: '10005' }), false), 'LossReview');
-    expectTransition('CaptureSubmitted', captureEvent({ kind: 'timeout' }, true), 'CaptureSubmitted');
-  });
-
-  it('Void (from SolvencyRejected): Confirmed->TryHoldVoided, NotVoided->SolvencyRejected (retry), Unknown->SolvencyRejected (observe)', () => {
-    expectTransition('SolvencyRejected', voidEvent(body({ status: 'success' }), true), 'TryHoldVoided');
-    expectTransition('SolvencyRejected', voidEvent(body({ status: 'failure' }), true), 'SolvencyRejected');
-    expectTransition('SolvencyRejected', voidEvent({ kind: 'malformed', reason: 'x' }, true), 'SolvencyRejected');
+  it('Reversal (from ChargeReversing): Confirmed->ChargeReversed, NotDone(retry)->ChargeReversing, NotDone(exhausted)->LossReview, Unknown->ChargeReversing', () => {
+    expectTransition('ChargeReversing', reversalEvent(body({ status: 'success' }), true), 'ChargeReversed');
+    expectTransition('ChargeReversing', reversalEvent(body({ status: 'failure' }), true), 'ChargeReversing');
+    expectTransition('ChargeReversing', reversalEvent(body({ status: 'failure' }), false), 'LossReview');
+    expectTransition('ChargeReversing', reversalEvent({ kind: 'malformed', reason: 'x' }, true), 'ChargeReversing');
   });
 });

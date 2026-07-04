@@ -76,12 +76,12 @@ describe('request builders — golden shape + sign-the-sent-string', () => {
     expect(refund.body).toHaveProperty('price', '5.0');
   });
 
-  it('checkout initialize uses the PREAUTH (block) path, not the auth (capture) path', () => {
+  it('checkout initialize uses the DIRECT-SALE (immediate-capture) path, not the preauth (block) path', () => {
     const init = buildInitializeCheckoutFormRequest({
       conversationId: 'c1', price: 10, paidPrice: 10, currency: 'TRY', basketId: 'B1', paymentGroup: 'PRODUCT',
       callbackUrl: 'https://x/cb', buyer: BUYER, shippingAddress: ADDR, billingAddress: ADDR, basketItems: ITEMS,
     });
-    expect(init.path).toBe('/payment/iyzipos/checkoutform/initialize/preauth/ecom');
+    expect(init.path).toBe('/payment/iyzipos/checkoutform/initialize/ecom');
     expect(init.body).toHaveProperty('price', '10.0');
     // basket item prices are normalized too
     expect((init.body.basketItems as { price: string }[])[0]!.price).toBe('10.0');

@@ -45,8 +45,9 @@ describe('verifyWebhookSignature — X-IYZ-SIGNATURE-V3, forged-webhook-proof', 
         verifyWebhookSignature({ signingSecret: gv.signingSecret, event: gv.event, providedSignature }),
       ).toBe(false);
     }
-    // a webhook missing a required signed field cannot be verified -> reject
-    const noToken: WebhookEvent = { ...gv.event, token: undefined };
+    // a webhook missing a required signed field cannot be verified -> reject (token present-but-undefined reads
+    // the same as absent to the verifier; the cast satisfies exactOptionalPropertyTypes without changing behavior)
+    const noToken = { ...gv.event, token: undefined } as unknown as WebhookEvent;
     expect(
       verifyWebhookSignature({ signingSecret: gv.signingSecret, event: noToken, providedSignature: gv.signature }),
     ).toBe(false);

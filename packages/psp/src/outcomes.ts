@@ -6,8 +6,9 @@
  *  NEVER an irreversible action. */
 export type IyzicoClass = 'SUCCESS' | 'FAILURE' | 'UNKNOWN';
 
-/** Which operation a result belongs to — the SUCCESS/FAILURE shape differs per op. */
-export type PspOp = 'preauth' | 'capture' | 'void' | 'refund' | 'checkout';
+/** Which operation a result belongs to — the SUCCESS/FAILURE shape differs per op. 'sale' is the money-first
+ *  direct charge (immediate capture, no preauth); 'preauth'/'capture' are retained for the legacy shapes. */
+export type PspOp = 'preauth' | 'capture' | 'void' | 'refund' | 'checkout' | 'sale';
 
 /** What the adapter hands the pure core: a parsed iyzico JSON body, or a transport-level failure marker.
  *  A timeout / non-2xx / DNS failure / unparseable body is NEVER a success-looking value — it is a marker

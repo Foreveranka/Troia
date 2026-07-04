@@ -3,8 +3,8 @@
 // The concrete IyzicoSandboxProvider is NOT re-exported (it holds creds + fetch) — the backend constructs it
 // via createPaymentProvider at the composition root, so no secret-bearing class crosses this surface.
 
-export { classifyIyzicoResult, TERMINAL_DECLINE_WHITELIST, preauthEvent, captureEvent, voidEvent } from './classify.js';
-export type { PreauthEvent, CaptureEvent, VoidEvent } from './classify.js';
+export { classifyIyzicoResult, TERMINAL_DECLINE_WHITELIST, chargeEvent, reversalEvent } from './classify.js';
+export type { ChargeEvent, ReversalEvent } from './classify.js';
 
 export { verifyWebhookSignature } from './verify-webhook.js';
 export type { WebhookEvent, VerifyWebhookInput } from './verify-webhook.js';

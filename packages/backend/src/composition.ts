@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import type { EngineConfig, EnginePspConfig } from './engine/config.js';
 import type { EngineDeps } from './engine/events.js';
 import { createApp } from './http/app.js';
+import type { QuoteFn } from './http/app.js';
 import { InMemoryOrderRegistry } from './http/order-registry.js';
 import type { OrderRegistry } from './http/order-registry.js';
 import type { PolicyConfig } from './policy.js';
@@ -60,6 +61,8 @@ export interface ServerDeps {
   readonly extras: EngineExtras;
   /** injected keyed adapters (real at 4.4/4.5, fakes offline). */
   readonly ports: ServerPorts;
+  /** prices an order server-side (commission model + spot mid). Injected so the rate source stays a seam. */
+  readonly quote: QuoteFn;
   /** iyzico account secret (env). NEVER from NetworkConfig. */
   readonly webhookSigningSecret: string;
 }
@@ -76,7 +79,7 @@ export function createServer(d: ServerDeps): Server {
   const engine: EngineDeps = { stellar: d.ports.stellar, psp: d.ports.psp, store: d.ports.store, clock: d.ports.clock, config };
   const orderLocks = new KeyedMutex(); // ONE lock shared by the app AND the worker (load-bearing per SPIKE-2)
   const registry = new InMemoryOrderRegistry();
-  const app = createApp({ engine, registry, webhookSigningSecret: d.webhookSigningSecret, orderLocks });
+  const app = createApp({ engine, registry, quote: d.quote, webhookSigningSecret: d.webhookSigningSecret, orderLocks });
   const pollTick = (): Promise<PollReport> => pollInFlight(registry, orderLocks, engine);
   return { app, registry, pollTick };
 }

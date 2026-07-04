@@ -45,7 +45,7 @@ export { InMemoryStore } from './store/in-memory-store.js';
 export type { InMemoryStoreOptions } from './store/in-memory-store.js';
 
 export { createApp } from './http/app.js';
-export type { AppDeps } from './http/app.js';
+export type { AppDeps, Quote, QuoteFn } from './http/app.js';
 export { InMemoryOrderRegistry } from './http/order-registry.js';
 export type { OrderRegistry, OrderRecord } from './http/order-registry.js';
 export { toPublicStatus } from './http/public-status.js';

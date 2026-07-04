@@ -5,7 +5,7 @@ import { buildEngineConfig, createServer } from '../src/composition.js';
 import type { EngineExtras } from '../src/composition.js';
 import { InMemoryStore } from '../src/store/in-memory-store.js';
 import { FakeClock, FakePspPort, FakeStellarPort, makeConfig } from './fakes/harness.js';
-import { intentBody, signV3, WEBHOOK_SECRET, webhookEvent } from './http/http-harness.js';
+import { intentBody, quote, signV3, WEBHOOK_SECRET, webhookEvent } from './http/http-harness.js';
 
 const UNIT = 10_000_000n;
 
@@ -62,6 +62,7 @@ describe('createServer — app + poll worker over ONE shared order lock', () => 
       network,
       extras: extras(),
       ports: { stellar, psp, store, clock },
+      quote,
       webhookSigningSecret: WEBHOOK_SECRET,
     });
     return { server, stellar, trace };

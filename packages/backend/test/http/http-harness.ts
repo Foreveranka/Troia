@@ -5,7 +5,9 @@
 import { createHmac } from 'node:crypto';
 import { deriveIds, deriveMemo } from '@troia/core';
 import type { FastifyInstance } from 'fastify';
+import { quoteUsdc } from '../../../pricing/src/index.js';
 import { createApp } from '../../src/http/app.js';
+import type { QuoteFn } from '../../src/http/app.js';
 import { InMemoryOrderRegistry } from '../../src/http/order-registry.js';
 import { InMemoryStore } from '../../src/store/in-memory-store.js';
 import { FakeClock, FakePspPort, FakeStellarPort, makeConfig } from '../fakes/harness.js';
@@ -17,6 +19,14 @@ export const DEST = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'; 
 export const AMOUNT = UNIT; // 1 USDC per order
 export const CHECKOUT_TOKEN = 'tok-1'; // the fake initializeCheckoutForm issues this token
 
+// Server-side pricing seam: a fixed spot mid + the doc's calm-regime stats + a T+15 commission (-> 229 bps).
+// In production the mid comes from a live rate source and the stats from computeReturnStats(6-month closes);
+// here they are fixed so the priced order is deterministic. quoteUsdc(1 USDC) -> paidPriceTry "41.42".
+export const MID_E7 = 405_000_000n; // 40.50 TRY/USDC
+const STATS = { muDaily: 0.00055, sigmaDaily: 0.003 };
+const COMMISSION = { valorDays: 15, z: 1, marginBps: 30 };
+export const quote: QuoteFn = async (usdcStroops) => quoteUsdc(usdcStroops, MID_E7, STATS, COMMISSION);
+
 export interface HttpHarness {
   readonly app: FastifyInstance;
   readonly store: InMemoryStore;
@@ -27,7 +37,7 @@ export interface HttpHarness {
   readonly trace: Trace;
 }
 
-export function makeHttpHarness(balanceUnits = 100n): HttpHarness {
+export function makeHttpHarness(balanceUnits = 100n, quoteFn: QuoteFn = quote): HttpHarness {
   const trace: Trace = [];
   const stellar = new FakeStellarPort(trace);
   const psp = new FakePspPort(trace);
@@ -35,19 +45,18 @@ export function makeHttpHarness(balanceUnits = 100n): HttpHarness {
   const config = makeConfig();
   const store = new InMemoryStore({ balanceStroops: balanceUnits * UNIT, baseSeq: 1000n });
   const registry = new InMemoryOrderRegistry();
-  const app = createApp({ engine: { stellar, psp, store, clock, config }, registry, webhookSigningSecret: WEBHOOK_SECRET });
+  const app = createApp({ engine: { stellar, psp, store, clock, config }, registry, quote: quoteFn, webhookSigningSecret: WEBHOOK_SECRET });
   return { app, store, stellar, psp, clock, registry, trace };
 }
 
 export function intentBody(orderId: string): Record<string, string> {
+  // NOTE: no appliedRateStroops / paidPriceTry — the backend prices the order server-side (deps.quote).
   return {
     orderId,
     destination: DEST,
     amountStroops: AMOUNT.toString(),
     assetIssuer: 'GISSUER',
     memoHex: Buffer.from(deriveMemo(orderId)).toString('hex'),
-    appliedRateStroops: '340000000',
-    paidPriceTry: '3400.00',
     currency: 'TRY',
     ip: '1.2.3.4',
   };

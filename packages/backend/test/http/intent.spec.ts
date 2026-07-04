@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TIMEOUT } from '../fakes/harness.js';
+import type { QuoteFn } from '../../src/http/app.js';
 import { AMOUNT, intentBody, makeHttpHarness } from './http-harness.js';
 
 describe('POST /intent — money-first ① order start', () => {
@@ -8,8 +9,15 @@ describe('POST /intent — money-first ① order start', () => {
     const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
 
     expect(res.statusCode).toBe(200);
-    // money-first response: backend-issued token + hosted form content + the low-water "uyar" flag
-    expect(res.json()).toEqual({ orderId: 'order-1', token: 'tok-1', checkoutFormContent: '<html/>', poolLow: false });
+    // money-first response: backend-issued token + hosted form + the SERVER-computed price + low-water flag
+    expect(res.json()).toEqual({
+      orderId: 'order-1',
+      token: 'tok-1',
+      checkoutFormContent: '<html/>',
+      paidPriceTry: '41.42', // priced server-side: 1 USDC @ 40.50 mid + 229 bps commission (T+15)
+      spreadBps: 229,
+      poolLow: false,
+    });
     // the backend-issued token is persisted for the later webhook re-retrieve
     expect(h.registry.getByOrderId('order-1')?.ctx.token).toBe('tok-1');
     // a successful start reserves the pool then quiesces at SolvencyReserved (charge pending, form shown)
@@ -17,6 +25,19 @@ describe('POST /intent — money-first ① order start', () => {
 
     const status = await h.app.inject({ method: 'GET', url: '/status/order-1' });
     expect(status.json()).toEqual({ orderId: 'order-1', status: 'pending' });
+  });
+
+  it('prices the order SERVER-SIDE and IGNORES a client-supplied price (zero-trust)', async () => {
+    const h = makeHttpHarness();
+    // a client tries to dictate a cheap price — the backend must ignore it and price the order itself
+    const tampered = { ...intentBody('order-1'), paidPriceTry: '0.01', appliedRateStroops: '1' };
+    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: tampered });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ paidPriceTry: '41.42', spreadBps: 229 }); // server-computed, NOT the client's 0.01
+    const ctx = h.registry.getByOrderId('order-1')?.ctx;
+    expect(ctx?.paidPriceTry).toBe('41.42'); // the charge + settlement use the SERVER price
+    expect(ctx?.appliedRateStroops).toBe(414_274_500n); // 40.50 × 1.0229, NOT the client's 1
   });
 
   it('rejects a malformed body (400) without starting an order or consuming a sequence', async () => {
@@ -105,6 +126,18 @@ describe('POST /intent — money-first ① order start', () => {
     const res = await h.app.inject({ method: 'POST', url: '/intent', payload: { ...intentBody('order-1'), assetIssuer: 'GNOTALLOWED' } });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'IssuerNotAllowlisted' });
+  });
+
+  it('fails closed 502 PriceUnavailable when pricing is down — no seq, no order, no form', async () => {
+    const failing: QuoteFn = async () => {
+      throw new Error('rate source down');
+    };
+    const h = makeHttpHarness(100n, failing);
+    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'PriceUnavailable' });
+    expect(h.registry.getByOrderId('order-1')).toBeUndefined(); // priced BEFORE any seq/order -> nothing leaked
+    expect(h.trace).not.toContain('psp.initializeCheckoutForm'); // never opened a checkout form
   });
 
   it('returns 502 SnapshotUnavailable when the destination read fails (fail-closed, testable)', async () => {

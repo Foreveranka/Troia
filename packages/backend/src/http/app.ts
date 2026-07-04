@@ -20,9 +20,23 @@ import { KeyedMutex } from '../store/mutex.js';
 import type { OrderRegistry } from './order-registry.js';
 import { toPublicStatus } from './public-status.js';
 
+/** The server-side price for one order. Money-first + zero-trust: the BACKEND prices every order (commission +
+ *  spot mid), never a client-supplied paidPrice. Shape matches @troia/pricing quoteUsdc; the impl is INJECTED
+ *  so the spot-rate source (Yahoo / TCMB / CEX) stays a swappable seam — the backend takes no pricing dep. */
+export interface Quote {
+  readonly userTryKurus: bigint;
+  readonly paidPriceTry: string; // canonical "N.MM" TRY — the hosted-sale price
+  readonly appliedRateStroops: bigint; // applied TRY/USDC rate × 1e7 (recorded on-chain in pay())
+  readonly oracleMidE7: bigint;
+  readonly spreadBps: number; // the commission, in basis points
+}
+export type QuoteFn = (usdcStroops: bigint) => Promise<Quote>;
+
 export interface AppDeps {
   readonly engine: EngineDeps;
   readonly registry: OrderRegistry;
+  /** prices an order server-side (commission model + spot mid). Injected so the rate source stays a seam. */
+  readonly quote: QuoteFn;
   /** iyzico account secret (env IYZICO_SECRET_KEY; WEBHOOK_SIGNING_SECRET defaults to it). Non-empty. */
   readonly webhookSigningSecret: string;
   /** the SHARED per-order lock. The composition root (createServer) passes the SAME instance to the poll
@@ -60,14 +74,13 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const amountStr = optStr(body, 'amountStroops');
     const assetIssuer = optStr(body, 'assetIssuer');
     const memoHex = optStr(body, 'memoHex');
-    const rateStr = optStr(body, 'appliedRateStroops');
-    const paidPriceTry = optStr(body, 'paidPriceTry');
     const currency = optStr(body, 'currency');
     const ip = optStr(body, 'ip');
+    // appliedRateStroops / paidPriceTry are NOT read from the body — the backend PRICES the order (deps.quote),
+    // so a client can never dictate what it pays. Any such body fields are ignored.
     if (
       rawOrderId === undefined || rawOrderId.length === 0 || destination === undefined || amountStr === undefined ||
-      assetIssuer === undefined || memoHex === undefined || rateStr === undefined || paidPriceTry === undefined ||
-      currency === undefined || ip === undefined
+      assetIssuer === undefined || memoHex === undefined || currency === undefined || ip === undefined
     ) {
       return reply.code(400).send({ error: 'BadRequest' });
     }
@@ -78,10 +91,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const orderId = canonicalizeOrderId(rawOrderId);
 
     let amount: bigint;
-    let appliedRate: bigint;
     try {
       amount = BigInt(amountStr);
-      appliedRate = BigInt(rateStr);
     } catch {
       return reply.code(400).send({ error: 'BadAmount' });
     }
@@ -106,6 +117,16 @@ export function createApp(deps: AppDeps): FastifyInstance {
       return reply.code(409).send({ error: 'PoolInsufficient' }); // fail-closed ①: no seq, no order, no charge
     }
 
+    // money-first + zero-trust pricing: the backend prices the order (commission + spot mid), never the client.
+    // Fail CLOSED if pricing is unavailable (e.g. a live rate source is down) — before any seq/order, so a
+    // priced order is only ever started when we actually know its price.
+    let quote: Quote;
+    try {
+      quote = await deps.quote(amount);
+    } catch {
+      return reply.code(502).send({ error: 'PriceUnavailable' });
+    }
+
     const ids = built.value.fields.ids;
     const seq = engine.store.sequences.allocate(orderId);
     const ctx: OrderCtx = {
@@ -113,11 +134,11 @@ export function createApp(deps: AppDeps): FastifyInstance {
       conversationId: ids.idempotencyKeyHex,
       destination,
       amountStroops: amount,
-      appliedRateStroops: appliedRate,
+      appliedRateStroops: quote.appliedRateStroops,
       memoHex: ids.memoHex,
       paymentId: null,
       token: null,
-      paidPriceTry,
+      paidPriceTry: quote.paidPriceTry,
       currency,
       ip,
       activeSeq: seq.toString(),
@@ -135,8 +156,13 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const outcome = await orderLocks.run(orderId, async () => {
       const result = await start(ctx, engine);
       if (result.quiescence === 'alreadyStarted') {
-        // idempotent duplicate: return the ALREADY-persisted checkout token; never overwrite the live record.
-        return { kind: 'alreadyStarted' as const, token: registry.getByOrderId(orderId)?.ctx.token ?? null };
+        // idempotent duplicate: return the ALREADY-persisted token + the ORIGINAL price; never re-price or clobber.
+        const existing = registry.getByOrderId(orderId)?.ctx;
+        return {
+          kind: 'alreadyStarted' as const,
+          token: existing?.token ?? null,
+          paidPriceTry: existing?.paidPriceTry ?? null,
+        };
       }
       const checkout = result.sideOutputs.find((s) => s.kind === 'checkoutForm');
       const finalCtx: OrderCtx = checkout !== undefined ? { ...result.ctx, token: checkout.token } : result.ctx;
@@ -146,7 +172,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
     if (outcome.kind === 'alreadyStarted') {
       if (outcome.token === null) return reply.code(409).send({ error: 'AlreadyStarted' });
-      return reply.send({ orderId, token: outcome.token, alreadyStarted: true });
+      return reply.send({ orderId, token: outcome.token, alreadyStarted: true, paidPriceTry: outcome.paidPriceTry });
     }
     if (outcome.checkout === undefined) {
       // no form issued: the atomic reserve lost a race with the gate, the reserve was unknown, or the form init
@@ -159,6 +185,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
       orderId,
       token: outcome.checkout.token,
       checkoutFormContent: outcome.checkout.formContent,
+      paidPriceTry: quote.paidPriceTry, // the server-computed price (the user is charged EXACTLY this)
+      spreadBps: quote.spreadBps, // the commission bps, for storefront transparency
       poolLow,
     });
   });

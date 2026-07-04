@@ -268,6 +268,7 @@ export function makeCtx(store: FakeStore, overrides: Partial<OrderCtx> = {}): Or
     activeSeq: seq.toString(),
     hashHex: null,
     signedXdr: null,
+    payMaxTimeUnix: null,
     deadRetries: 0,
     captureRetries: 0,
     ...overrides,

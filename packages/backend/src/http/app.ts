@@ -25,6 +25,10 @@ export interface AppDeps {
   readonly registry: OrderRegistry;
   /** iyzico account secret (env IYZICO_SECRET_KEY; WEBHOOK_SIGNING_SECRET defaults to it). Non-empty. */
   readonly webhookSigningSecret: string;
+  /** the SHARED per-order lock. The composition root (createServer) passes the SAME instance to the poll
+   *  worker so intent/webhook/poll serialize per order — without sharing, two overlapping drives of one order
+   *  could double-submit a same-seq USDC replacement. Defaults to a private lock when omitted (standalone app). */
+  readonly orderLocks?: KeyedMutex;
 }
 
 function optStr(o: Record<string, unknown>, k: string): string | undefined {
@@ -43,7 +47,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     throw new Error('createApp: webhookSigningSecret must be a non-empty string');
   }
   const { engine, registry, webhookSigningSecret } = deps;
-  const orderLocks = new KeyedMutex();
+  const orderLocks = deps.orderLocks ?? new KeyedMutex(); // load-bearing: the composition shares ONE instance
   const app = Fastify({ bodyLimit: 1024 * 1024 });
 
   // POST /intent — the fail-closed ① gate. A rejected intent consumes NO sequence and starts NO order.
@@ -107,6 +111,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       activeSeq: seq.toString(),
       hashHex: null,
       signedXdr: null,
+      payMaxTimeUnix: null,
       deadRetries: 0,
       captureRetries: 0,
     };

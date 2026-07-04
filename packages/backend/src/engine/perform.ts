@@ -135,7 +135,8 @@ async function doSubmitAndObserve(ctx: OrderCtx, coreState: State, deps: EngineD
   const state: ReducerState = { phase: 'polling', hashHex: submit.hashHex, ourSeq, maxTime };
   const obs = await deps.stellar.observe(state);
   const mapping = verdictToCore(obs.verdict ?? 'STILL_PENDING', coreState);
-  const ctxPatch: Partial<OrderCtx> = { hashHex: submit.hashHex, signedXdr: submit.signedXdr };
+  // record the maxTime too so the poll/recovery worker can rebuild this exact observe input after a crash.
+  const ctxPatch: Partial<OrderCtx> = { hashHex: submit.hashHex, signedXdr: submit.signedXdr, payMaxTimeUnix: maxTime };
   if (mapping.kind === 'escalate') return { event: null, ctxPatch, escalate: { reason: mapping.reason } };
   return { event: mapping.event, ctxPatch };
 }

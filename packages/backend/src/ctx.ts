@@ -27,6 +27,9 @@ export interface OrderCtx {
    *  a pay() has been submitted. Threaded through ctx because Store is write-only (no evidence read-back). */
   readonly hashHex: string | null;
   readonly signedXdr: string | null;
+  /** the submitted pay() tx's timebounds maxTime (unix seconds) — set alongside the witness so the poll/
+   *  recovery worker can rebuild the observe ReducerState after a crash without re-deriving from the XDR. */
+  readonly payMaxTimeUnix: number | null;
   /** persisted deterministic retry counters. */
   readonly deadRetries: number;
   readonly captureRetries: number;

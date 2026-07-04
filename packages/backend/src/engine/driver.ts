@@ -43,6 +43,16 @@ function finish(
 }
 
 /**
+ * The durable quarantine for a burned-but-unproven sequence (verdictToCore INDETERMINATE_LOSS_REVIEW, which
+ * has NO core event): record the loss WITHOUT moving money or touching the sequence (left ACTIVE for the
+ * reconciler). Shared by run() and the poll/recovery worker so the quarantine is identical on both paths.
+ * flagLoss accepts a null usdcTxHash (a witness may be absent on the crash-recovery path).
+ */
+export async function applyEscalate(ctx: OrderCtx, deps: EngineDeps): Promise<void> {
+  await deps.store.flagLoss(ctx.orderId, 'indeterminateLossReview', ctx.hashHex);
+}
+
+/**
  * Feed `event0` into the core at `state0` and run to quiescence. Total; throws EngineError only on a
  * dead-letter (unmapped (state,event)) or a broken flow (a required ctx field absent).
  */
@@ -81,7 +91,7 @@ export async function run(
 
     if (escalated) {
       // Durable quarantine: money-safe (flagLoss moves nothing), seq left ACTIVE (never burned/reused here).
-      await deps.store.flagLoss(ctx.orderId, 'indeterminateLossReview', ctx.hashHex);
+      await applyEscalate(ctx, deps);
       return finish(ctx, state, sideOutputs, escalate, 'escalated');
     }
     if (fed !== null) {

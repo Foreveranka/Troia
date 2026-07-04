@@ -18,6 +18,9 @@ export interface OrderRegistry {
   put(ctx: OrderCtx, state: State): void;
   getByOrderId(orderId: string): OrderRecord | undefined;
   getByConversationId(conversationId: string): OrderRecord | undefined;
+  /** A materialized snapshot of orders currently in any of the given states — the poll/recovery worker's
+   *  work-list. Returns a COPY (not a live Map view), so advance() mutating the registry mid-poll is safe. */
+  ordersInStates(states: readonly State[]): readonly OrderRecord[];
 }
 
 export class InMemoryOrderRegistry implements OrderRegistry {
@@ -36,5 +39,10 @@ export class InMemoryOrderRegistry implements OrderRegistry {
   getByConversationId(conversationId: string): OrderRecord | undefined {
     const orderId = this.convToOrder.get(conversationId);
     return orderId === undefined ? undefined : this.byOrder.get(orderId);
+  }
+
+  ordersInStates(states: readonly State[]): readonly OrderRecord[] {
+    const wanted = new Set<State>(states);
+    return [...this.byOrder.values()].filter((r) => wanted.has(r.state)); // materialized copy
   }
 }

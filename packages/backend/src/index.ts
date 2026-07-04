@@ -15,7 +15,7 @@ export {
 } from './engine/mutation-guard.js';
 
 export { perform } from './engine/perform.js';
-export { run, start, advance } from './engine/driver.js';
+export { run, start, advance, applyEscalate } from './engine/driver.js';
 export type { RunResult, Quiescence } from './engine/driver.js';
 export { decisionEvent, flagLossBucket, releaseReason } from './engine/events.js';
 export type { EngineDeps, PerformResult, SideOutput } from './engine/events.js';
@@ -50,3 +50,8 @@ export { InMemoryOrderRegistry } from './http/order-registry.js';
 export type { OrderRegistry, OrderRecord } from './http/order-registry.js';
 export { toPublicStatus } from './http/public-status.js';
 export type { PublicStatus } from './http/public-status.js';
+
+export { pollInFlight } from './worker/poll-worker.js';
+export type { PollReport } from './worker/poll-worker.js';
+export { buildEngineConfig, createServer } from './composition.js';
+export type { EngineExtras, ServerDeps, ServerPorts, Server } from './composition.js';

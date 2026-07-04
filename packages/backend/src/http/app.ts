@@ -74,13 +74,13 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const amountStr = optStr(body, 'amountStroops');
     const assetIssuer = optStr(body, 'assetIssuer');
     const memoHex = optStr(body, 'memoHex');
-    const currency = optStr(body, 'currency');
     const ip = optStr(body, 'ip');
-    // appliedRateStroops / paidPriceTry are NOT read from the body — the backend PRICES the order (deps.quote),
-    // so a client can never dictate what it pays. Any such body fields are ignored.
+    // appliedRateStroops / paidPriceTry / currency are NOT read from the body — the backend PRICES the order in
+    // its OWN (TRY) currency via deps.quote, so a client can never dictate what it pays NOR the currency it is
+    // charged in (a client 'currency: USD' would otherwise charge a TRY amount as dollars). Such fields are ignored.
     if (
       rawOrderId === undefined || rawOrderId.length === 0 || destination === undefined || amountStr === undefined ||
-      assetIssuer === undefined || memoHex === undefined || currency === undefined || ip === undefined
+      assetIssuer === undefined || memoHex === undefined || ip === undefined
     ) {
       return reply.code(400).send({ error: 'BadRequest' });
     }
@@ -139,7 +139,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       paymentId: null,
       token: null,
       paidPriceTry: quote.paidPriceTry,
-      currency,
+      currency: engine.config.psp.currency, // server-fixed (TRY), never the client's
       ip,
       activeSeq: seq.toString(),
       hashHex: null,

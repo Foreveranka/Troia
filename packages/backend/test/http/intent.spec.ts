@@ -27,10 +27,10 @@ describe('POST /intent — money-first ① order start', () => {
     expect(status.json()).toEqual({ orderId: 'order-1', status: 'pending' });
   });
 
-  it('prices the order SERVER-SIDE and IGNORES a client-supplied price (zero-trust)', async () => {
+  it('prices the order SERVER-SIDE and IGNORES a client-supplied price AND currency (zero-trust)', async () => {
     const h = makeHttpHarness();
-    // a client tries to dictate a cheap price — the backend must ignore it and price the order itself
-    const tampered = { ...intentBody('order-1'), paidPriceTry: '0.01', appliedRateStroops: '1' };
+    // a client tries to dictate a cheap price AND a foreign currency — the backend must ignore both
+    const tampered = { ...intentBody('order-1'), paidPriceTry: '0.01', appliedRateStroops: '1', currency: 'USD' };
     const res = await h.app.inject({ method: 'POST', url: '/intent', payload: tampered });
 
     expect(res.statusCode).toBe(200);
@@ -38,6 +38,7 @@ describe('POST /intent — money-first ① order start', () => {
     const ctx = h.registry.getByOrderId('order-1')?.ctx;
     expect(ctx?.paidPriceTry).toBe('41.42'); // the charge + settlement use the SERVER price
     expect(ctx?.appliedRateStroops).toBe(414_274_500n); // 40.50 × 1.0229, NOT the client's 1
+    expect(ctx?.currency).toBe('TRY'); // server-fixed currency, NOT the client's 'USD' (would charge TRY as USD)
   });
 
   it('rejects a malformed body (400) without starting an order or consuming a sequence', async () => {

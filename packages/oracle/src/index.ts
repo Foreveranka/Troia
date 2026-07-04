@@ -70,10 +70,13 @@ function absBig(x: bigint): bigint {
 }
 /**
  * Lower-median ORDER STATISTIC (an actual quoted price) — the accepted mid AND the robust center for
- * outlier detection. Unlike the mean-of-middles, a single one-sided extreme value cannot shift it, so
- * it cannot make an honest source on the opposite side look like the outlier, and no single added
- * source can push the settlement mid UP (the user is never overcharged by oracle manipulation). A
- * legitimate in-band source's influence is bounded by the deviation threshold — keep the threshold tight.
+ * outlier detection. Unlike the mean-of-middles, a single HIGH one-sided extreme cannot shift it (the
+ * lower-median resists high-side manipulation) and cannot make an honest opposite source look like the
+ * outlier. It does NOT make manipulation impossible: a COMPROMISED source replacing an honest value at or
+ * below the median can move the accepted mid up to the next quoted price — but that residual influence is
+ * BOUNDED by the deviation threshold (any source beyond it fails the round closed), and adding a data point
+ * necessarily shifts the median ("zero influence" is impossible). So keep the deviation threshold TIGHT and
+ * require a genuine >= 3-source majority; the accepted mid is always a real quoted price within [min, max].
  */
 function medianElement(sortedAsc: readonly bigint[]): bigint {
   return sortedAsc[Math.floor((sortedAsc.length - 1) / 2)] as bigint;

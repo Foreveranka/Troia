@@ -15,26 +15,27 @@ import { commissionBps, priceUsdc, STROOP } from '../../pricing/src/index.js';
 const NOW = 1_700_000_000_000;
 const POLICY: OraclePolicy = { maxAgeMs: 5_000, deviationThresholdBps: 100, minQuorum: 2 };
 
-/** Build the per-CEX ticker JSON each source expects, for a given TRY/USDT and USDC/USDT price. */
-function tickerFor(url: string, tryUsdt: string, usdcUsdt: string): unknown {
+/** Build the per-CEX ticker JSON each source expects (the USDCUSDT price is USDT-per-USDC), with an optional
+ *  exchange timestamp (Bybit top-level `time`, OKX per-ticker `ts`; Binance's /ticker/price carries none). */
+function tickerFor(url: string, tryUsdt: string, usdcUsdt: string, tsMs?: number): unknown {
   const isTry = url.includes('USDTTRY') || url.includes('USDT-TRY');
   const price = isTry ? tryUsdt : usdcUsdt;
   if (url.includes('binance')) return { symbol: isTry ? 'USDTTRY' : 'USDCUSDT', price };
-  if (url.includes('bybit')) return { retCode: 0, result: { list: [{ lastPrice: price }] } };
-  if (url.includes('okx')) return { code: '0', data: [{ last: price }] };
+  if (url.includes('bybit')) return { retCode: 0, ...(tsMs !== undefined ? { time: tsMs } : {}), result: { list: [{ lastPrice: price }] } };
+  if (url.includes('okx')) return { code: '0', data: [{ last: price, ...(tsMs !== undefined ? { ts: String(tsMs) } : {}) }] };
   throw new Error(`unexpected url: ${url}`);
 }
 
 /** A mock fetch that serves each CEX its ticker; `down` names sources whose fetch throws (a network failure). */
 function mockFetch(
-  perSource: Record<string, { tryUsdt: string; usdcUsdt: string }>,
+  perSource: Record<string, { tryUsdt: string; usdcUsdt: string; tsMs?: number }>,
   down: readonly string[] = [],
 ): FetchLike {
   return async (url) => {
     const name = url.includes('binance') ? 'binance' : url.includes('bybit') ? 'bybit' : 'okx';
     if (down.includes(name)) throw new Error(`${name} down`);
     const p = perSource[name]!;
-    const body = tickerFor(url, p.tryUsdt, p.usdcUsdt);
+    const body = tickerFor(url, p.tryUsdt, p.usdcUsdt, p.tsMs);
     return { json: async () => body };
   };
 }
@@ -78,8 +79,21 @@ describe('LiveCexOracle — aggregate a spot mid across CEXes (mocked fetch, no 
     expect(r.quote.sources).toHaveLength(3);
   });
 
-  it('reflects a de-pegged USDC in the derived rate (USDC < USDT -> more TRY per USDC)', async () => {
-    // USDC/USDT = 0.9950 -> TRY/USDC = 40.50 / 0.9950 > 40.50 (the exact reason CEX beats "assume USDC=1")
+  it('derives TRY/USDC by MULTIPLYING the tickers (TRY/USDT × USDT/USDC), not dividing', async () => {
+    // 1 USDC = 1.05 USDT (USDC above USDT), 1 USDT = 40.00 TRY -> 1 USDC = 42.00 TRY. (A divide would give 38.10.)
+    const fetch = mockFetch({
+      binance: { tryUsdt: '40.00', usdcUsdt: '1.05' },
+      bybit: { tryUsdt: '40.00', usdcUsdt: '1.05' },
+      okx: { tryUsdt: '40.00', usdcUsdt: '1.05' },
+    });
+    const r = await new LiveCexOracle({ policy: POLICY, sources, fetch, now: () => NOW }).getRate();
+    if (!r.ok) throw new Error(r.error.code);
+    expect(r.quote.midTryPerUsdc).toBe(420_000_000n); // 40.00 × 1.05 = 42.00
+  });
+
+  it('reflects a de-pegged USDC in the RIGHT direction (USDC below peg -> FEWER TRY per USDC)', async () => {
+    // USDCUSDT ticker = USDT-per-USDC = 0.9950 (1 USDC < 1 USDT) -> TRY/USDC = 40.50 × 0.9950 < 40.50.
+    // The exact reason CEX beats "assume USDC=1": the peg gap is priced in, and in the correct direction.
     const fetch = mockFetch({
       binance: { tryUsdt: '40.50', usdcUsdt: '0.9950' },
       bybit: { tryUsdt: '40.50', usdcUsdt: '0.9950' },
@@ -88,7 +102,21 @@ describe('LiveCexOracle — aggregate a spot mid across CEXes (mocked fetch, no 
     const r = await new LiveCexOracle({ policy: POLICY, sources, fetch, now: () => NOW }).getRate();
     expect(r.ok).toBe(true);
     if (!r.ok) throw new Error(r.error.code);
-    expect(r.quote.midTryPerUsdc).toBeGreaterThan(405_000_000n); // the peg gap is priced in
+    expect(r.quote.midTryPerUsdc).toBe(402_975_000n); // 40.50 × 0.9950 (exact) — cheaper, correctly
+  });
+
+  it('drops a source whose EXCHANGE timestamp is stale (maxAgeMs actually fires on the live path)', async () => {
+    // bybit's ticker `time` is 1 hour old -> beyond maxAgeMs (5s) -> dropped; binance (no ts -> fetch time) and
+    // okx (fresh ts) still meet the quorum. Before the fix, asOfMs was always the fetch time -> never stale.
+    const fetch = mockFetch({
+      binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' },
+      bybit: { tryUsdt: '40.50', usdcUsdt: '1.0000', tsMs: NOW - 3_600_000 },
+      okx: { tryUsdt: '40.50', usdcUsdt: '1.0000', tsMs: NOW - 1_000 },
+    });
+    const r = await new LiveCexOracle({ policy: POLICY, sources, fetch, now: () => NOW }).getRate();
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error.code);
+    expect(r.quote.sources).toEqual(['binance', 'okx']); // bybit dropped as stale; quorum still met
   });
 
   it('survives a single source outage on the quorum (2 of 3), dropping it fail-SAFE', async () => {

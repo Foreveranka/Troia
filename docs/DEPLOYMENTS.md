@@ -41,7 +41,7 @@ issuer (USDC SAC mint authority). See ARCHITECTURE §9.
 
 ## Verified on-chain state
 
-At deploy time, reading the TroyPool views directly:
+After the pool seed, reading the TroyPool views directly:
 
 ```
 balance   = "1000000000000"  # 100,000 USDC (7 decimals)
@@ -49,6 +49,29 @@ is_paused = false
 operator  = GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S
 admin     = GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ
 ```
+
+## Verified money path (real `pay()` on testnet)
+
+An operator-signed `pay()` moved USDC from the pool to a merchant end-to-end, using identities derived from a real
+`order_id`. Every tx below is verifiable on the explorer — you do not have to trust this table.
+
+- **Order:** `order_id = troia-smoke-0001`, amount **1 USDC** (`10000000` stroops), `applied_rate = 411075000`.
+- **Merchant:** `GDF7V2G5FB5UF4AT7ZQ2A4L3YFG44UVJW3APSZWDN3FCI3HJCCMMGOXN` — a fresh account with a USDC trustline
+  ([trustline tx](https://stellar.expert/explorer/testnet/tx/d2b120f2f258f35474a3f08704639c381136a973215af114cdefbc82c59bbd49)).
+- **Derived identity** (`deriveIds(order_id)`, byte-exact — ARCHITECTURE §4):
+  - `tx_id = fdce630a4557f4bb37a6d7c1d3e011f0749b1f2e0de54be336e8d4ee789876cf`
+  - `memo  = 6115721c3f246433a851a959ba9b0bc8c3de9bc486f5da2cdd0f022bad30c5a9`
+
+| Check | Result |
+|---|---|
+| `pay()` payout (operator-signed) | [tx `5a3d60cc…`](https://stellar.expert/explorer/testnet/tx/5a3d60cc25fc82025560d1c13b74f63b619393e194ada43cc6b8317637d64f13) — emits `PaymentMade` with the derived `tx_id`/`memo` |
+| Pool balance | 100,000 → **99,999 USDC** (`999990000000`) |
+| Merchant balance | 0 → **1 USDC** (`10000000`) |
+| Replay guard | `is_processed(tx_id) = true` |
+| **Double-pay shield** | a second `pay()` with the same `tx_id` **reverts** `AlreadyProcessed` (`Error(Contract, #1)`); the pool balance is unchanged |
+
+The double-pay revert is the on-chain half of invariant ② (the operator sequence is the primary shield; the
+contract's `Processed(tx_id)` guard is the second): the irreversible USDC leg can never pay one order twice.
 
 ## Reproduce
 

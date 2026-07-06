@@ -8,7 +8,8 @@ the operator settles the merchant in USDC from a pre-funded Stellar pool. The sp
 > **`signed ≠ settled`**.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design contract and [`docs/ROADMAP.md`](docs/ROADMAP.md)
-for the phased build plan.
+for the phased build plan. For the reviewer-verifiable proof story, see [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md),
+[`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md), and [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 
 ## Toolchain
 
@@ -26,7 +27,8 @@ for the phased build plan.
 | `just format` | Prettier write |
 | `just contract-build` | `stellar contract build` (Soroban wasm) |
 
-`just fund` / `just demo` / `just verify` are stubs until Phases 4/5/3 respectively.
+`just verify` runs today — an offline, network-blocked proof of the reconciliation report (see
+[`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)). `just fund` and `just demo` are stubs until Phases 4.4 / 5.3.
 
 ## Secret boundary
 
@@ -37,4 +39,12 @@ bug and is caught by a guard test.
 
 ## Status
 
-Phase 0 (scaffold). No business logic yet — see the roadmap.
+The money-safety core is built and tested offline: the settlement state machine, memo/identity derivation,
+sequence allocator, deterministic FX oracle + commission pricing, double-entry ledger, the `TroyPool` Soroban
+contract, the iyzico direct-sale adapter, and the reviewer-verifiable reconciler (`just verify` passes offline).
+Settlement is **money-first** — the reversible TRY charge is taken before the irreversible USDC payout.
+
+Not yet wired (deferred, not hidden): the live Stellar rails (`just fund`: friendbot + USDC SAC deploy — Phase
+4.4), `PolicyConfig` calibration in the iyzico sandbox (4.5), the storefront (5.1), the browser extension (5.2),
+and the live `just demo` run (5.3). See [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and
+[`docs/ROADMAP.md`](docs/ROADMAP.md).

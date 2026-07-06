@@ -37,65 +37,81 @@ The user *does* wait (~10–45s) while the settlement chain completes.
 Two legs with opposite reversibility:
 
 - **USDC is irreversible** (once sent, it is gone).
-- **TRY hold is reversible** (a preauth can be voided).
+- **A TRY charge is reversible** (a same-day sale can be voided).
 
-Therefore the irreversible leg is executed **before** capturing the reversible leg:
+Therefore the irreversible leg is executed **last**, only after the reversible charge is secured (money-first,
+Phase 4.6):
 
 ```
-1. PreAuth   — iyzico blocks (holds) the TRY on the card; does not charge yet
-2. USDC pay  — TroyPool.pay() moves USDC pool→merchant (deterministic tx: order-pinned seq + 45s timebounds)
-3. Confirm   — on-chain confirmation (getTransaction / settlement_evidence)
-4. PostAuth  — ONLY NOW iyzico captures (charges) the TRY
+1. Reserve  — reserve the pool's USDC BEFORE the customer can be charged (fail-closed 409 at /intent if it can't)
+2. Charge   — iyzico direct-SALE hosted form charges the TRY (no preauth/hold; PAN never touches our servers)
+3. USDC pay — ONLY after the charge is confirmed: TroyPool.pay() moves USDC pool→merchant (deterministic tx:
+              order-pinned seq + narrow timebounds)
+4. Confirm  — on-chain confirmation (settlement_evidence) → hand to the reconciler
 ```
 
-This drives **order-level float to zero**: on the happy path there is never a "sent USDC but did not
-capture TRY" (or the reverse) gap. If USDC never lands, PostAuth is never called and the hold is voided.
+This places the only irreversible action at the very end. The customer is **never charged unless a USDC
+reservation is already held**, and USDC is **never sent on an unknown charge**. On the happy path there is never
+a "sent USDC but did not secure TRY" gap.
 
-**Residual risk is not zero — it is confined to one narrow window** (USDC sent → capture rejected →
-`LOSS_REVIEW`). Two sub-cases, deliberately separated:
+If the USDC leg fails after the charge, the completed sale is **voided the same day** (`iyzico.cancel`), returning
+the customer's TRY — a reversible unwind, not a permanent loss.
 
-- **Expiry** (hold window elapsed): prevented by the invariant `preauth_validity ≫ worst_case_time_to_capture`
-  (worst case measured against RPC observation lag, not the 45s timebounds).
-- **Reject** (issuer refuses capture: limit/balance): duration cannot save this → residual risk →
-  `LOSS_REVIEW`, accepted honestly. The invariant prevents *expiry*, not *reject*.
-
-When a loss occurs it is **ours**, never the customer's: the card hold is voided (`TryHoldVoided`).
+**Residual risk is not zero — it is confined to one narrow window**: USDC was sent, but the reversible charge
+cannot be unwound (the void itself repeatedly fails, or the USDC fate is genuinely unknown). That order lands in
+`LossReview` — a durable, surfaced bucket, never a silent park. On testnet no real value is at stake; the path
+exists to demonstrate maturity. When a loss occurs it is **ours**, never the customer's.
 
 ---
 
 ## 3. State machine (single source of truth)
 
-15 states; the transition table in `troia-olay-orgusu.md` §4 is authoritative and is mirrored 1:1 in code
-(`packages/core`). An independent audit (D1–D8) corrected the original table for money-safety and reducer
-totality before implementation. State classes:
+12 states, mirrored 1:1 in code (`packages/core/src/state-machine.ts`). An independent audit corrected the table
+for money-safety and reducer totality before implementation; the money-first reordering (Phase 4.6) then removed
+the preauth/capture states and added the charge/reversal ones. State classes:
 
-- **Absolute terminals** (any event → idempotent no-op): `Reconciled · FailedClean · TryHoldVoided`.
-- **Void-pending** (a live TRY hold remains → `iyzico.cancel` is 3-valued; `voidConfirmed → TryHoldVoided`):
-  `SolvencyRejected · LossReview · AbandonedSeqReturned`. These are NOT resting terminals — a post-PreAuth path
-  must always end captured (`TryCaptured`) or voided (`TryHoldVoided`).
-- **Awaiting-reconcile:** `TryCaptured` (→ `Reconciled`).
+- **Absolute terminals** (any event → idempotent no-op): `Reconciled · FailedClean · ChargeReversed`.
+- **Reversal-pending** (a completed TRY sale is being voided; `iyzico.cancel` is 3-valued —
+  `reversalConfirmed → ChargeReversed`, exhausted budget → `LossReview`): `ChargeReversing`.
+- **Manual sink** (USDC fate genuinely unknown, or a void that could not complete — surfaced, never silent):
+  `LossReview`.
+- **Awaiting-reconcile:** `UsdcConfirmed` (→ `Reconciled`; there is no capture leg anymore).
+
+Happy path: `Reserved →(solvencyOk)→ SolvencyReserved →(chargeOk)→ UsdcSubmitted →(evidenceSuccess)→
+UsdcConfirmed →(reconciled)→ Reconciled`. The in-flight USDC states (`UsdcSubmitted · UsdcPending · UsdcDead ·
+UsdcReverted`) resolve the irreversible leg.
 
 The reducer is pure and total: `transition(state, event) → {status:'transition', next, effects} | {status:'ignored'}
 | {status:'rejected', reason}` — it never throws. Only table-listed transitions yield `transition`; a duplicate
-event on an absolute terminal yields `ignored` (at-least-once redelivery); an undefined pair yields `rejected`.
+event on an absolute terminal / manual sink yields `ignored` (at-least-once redelivery); an undefined pair yields
+`rejected`.
 
 Load-bearing rules (each is a test):
 
-- **Write-ahead:** the in-flight state (`UsdcSubmitted` / `CaptureSubmitted`) is persisted **before** the
-  side-effecting call. So a state can mean "the side effect definitely has not started yet" → safe to proceed.
-- **Unknown never advances toward an irreversible action:** solvency, capture, void, and preauth are all
-  3-valued (OK/FAIL/Unknown). An `Unknown` result stays and re-polls; it never triggers `pay()`, a capture, or a
-  cancel. A two-valued gate before the irreversible USDC leg is a P0 (same class as the capture double-charge).
-- **Deadness is hash-first, not wall-clock:** a tx is dead (safe to release the hold) only if **(1)** none of
-  the order's evidence hashes is SUCCESS, **and (2)** `observed last ledger closeTime > tx.maxTime`, **and**
+- **Reserve-before-charge:** solvency is reserved FIRST; the customer is never charged unless a USDC reservation
+  is already held (fail-closed `409` at `/intent`).
+- **USDC is last, and never on an unknown charge:** `submitPay` fires only from `SolvencyReserved` on `chargeOk`;
+  `chargeUnknown` stays and re-polls, never submits.
+- **Write-ahead:** the in-flight state (`UsdcSubmitted`) is persisted **before** the side-effecting `submitPay`.
+  So a state can mean "the side effect definitely has not started yet" → safe to proceed.
+- **Unknown never advances toward an irreversible action:** solvency, charge, and reversal are all 3-valued
+  (OK/FAIL/Unknown). An `Unknown` result stays and re-polls (`rePollObserveOnly`, the only effect it may emit);
+  it never triggers `pay()`, a charge, or a cancel. A two-valued gate before the irreversible USDC leg is a P0.
+- **Deadness is hash-first, not wall-clock:** a tx is dead (safe to reallocate) only if **(1)** none of the
+  order's evidence hashes is SUCCESS, **and (2)** `observed last ledger closeTime > tx.maxTime`, **and**
   `network-read account seq < S` (seq still unburned). `Date.now()` is forbidden. A burned seq means a tx
   landed (CONFIRMED or REVERTED) → not dead, no same-seq replay.
 - **`UsdcDead` vs `UsdcReverted` — inverse seq behaviour:** DEAD = tx never entered, seq free → same-seq
-  replacement valid. REVERTED = tx entered + reverted, seq burned → same-seq replay loops on `txBAD_SEQ` →
-  forbidden; classify the cause (`AlreadyProcessed → UsdcConfirmed` and capture; `BalanceGuard → clean void`;
-  `Other → reallocate NEW seq`). Reconciled is reachable ONLY via `TryCaptured`.
-- **Recovery never blind-resubmits / re-captures** — restart fires an observation-only `recover` event that
-  reads evidence / re-polls, then the normal observation rows fire; it never re-runs the entering side-effect.
+  replacement valid (`submitReplacementSameSeq`). REVERTED = tx entered + reverted, seq burned → same-seq replay
+  loops on `txBAD_SEQ` → forbidden; classify the cause (`revertAlreadyProcessed → UsdcConfirmed`;
+  `revertBalanceGuard → void the sale`; `revertOther → reallocate a NEW seq`). Reconciled is reachable ONLY via
+  `UsdcConfirmed`.
+- **Recovery never blind-resubmits** — restart fires an observation-only `recover` event that reads evidence;
+  only the charge→submit crash seam (charge done, `pay()` never sent, seq still active) uses `recoverResubmit`
+  for a money-safe same-seq submission. It never re-runs a side-effect that may already have started.
+- **USDC failure unwinds reversibly:** when retries are exhausted (`UsdcDead`) or USDC did not move
+  (`revertBalanceGuard`), the completed sale is voided (`fireCancel` → `ChargeReversing`); only a void that
+  cannot complete lands in `LossReview`.
 
 ---
 
@@ -170,9 +186,9 @@ bottleneck → the **head-of-line** rule (one in-flight payout at a time). Phase
 | ③a | SOLVENCY MECHANISM — backend reservation AND contract `balance>=amount` (both "yes") | backend + `TroyPool` |
 | ③b | SOLVENCY (ECONOMIC) — real inventory adequacy = Phase-2 (testnet mints infinitely) | `packages/rebalance` |
 | ④ | EVIDENCE — every submit writes hash+XDR+seq to our append-only ledger | `settlement_evidence` |
-| ⑤ | PRICE-LOCK — the ₺ shown is frozen at intent-build; capture charges exactly that | `packages/pricing` computes, `core` freezes |
-| ⑥ | CAPTURE IDEMPOTENCY (TRY) — iyzico has no dedup → our DB-guard + `CaptureSubmitted` + 3-valued retrieve | `packages/psp` + backend |
-| ⑦ | PREAUTH VOID (TRY) — failure states release the card hold via `iyzico.cancel` → `TryHoldVoided` | `packages/psp` + backend |
+| ⑤ | PRICE-LOCK — the ₺ is priced server-side and frozen at `/intent`; the hosted direct-sale form charges exactly that | `packages/pricing` computes, `core` freezes |
+| ⑥ | CHARGE IDEMPOTENCY (TRY) — iyzico has no dedup → our DB-guard + backend-issued token + 3-valued retrieve on the webhook | `packages/psp` + backend |
+| ⑦ | SALE VOID (TRY) — a USDC failure after the charge voids the completed sale via `iyzico.cancel` (same-day) → `ChargeReversed` | `packages/psp` + backend |
 
 **`BuildError` (flat enum, deterministic control order):**
 `AddressInvalidChecksum → MemoMissing → MemoWrongLength → MemoZero → MemoMismatch → AmountNonPositive →
@@ -184,38 +200,40 @@ compile-time only, so build validates runtime types too (a non-`bigint` amount, 
 fail closed to the matching `BuildError`) and never throws for any `raw` input. (`BuildContext` is a trusted
 programmatic dependency, not the untrusted payload.)
 
-**Capture 3-valued classifier (`classifyIyzicoResult`):** `Success → TryCaptured` · `DefinitivelyNotCaptured
-→ bounded retry` · `Unknown (5xx/timeout/reset) → STAY, re-poll, never a new capture`. A two-valued classifier
-double-charges on `Unknown` (P0).
+**Charge 3-valued classifier (`classifyIyzicoResult`):** `Success → chargeOk (then submit USDC, last)` ·
+`DefinitivelyNotCharged → chargeRejected (clean fail, nothing taken)` · `Unknown (5xx/timeout/reset) → STAY,
+re-poll, never submit USDC`. A two-valued classifier could send the irreversible USDC on an `Unknown` charge (P0).
 
 ---
 
 ## 7. Package layout
+
+As-built (deferred pieces are marked; the design intent for them is unchanged):
 
 ```
 troia/
 ├── Cargo.toml                  # Rust workspace
 ├── package.json                # pnpm workspace root
 ├── pnpm-workspace.yaml
-├── justfile                    # just fund / demo / verify
+├── justfile                    # just build / test / lint / verify  (fund → Phase 4.4, demo → Phase 5.3)
 ├── .tool-versions
 ├── contracts/
 │   └── troy_pool/              # single Soroban contract: pay + guard + pause + upgrade
-├── packages/
-│   ├── config/                 # NetworkConfig — single authority, no secrets
-│   ├── core/                   # PayoutIntent, deriveIds, state machine, domain types
-│   ├── oracle/                 # deterministic median CEX rate (no AI)
-│   ├── pricing/                # userTRY = usdc × rate × (1 + spread_bps)
-│   ├── ledger/                 # double-entry: fiat_in / crypto_out / spread / fee
-│   ├── psp/                    # PaymentProvider (IyzicoSandbox → IyzicoProd)
-│   ├── rebalance/              # RebalanceProvider (SimulatedRebalance → Binance)
-│   ├── kyc/                    # KycProvider (testnet no-op) — boundary now
-│   ├── signer/                 # Signer abstraction (LocalKey → KMS/HSM+multisig)
-│   └── stellar-client/         # SDK wrapper: SAC transfer, submit + poll, snapshot loader
-├── app/
-│   ├── backend/                # Fastify — the heart: state machine, webhook, solvency, reconciler
-│   └── merchant-frontend/      # Next.js demo store, emits SEP-7 pay URI
-└── extension/                  # MV3 — thin: adapters + content/background, holds no keys
+└── packages/
+    ├── config/                 # NetworkConfig — single authority, no secrets
+    ├── core/                   # PayoutIntent, deriveIds, state machine, domain types
+    ├── oracle/                 # deterministic median CEX rate + commission inputs (no AI)
+    ├── pricing/                # userTRY = usdc × rate × (1 + commission_bps)
+    ├── ledger/                 # double-entry: fiat_in / crypto_out / spread / fee
+    ├── psp/                    # PaymentProvider (iyzico direct-sale: sandbox → prod)
+    ├── stellar-client/         # SDK wrapper: SAC transfer, submit + poll, snapshot loader, Signer boundary
+    ├── reconciler/             # keyless three-artifact reconciler + offline `just verify`
+    ├── backend/                # the heart: state machine driver, HTTP, webhook, solvency, poll-worker
+    └── integration/            # cross-package composition smoke tests
+
+Deferred, not yet built: app/merchant-frontend (Phase 5.1), extension (Phase 5.2),
+packages/rebalance + packages/kyc (Phase-2 boundaries). The Signer abstraction currently
+lives in stellar-client (LocalKey → KMS/HSM+multisig is the Phase-2 path).
 ```
 
 Stack pins: `soroban-sdk 26.0.0`, stellar CLI 26.0.0, node 22, pnpm, `iyzipay 2.0.69` (+ `@types/iyzipay`),
@@ -323,7 +341,8 @@ Each ADR lives in `docs/adr/NNNN-*.md`. Index:
 
 1. Stellar-only (no multi-chain).
 2. Oracle deterministic, no AI — median + quorum + circuit breaker.
-3. Custodial model + PreAuth/PostAuth settlement (K1, float=0), capture last.
+3. Custodial model + money-first settlement (Phase 4.6): reversible TRY charge first, irreversible USDC last; a
+   post-charge USDC failure voids the same-day sale.
 4. Transparent spread revenue, not fixed fee / hidden FX.
 5. Solvency = backend AND contract.
 6. Memo fail-closed invariant (`PayoutIntent`, flat `BuildError`, deterministic order).

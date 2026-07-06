@@ -37,6 +37,12 @@ import type { CommissionParams, ReturnStats } from './commission.js';
 export { computeReturnStats, commission, commissionBps } from './commission.js';
 export type { ReturnStats, CommissionParams, CommissionBreakdown } from './commission.js';
 
+// The PSP cost pass-through (gross-up) — recovers the payment provider's cut on top of the FX-risk price.
+import { applyPspPassthrough } from './psp-cost.js';
+import type { PspCost } from './psp-cost.js';
+export { applyPspPassthrough } from './psp-cost.js';
+export type { PspCost, PspPassthrough } from './psp-cost.js';
+
 export function priceUsdc(usdcStroops: bigint, oracleMidE7: bigint, spreadBps: number): PriceBreakdown {
   if (usdcStroops <= 0n) throw new RangeError('usdcStroops must be > 0');
   if (oracleMidE7 <= 0n) throw new RangeError('oracleMidE7 must be > 0');
@@ -91,5 +97,39 @@ export function quoteUsdc(
     appliedRateStroops: pb.appliedRateTryPerUsdc,
     userTryKurus: pb.userTryKurus,
     paidPriceTry: kurusToTryString(pb.userTryKurus),
+  };
+}
+
+/** A settlement quote: the FX-risk quote plus the PSP cost passed through (gross-up). The customer pays
+ *  `userTryKurus` (grossed); `netTryKurus` is the pre-PSP amount; `pspCostKurus` is the transparent PSP line. */
+export interface SettlementQuote extends Quote {
+  /** The FX-priced amount BEFORE the PSP pass-through, in kuruş (= what we must net after the provider's cut). */
+  readonly netTryKurus: bigint;
+  /** The PSP cost baked into the price, in kuruş (a separate legible line — ADR-4). */
+  readonly pspCostKurus: bigint;
+}
+
+/**
+ * A full server-side settlement quote: price the USDC via the FX-risk commission, then gross up for the PSP so
+ * the TRY we net after the provider's cut still covers oracle mid + FX buffer + margin (never less). The on-chain
+ * applied_rate stays the FX rate — the PSP cost is a TRY-side FEE, not a worse exchange rate — so
+ * `appliedRateStroops` and `spreadBps` are unchanged and report only the FX-risk commission. Pure: the caller
+ * supplies the live mid, the daily stats, and the (config-injected) PSP cost, so /intent never trusts a client.
+ */
+export function quoteUsdcWithPsp(
+  usdcStroops: bigint,
+  oracleMidE7: bigint,
+  stats: ReturnStats,
+  params: CommissionParams,
+  psp: PspCost,
+): SettlementQuote {
+  const base = quoteUsdc(usdcStroops, oracleMidE7, stats, params);
+  const { grossKurus, pspCostKurus } = applyPspPassthrough(base.userTryKurus, psp);
+  return {
+    ...base,
+    netTryKurus: base.userTryKurus,
+    pspCostKurus,
+    userTryKurus: grossKurus,
+    paidPriceTry: kurusToTryString(grossKurus),
   };
 }

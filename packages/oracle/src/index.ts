@@ -100,7 +100,8 @@ export function deriveTryPerUsdc(tryPerUsdt: bigint, usdcPerUsdt: bigint): bigin
 
 /**
  * Aggregate source quotes into a single mid rate, fail-closed. `nowMs` is injected (deterministic).
- * Drop stale / future-dated / non-positive quotes and collapse duplicate same-source entries; require
+ * Drop non-positive quotes and quotes whose timestamp is outside a symmetric ±maxAgeMs band (too stale OR too far
+ * in the future) and collapse duplicate same-source entries; require
  * >= minQuorum DISTINCT healthy sources (else InsufficientSources); then either
  * ALL healthy quotes agree within the deviation threshold of the median (accept mid = lower-median order
  * statistic, a real quoted price in [min,max]) or we FAIL CLOSED (DeviationExceeded) and the caller
@@ -115,12 +116,15 @@ export function aggregate(
   policy: OraclePolicy,
   nowMs: number,
 ): OracleResult {
-  // Healthy = positive price AND a NON-FUTURE, non-stale timestamp. The lower bound (age >= 0) rejects a future /
-  // forward-skewed asOfMs: staleness must gate a source lying about its own freshness, not accept it as "fresh"
-  // just because now - asOf is negative (and thus trivially <= maxAgeMs).
+  // Healthy = positive price AND a timestamp within a SYMMETRIC ±maxAgeMs band of nowMs (|age| <= maxAgeMs). The
+  // band is two-sided on purpose: nowMs is snapshotted BEFORE the fetch, so an honest exchange serve-time is
+  // naturally a little AHEAD of it — a hard age >= 0 would over-reject legit-fresh sources on the live path. Yet a
+  // source lying about its freshness by dating itself FAR into the future is still rejected: beyond +maxAgeMs fails
+  // exactly as beyond -maxAgeMs (stale) does. The magnitude of the bound is identical on both sides, so no source
+  // can look "fresh" by claiming a far-future timestamp.
   const healthy = quotes.filter((q) => {
     const age = nowMs - q.asOfMs;
-    return q.tryPerUsdc > 0n && age >= 0 && age <= policy.maxAgeMs;
+    return q.tryPerUsdc > 0n && Math.abs(age) <= policy.maxAgeMs;
   });
   // Collapse to ONE quote per DISTINCT source name (defense-in-depth): the live path fetches each source exactly
   // once, so a duplicate only arises from a misconfigured `sources` list — and it must not let a single real feed

@@ -126,16 +126,17 @@ describe('oracle — fail-closed guards', () => {
   });
 });
 
-describe('oracle — staleness rejects a FUTURE / forward-skewed timestamp (round-2 hardening)', () => {
-  // q(src, price, -ageMs) stamps asOfMs = NOW + ageMs — a future observation. Staleness must gate a source that
-  // lies about its own freshness, not accept it as "fresh" just because now - asOf is negative (<= maxAgeMs).
-  it('a future-dated source is dropped as unhealthy (below quorum → InsufficientSources)', () => {
+describe('oracle — rejects a FAR-future / forward-skewed timestamp beyond the band (round-2 hardening)', () => {
+  // q(src, price, -ageMs) stamps asOfMs = NOW + ageMs — a future observation. A source that lies about its own
+  // freshness by dating itself FAR ahead (beyond maxAgeMs) must not slip past staleness; both offsets below exceed
+  // the 5s band, so they are dropped exactly as an equally-stale PAST source would be (see the symmetric band below).
+  it('a far-future source is dropped as unhealthy (below quorum → InsufficientSources)', () => {
     const r = aggregate([q('a', 400_000_000n), q('b', 400_000_000n, -10_000)], P, NOW);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('InsufficientSources');
   });
 
-  it('a future-dated source is excluded while the fresh majority still settles', () => {
+  it('a far-future source is excluded while the fresh majority still settles', () => {
     const r = aggregate(
       [q('a', 400_000_000n), q('b', 400_100_000n), q('c', 399_900_000n, -3_600_000)],
       P,
@@ -143,6 +144,26 @@ describe('oracle — staleness rejects a FUTURE / forward-skewed timestamp (roun
     );
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.quote.sources).not.toContain('c'); // future 'c' dropped; a+b meet the quorum
+  });
+});
+
+describe('oracle — tolerates a small forward skew within the band (round-3 symmetric relaxation)', () => {
+  // nowMs is snapshotted BEFORE the fetch, so an honest exchange serve-time (Bybit `time`, OKX `ts`) is naturally a
+  // little AHEAD of it. A hard age >= 0 would over-reject those legit-fresh sources on the live path; instead the band
+  // is symmetric — |age| <= maxAgeMs. Far-future stamps (a source lying about freshness) are still rejected above.
+  it('a source dated slightly in the future (within maxAgeMs) stays healthy and helps meet the quorum', () => {
+    // a @ now, b @ now+2s (2s < maxAgeMs=5s). Under the old hard age>=0, b was dropped -> 1 distinct -> InsufficientSources.
+    const r = aggregate([q('a', 400_000_000n), q('b', 400_000_000n, -2_000)], P, NOW);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.quote.sources).toContain('b'); // near-future b tolerated, not dropped
+  });
+
+  it('the future edge is inclusive at maxAgeMs and rejected one ms beyond it (symmetric with the stale side)', () => {
+    const atEdge = aggregate([q('a', 400_000_000n), q('b', 400_000_000n, -5_000)], P, NOW); // +maxAgeMs exactly
+    expect(atEdge.ok).toBe(true);
+    const beyond = aggregate([q('a', 400_000_000n), q('b', 400_000_000n, -5_001)], P, NOW); // just past the band
+    expect(beyond.ok).toBe(false);
+    if (!beyond.ok) expect(beyond.error.code).toBe('InsufficientSources');
   });
 });
 

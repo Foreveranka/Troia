@@ -30,9 +30,57 @@ contract-build:
 
 # --- Phase-gated stubs (implemented later) ---
 
-# Phase 4.4 — friendbot XLM + SAC deploy + mint pool seed.
+# Pool seed in whole USDC (7 decimals under the hood).
+pool_seed := "100000"
+
+# Phase 4.4 — bootstrap the live testnet rails: 3 keypairs (friendbot XLM), the USDC SAC, a fresh
+# TroyPool (roles + SAC bound at __constructor), and a pool-seed mint. Writes .env (secrets) and
+# deployment.testnet.json (addresses) — BOTH git-ignored. Reuses existing keys + the deterministic
+# USDC SAC; deploys a FRESH TroyPool each run (testnet contracts do not survive a reset).
 fund:
-    @echo "just fund — implemented in Phase 4.4"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    NET=testnet
+    seed_stroops=$(( {{pool_seed}} * 10000000 ))
+    # 1) three identities, generated once and friendbot-funded (reused on re-run)
+    for name in troia-admin troia-operator troia-issuer; do
+      if ! stellar keys address "$name" >/dev/null 2>&1; then
+        echo "generating + funding $name"
+        stellar keys generate "$name" --network "$NET" --fund
+      else
+        stellar keys fund "$name" --network "$NET" >/dev/null 2>&1 || true
+      fi
+    done
+    ADMIN=$(stellar keys address troia-admin)
+    OPERATOR=$(stellar keys address troia-operator)
+    ISSUER=$(stellar keys address troia-issuer)
+    # 2) secrets -> .env, only if absent (never clobber existing secrets)
+    if [ ! -f .env ]; then
+      { echo "# Troia testnet secrets (Phase 4.4). git-ignored, never commit."; \
+        echo "TROIA_ADMIN_SECRET=$(stellar keys secret troia-admin)"; \
+        echo "TROIA_OPERATOR_SECRET=$(stellar keys secret troia-operator)"; \
+        echo "TROIA_ISSUER_SECRET=$(stellar keys secret troia-issuer)"; \
+        echo "IYZICO_API_KEY="; echo "IYZICO_SECRET_KEY="; echo "WEBHOOK_SIGNING_SECRET="; } > .env
+      chmod 600 .env
+      echo "wrote .env (git-ignored)"
+    fi
+    # 3) USDC SAC — deterministic id from the asset; deploy once, reuse thereafter
+    stellar contract asset deploy --asset "USDC:$ISSUER" --source-account troia-issuer --network "$NET" >/dev/null 2>&1 || true
+    SAC=$(stellar contract id asset --asset "USDC:$ISSUER" --network "$NET")
+    # 4) build + deploy a fresh TroyPool bound to the roles and the SAC
+    stellar contract build
+    POOL=$(stellar contract deploy --wasm target/wasm32v1-none/release/troy_pool.wasm \
+      --source-account troia-admin --network "$NET" -- \
+      --admin "$ADMIN" --operator "$OPERATOR" --usdc_sac "$SAC")
+    # 5) mint the pool seed to the contract address
+    stellar contract invoke --id "$SAC" --source-account troia-issuer --network "$NET" \
+      -- mint --to "$POOL" --amount "$seed_stroops" >/dev/null
+    # 6) write the non-secret deployment record (git-ignored)
+    printf '{\n  "usdcIssuer": "%s",\n  "usdcSacContractId": "%s",\n  "troyPool": "%s",\n  "operatorPublic": "%s",\n  "adminPublic": "%s"\n}\n' \
+      "$ISSUER" "$SAC" "$POOL" "$OPERATOR" "$ADMIN" > deployment.testnet.json
+    echo "TroyPool $POOL seeded with {{pool_seed}} USDC; on-chain balance:"
+    stellar contract invoke --id "$POOL" --source-account troia-admin --network "$NET" --send=no -- balance
 
 # Phase 5.3 — deterministic N-order demo run.
 demo:

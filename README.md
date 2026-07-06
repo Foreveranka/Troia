@@ -27,8 +27,9 @@ for the phased build plan. For the reviewer-verifiable proof story, see [`docs/R
 | `just format` | Prettier write |
 | `just contract-build` | `stellar contract build` (Soroban wasm) |
 
-`just verify` runs today — an offline, network-blocked proof of the reconciliation report (see
-[`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)). `just fund` and `just demo` are stubs until Phases 4.4 / 5.3.
+`just verify` runs today (offline, network-blocked reconciliation proof — see
+[`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)); `just fund` bootstraps the live testnet rails (see
+[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)). `just demo` is a stub until Phase 5.3.
 
 ## Secret boundary
 
@@ -44,7 +45,9 @@ sequence allocator, deterministic FX oracle + commission pricing, double-entry l
 contract, the iyzico direct-sale adapter, and the reviewer-verifiable reconciler (`just verify` passes offline).
 Settlement is **money-first** — the reversible TRY charge is taken before the irreversible USDC payout.
 
-Not yet wired (deferred, not hidden): the live Stellar rails (`just fund`: friendbot + USDC SAC deploy — Phase
-4.4), `PolicyConfig` calibration in the iyzico sandbox (4.5), the storefront (5.1), the browser extension (5.2),
-and the live `just demo` run (5.3). See [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+The live testnet rails are deployed — three keypairs, the USDC SAC, and a seeded `TroyPool` (`just fund`; see
+[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)).
+
+Not yet wired (deferred, not hidden): the backend's real-adapter composition and `PolicyConfig` calibration in
+the iyzico sandbox (Phase 4.5), the storefront (5.1), the browser extension (5.2), and the live `just demo` run
+(5.3). See [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

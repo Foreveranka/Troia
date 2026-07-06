@@ -33,8 +33,10 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   protocol level (`txBAD_SEQ`); the contract's `Processed(tx_id)` guard is the second, different-field shield.
 - **Solvency mechanism** — backend reservation **and** the contract's `balance >= amount` guard both gate a
   payout; a `/intent` that cannot reserve gets a hard `409` before any charge is possible.
-- **Zero-trust pricing** — the ₺ price is computed **server-side** from the FX oracle mid × commission; a
-  client-supplied price *or currency* is ignored, and the same frozen price is what the hosted form charges.
+- **Zero-trust pricing** — the ₺ price is computed **server-side** as four legible lines: the FX oracle **mid**,
+  the **FX-risk commission** (μ·n + z·σ·√n + margin, with n = the real iyzico settlement valör ~21 days), and a
+  **PSP cost pass-through** grossed up `÷(1−rate)+fixed` so the net still covers mid+FX+margin after the
+  provider's cut. A client-supplied price *or currency* is ignored; the same frozen price is what the form charges.
 - **Deterministic FX oracle** — median / distinct-source quorum / symmetric staleness band / fail-closed on
   disagreement, all on injected quotes (no AI, no live network in the tested path).
 - **Reconciler + `just verify`** — the self-verifying evidence artifact, offline and network-blocked. See
@@ -60,22 +62,38 @@ acceptance bar for every change.
   cannot be unwound*, the order lands in `LossReview` (customer-facing `review`) — surfaced with an evidence
   flag, never silently absorbed. On testnet no real value is at stake; the path is demonstrated as a maturity
   signal.
-- **iyzico is the sandbox.** The fiat leg runs against iyzico's sandbox with Troy test cards. Real preauth
-  validity windows and issuer capture behavior **cannot be measured in the sandbox**; `PolicyConfig` timing
-  values are set conservatively and marked for measurement (Phase 4.5).
+- **iyzico is the sandbox.** The fiat leg runs against iyzico's sandbox with Troy test cards; a real direct-sale
+  charge is proven (`paymentId 36418597`). The real settlement **valör** (iyzico blocking, 2–21 days, *not* the
+  marketed T+1) **cannot be measured in the sandbox**, so the FX-risk window uses the researched conservative 21
+  days. The `classifyIyzicoResult` success shape and closed terminal-decline `errorCode` set **are** calibrated
+  against the sandbox — a real charge plus iyzico's published taxonomy and its declining test cards.
+- **Unit economics are disclosed, not assumed.** The pricing model is complete and never loses money by
+  construction (the PSP cut is grossed up, the FX-risk buffer is sized to the real valör). But the resulting
+  all-in markup is **rail-dependent** — at current (calm) volatility ~7.8% on iyzico credit (4.29%), ~3.7% on a
+  bank virtual-POS debit rail (1.04%) — and the FX-risk line is **data-driven**, so it rises when the market
+  tenses. The economics close on the cheaper rails / a negotiated rate / a shorter valör — a go-to-market lever,
+  surfaced here rather than hidden inside the FX.
 
 ---
 
-## 4. Not yet wired (Phase 4.4 / 4.5 — deferred, not hidden)
+## 4. Not yet wired (Phase 4.5 composition — deferred, not hidden)
 
-These are implemented behind interfaces and injected seams, but the live composition is not yet stood up:
+Phase 4.4 is done: `just fund` deployed the live testnet rails (three keypairs, USDC SAC, a seeded `TroyPool`)
+and a real on-chain `pay()` money path is proven — pool `100,000 → 99,999`, replay guard, double-pay revert
+(see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). What remains is the composition that joins the two proven legs into one
+running system. These parts are implemented behind interfaces + injected seams but the live composition is not yet
+stood up:
 
-- **Live Stellar rails** — friendbot XLM funding, USDC SAC deploy, and mint-to-pool (`just fund`) are stubbed;
-  the storefront `just demo` end-to-end run against real testnet depends on them.
-- **Production `QuoteFn` wiring** — the live CEX oracle → pricing path is unit-tested end-to-end, but is not yet
-  wired into the backend composition root from environment config (the `deps.quote` seam is injected in tests).
-- **`PolicyConfig` calibration** — `timebounds`, `preauth_validity`, `max_retry`, `reservation_ttl`, and the
-  `classifyIyzicoResult` input→class table are to be measured and locked in the iyzico sandbox.
+- **Backend↔rails composition** — the two legs are proven **separately** (a real iyzico charge; a real on-chain
+  `pay()` via the CLI). Binding them — a factory that builds the real iyzico + `stellar-client` adapters from
+  env/`NetworkConfig` and a server bootstrap — is not built, so a real charge does not yet *automatically* drive
+  a real `pay()`. Our own `stellar-client` adapters are type-checked + fake-tested but not yet live-smoked.
+- **Production `QuoteFn` wiring** — the full quote (oracle mid → FX-risk commission → margin → PSP pass-through,
+  fed by `OFFLINE_DEFAULT_PRICING_POLICY`'s valör + iyzico-rate knobs) is unit-tested, but the live `/intent`
+  still uses the injected `deps.quote` seam; binding the PSP-inclusive quote into the composition root is pending.
+- **`PolicyConfig` knobs** — `reservationTtl`, retry budgets, and the pool low-water mark are policy decisions set
+  conservatively (the preauth/capture timing items were dropped by the money-first reordering). The
+  `classifyIyzicoResult` success shape + decline table are **already calibrated** (no longer pending).
 
 None of these are blockers for the proof story above; they are the remaining path to a live end-to-end run.
 

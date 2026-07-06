@@ -42,16 +42,20 @@ bug and is caught by a guard test.
 ## Status
 
 The money-safety core is built and tested offline: the settlement state machine, memo/identity derivation,
-sequence allocator, deterministic FX oracle + commission pricing, double-entry ledger, the `TroyPool` Soroban
-contract, the iyzico direct-sale adapter, and the reviewer-verifiable reconciler (`just verify` passes offline).
+sequence allocator, deterministic FX oracle + commission pricing (FX-risk commission **plus a PSP cost
+pass-through**, sized to the real ~21-day iyzico valör), double-entry ledger, the `TroyPool` Soroban contract,
+the iyzico direct-sale adapter, and the reviewer-verifiable reconciler (`just verify` passes offline).
 Settlement is **money-first** — the reversible TRY charge is taken before the irreversible USDC payout.
 
 The live testnet rails are deployed — three keypairs, the USDC SAC, and a seeded `TroyPool` (`just fund`; see
-[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)).
+[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)) — and a real on-chain `pay()` money path is proven. The iyzico
+fiat leg is validated against the sandbox (a real charge; `classifyIyzicoResult` calibrated to iyzico's real
+success shape + decline codes).
 
 The live demo runs end-to-end: `just demo` drives real testnet payouts, builds a recon-report, and verifies it
 offline (2 matched + 1 deliberate mismatch caught).
 
-Not yet wired (deferred, not hidden): the backend's real-adapter composition and the iyzico sandbox charge leg
-(`PolicyConfig` calibration, Phase 4.5), the storefront (5.1), and the browser extension (5.2). See
+Not yet wired (deferred, not hidden): the two legs are proven **separately**, so the remaining piece is the
+Phase-4.5 composition that binds the real adapters + the PSP-inclusive quote and stands up a server, so a real
+charge automatically drives a real `pay()`; then the storefront (5.1) and the browser extension (5.2). See
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

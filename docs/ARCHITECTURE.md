@@ -203,6 +203,10 @@ programmatic dependency, not the untrusted payload.)
 **Charge 3-valued classifier (`classifyIyzicoResult`):** `Success → chargeOk (then submit USDC, last)` ·
 `DefinitivelyNotCharged → chargeRejected (clean fail, nothing taken)` · `Unknown (5xx/timeout/reset) → STAY,
 re-poll, never submit USDC`. A two-valued classifier could send the irreversible USDC on an `Unknown` charge (P0).
+The success shape and the closed terminal-decline `errorCode` set are calibrated against the live iyzico sandbox
+(a real charge + the published taxonomy and declining test cards, Phase 4.5); outcome-uncertain codes — system /
+timeout / bank-errored / merchant-config — deliberately stay `Unknown` so a possibly-captured charge is never
+wrongly failed-clean.
 
 ---
 
@@ -223,7 +227,7 @@ troia/
     ├── config/                 # NetworkConfig — single authority, no secrets
     ├── core/                   # PayoutIntent, deriveIds, state machine, domain types
     ├── oracle/                 # deterministic median CEX rate + commission inputs (no AI)
-    ├── pricing/                # userTRY = usdc × rate × (1 + commission_bps)
+    ├── pricing/                # userTRY = mid×(1+FX-risk+margin) grossed up for the PSP fee: ÷(1−rate)+fixed
     ├── ledger/                 # double-entry: fiat_in / crypto_out / spread / fee
     ├── psp/                    # PaymentProvider (iyzico direct-sale: sandbox → prod)
     ├── stellar-client/         # SDK wrapper: SAC transfer, submit + poll, snapshot loader, Signer boundary
@@ -343,7 +347,12 @@ Each ADR lives in `docs/adr/NNNN-*.md`. Index:
 2. Oracle deterministic, no AI — median + quorum + circuit breaker.
 3. Custodial model + money-first settlement (Phase 4.6): reversible TRY charge first, irreversible USDC last; a
    post-charge USDC failure voids the same-day sale.
-4. Transparent spread revenue, not fixed fee / hidden FX.
+4. Transparent, legible pricing — four separate lines (the user only ever sees one ₺ total): oracle **mid** +
+   **FX-risk commission** (μ·n + z·σ·√n, where n = the real iyzico settlement valör, ~21 days, not T+1) + fixed
+   **margin**, then a **PSP cost pass-through** grossed up `÷(1−rate)+fixed` so the net still covers mid+FX+margin
+   after the provider's cut — gross-up, NOT addition (addition under-recovers by `rate × our-markup`). The iyzico
+   rate (4.29%+0.25₺) and the valör are config knobs, swappable per ADR-9. Pricing primitive + policy are built
+   and tested; binding them into the live `/intent` quote is the Phase-4.5 composition step.
 5. Solvency = backend AND contract.
 6. Memo fail-closed invariant (`PayoutIntent`, flat `BuildError`, deterministic order).
 7. USDC = 7 decimals on Stellar.

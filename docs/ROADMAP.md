@@ -123,11 +123,18 @@ Now connect the core to the outside world, one provider at a time, behind interf
 - **4.3 Backend orchestration (Fastify)** — the state machine driving real calls; write-ahead persistence;
   crash-recovery worker (read-then-decide). `POST /api/intent`, `GET /api/status/{id}`, `POST /api/webhooks/iyzico`
   (HMAC verify on raw body before parse; event_id dedupe).
-- **4.4 `rebalance` (SimulatedRebalance)** + `just fund` (friendbot XLM + SAC deploy + mint to C-address + verify).
-- **4.5 Measure & lock `PolicyConfig`** in iyzico sandbox: `timebounds`, `preauth_validity`, `max_retry`,
-  `reservation_ttl`, `worst_case_time_to_capture`; calibrate the `classifyIyzicoResult` input→class table.
+- **4.4 `rebalance` (SimulatedRebalance)** + `just fund` — **✅ done**: the live testnet rails are deployed
+  (three keypairs, USDC SAC, a seeded `TroyPool`) and a real on-chain `pay()` money path is proven — pool
+  `100,000 → 99,999`, replay guard, double-pay revert (see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)).
+- **4.5 Calibration + pricing + composition** — the money-first reordering (4.6) dropped the preauth/capture
+  timing items. **Done:** `classifyIyzicoResult`'s success shape + closed terminal-decline `errorCode` set are
+  calibrated against the live sandbox (real charge + published taxonomy + declining test cards); the pricing
+  model is completed with a **PSP cost pass-through** (gross-up) and the **real ~21-day valör** (both config
+  knobs). **Remaining:** bind the real iyzico + `stellar-client` adapters and the PSP-inclusive quote into the
+  composition root + a server bootstrap, so a real charge automatically drives a real `pay()`.
 
 **Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches.
+The two legs are proven **separately** today; the remaining 4.5 composition joins them into one running system.
 
 ---
 

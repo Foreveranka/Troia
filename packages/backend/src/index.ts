@@ -25,6 +25,8 @@ export type { EngineConfig, EngineStellarConfig, EnginePspConfig } from './engin
 export type { OrderCtx } from './ctx.js';
 export type { PolicyConfig } from './policy.js';
 export { OFFLINE_DEFAULT_POLICY } from './policy.js';
+export type { PricingPolicy, PricingCommissionPolicy, PricingPspPolicy } from './pricing-policy.js';
+export { OFFLINE_DEFAULT_PRICING_POLICY } from './pricing-policy.js';
 export type {
   StellarPort,
   PspPort,

@@ -122,3 +122,79 @@ describe('per-op mappers onto core §3 events', () => {
     expect(reversalEvent({ kind: 'timeout' }, true)).toEqual({ type: 'reversalNotDone', retriesRemaining: true });
   });
 });
+
+describe('live iyzico sandbox ground truth (Phase 4.5 success-shape calibration)', () => {
+  // The exact money-safety-relevant fields retrieveCheckoutFormResult returned for a REAL sandbox direct-sale
+  // charge (Troy test card 9792072000017956, paymentId 36418597, 2026-07-07). This pins the OBSERVED shape so
+  // our synthetic fixtures cannot silently drift from reality: paymentStatus is UPPERCASE 'SUCCESS', fraudStatus
+  // is the NUMBER 1, phase is 'AUTH' (a captured sale, not a PRE_AUTH hold), and a real paymentId is present.
+  const LIVE_SALE_SUCCESS = {
+    status: 'success',
+    paymentStatus: 'SUCCESS',
+    fraudStatus: 1,
+    phase: 'AUTH',
+    paymentId: '36418597',
+    errorCode: null,
+  };
+
+  it('classifies the real sandbox charge as SUCCESS -> chargeOk (backend advances to the USDC leg)', () => {
+    expect(classifyIyzicoResult(body(LIVE_SALE_SUCCESS), 'sale')).toBe('SUCCESS');
+    expect(chargeEvent(body(LIVE_SALE_SUCCESS))).toEqual({ type: 'chargeOk' });
+  });
+
+  it('the real response types match the classifier assumptions (regression guard against a shape drift)', () => {
+    // if iyzico ever returned fraudStatus as a string, paymentStatus lowercase, or a PRE_AUTH phase, the
+    // classifier would (correctly) fall to UNKNOWN — these assertions pin the real shape we calibrated against.
+    expect(typeof LIVE_SALE_SUCCESS.fraudStatus).toBe('number');
+    expect(LIVE_SALE_SUCCESS.paymentStatus).toBe('SUCCESS');
+    expect(LIVE_SALE_SUCCESS.phase).not.toBe('PRE_AUTH');
+    expect(typeof LIVE_SALE_SUCCESS.paymentId).toBe('string');
+  });
+});
+
+describe('Phase 4.5 decline-code calibration (iyzico published taxonomy + declining test cards)', () => {
+  // The errorCode each declining iyzico SANDBOX test card returns (docs.iyzico.com test cards) — the real values
+  // the whitelist must catch. errorCode is a quoted STRING in the raw body (e.g. "10051"), which readString reads.
+  const DECLINE_TEST_CARDS: Array<[string, string]> = [
+    ['10051', 'insufficient funds (4111111111111129)'],
+    ['10005', 'do not honour (4129111111111111)'],
+    ['10012', 'invalid transaction (4128111111111112)'],
+    ['10041', 'lost card (4127111111111113)'],
+    ['10043', 'stolen card (4126111111111114)'],
+    ['10054', 'expired card (4125111111111115)'],
+    ['10057', 'not permitted to cardholder (4123111111111117)'],
+    ['10034', 'fraud suspect (4121111111111119)'],
+  ];
+
+  it('classifies every real declining test card as a definitive charge FAILURE (chargeRejected)', () => {
+    for (const [code] of DECLINE_TEST_CARDS) {
+      expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), 'sale')).toBe('FAILURE');
+      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({ type: 'chargeRejected' });
+    }
+  });
+
+  it('MONEY-SAFETY: outcome-UNCERTAIN codes stay UNKNOWN, never wrongly fail-clean a possibly-captured charge', () => {
+    // For these the charge MAY have gone through, so the backend must re-retrieve/reconcile — NEVER FailedClean.
+    const uncertain = [
+      '10202', // general / unknown processing error
+      '10230', // request errored at the bank (true state unknown)
+      '10058', // terminal not authorized — merchant misconfig (surfaced, not silently failed)
+      '10220', // generic DECLINED, "try again"
+      '10214', // bank comms / system error
+      '10219', // bank request timeout
+      '6000', // unverifiable iyzico code (not in any official source)
+      '1', // system error
+      '2', // system error
+    ];
+    for (const code of uncertain) {
+      expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), 'sale')).toBe('UNKNOWN');
+      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({ type: 'chargeUnknown' });
+    }
+  });
+
+  it('pins the exact calibrated whitelist (regression: additions must be deliberate + money-safe)', () => {
+    expect([...TERMINAL_DECLINE_WHITELIST].sort()).toEqual(
+      ['10005', '10012', '10034', '10041', '10043', '10051', '10054', '10057', '10093', '10201', '10209', '10225', '6001'].sort(),
+    );
+  });
+});

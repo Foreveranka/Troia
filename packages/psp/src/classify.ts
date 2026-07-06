@@ -10,18 +10,34 @@
 
 import type { IyzicoClass, PspOp, RawIyzicoResult } from './outcomes.js';
 
-// A CLOSED set of definitive issuer/business declines (a charge that certainly did not and will not
-// succeed). PROVISIONAL — the exact iyzico errorCode taxonomy is confirmed against a live sandbox in
-// Phase 4.5. Any code NOT in this set classifies as UNKNOWN, never FAILURE, so the set failing SAFE is the
-// whole point: it may only ever SHRINK risk, never widen it.
+// A CLOSED set of iyzico errorCodes that name a DEFINITIVE decline — a charge that certainly was NOT captured
+// and whose outcome iyzico reports with CERTAINTY (not a system/comms error where the true state is unknown).
+// VALIDATED against iyzico's published error taxonomy + its declining sandbox test cards (Phase 4.5): errorCode
+// is a quoted STRING; bank declines are the ISO-8583 codes prefixed 100 (51→10051, 05→10005, …) and iyzico's own
+// fraud codes are 4-digit (6001). The inclusion LAW is money-safety: a code is admitted ONLY if `status:'failure'`
+// + that code guarantees no capture with a CERTAIN outcome. Because Troia never auto-retries a declined charge,
+// "soft vs hard" (would a corrected retry succeed?) is irrelevant here — this attempt failed with no capture, so
+// FAILURE (fail-clean) is safe. Anything outcome-UNCERTAIN — system/timeout/UNKNOWN (10202, 10214, 10219, …), a
+// bank-errored request (10230), a merchant-terminal misconfig (10058, surfaced not silently failed), a generic
+// "try again" (10220), or the unverifiable 6000 — deliberately stays UNKNOWN: the charge MAY have gone through,
+// so we re-retrieve and reconcile rather than wrongly fail-clean it. Under-population fails SAFE (an extra poll,
+// never a wrongful void and never a wrongful USDC payout); this set may only ever SHRINK risk.
 export const TERMINAL_DECLINE_WHITELIST: ReadonlySet<string> = new Set([
-  '10051', // insufficient funds
-  '10005', // do not honour / general decline
-  '10054', // expired card
-  '10041', // lost card
-  '10043', // stolen card
-  '10012', // invalid transaction
-  '10057', // transaction not permitted to cardholder
+  // issuer / bank definitive declines (ISO-8583; status:'failure' ⇒ no capture)
+  '10051', // NOT_SUFFICIENT_FUNDS — insufficient funds / limit (ISO 51)
+  '10005', // DO_NOT_HONOUR — issuer refused authorization (ISO 05)
+  '10054', // EXPIRED_CARD (ISO 54)
+  '10041', // LOST_CARD / pick-up card (ISO 41)
+  '10043', // STOLEN_CARD / pick-up card (ISO 43)
+  '10012', // INVALID_TRANSACTION (ISO 12)
+  '10057', // NOT_PERMITTED_TO_CARDHOLDER (ISO 57)
+  '10225', // RESTRICTED_CARD (ISO 62)
+  '10093', // card closed to e-commerce / online shopping
+  '10209', // BLOCKED_CARD — card blocked, contact bank
+  '10034', // FRAUD_SUSPECT — bank fraud decline, no capture
+  '10201', // CARD_NOT_PERMITTED — explicit card-side refusal
+  // iyzico's own risk engine (rejects before/at processing → zero capture)
+  '6001', // iyzico anti-fraud check failed
 ]);
 
 const TERMINAL_SUCCESS_PAYMENT_STATUS = 'SUCCESS';

@@ -81,6 +81,8 @@ importers:
         specifier: ^22.10.5
         version: 22.20.0
 
+  packages/rebalance: {}
+
   packages/reconciler:
     dependencies:
       '@stellar/stellar-base':

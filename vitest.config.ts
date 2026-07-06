@@ -17,6 +17,7 @@ export default defineConfig({
       '@troia/oracle': pkg('oracle'),
       '@troia/pricing': pkg('pricing'),
       '@troia/psp': pkg('psp'),
+      '@troia/rebalance': pkg('rebalance'),
       '@troia/reconciler': pkg('reconciler'),
       '@troia/stellar-client': pkg('stellar-client'),
     },

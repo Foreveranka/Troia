@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "seed": "troia-live-smoke",
+  "network": {
+    "network": "testnet",
+    "passphrase": "Test SDF Network ; September 2015",
+    "operator_public": "GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S"
+  },
+  "orders": [
+    {
+      "order_id": "troia-smoke-0001",
+      "business_intent": {
+        "order_id": "troia-smoke-0001",
+        "destination": "GDF7V2G5FB5UF4AT7ZQ2A4L3YFG44UVJW3APSZWDN3FCI3HJCCMMGOXN",
+        "amount_stroops": "10000000",
+        "memo_hex": "6115721c3f246433a851a959ba9b0bc8c3de9bc486f5da2cdd0f022bad30c5a9"
+      },
+      "ledger_evidence": {
+        "signed_xdr": "AAAAAgAAAADYA3CMbZfp8Qnz7mDMKSWAoqdYiqJYoL/LPsN7Bc5pvgAlYI0ANN6iAAAAAQAAAAAAAAAAAAAAAQAAAAAAAAAYAAAAAAAAAAGq3Hj+/eBXU9wlPe4dVBO6z+UsSbTUDlTwYYjTW0JQCQAAAANwYXkAAAAABQAAAA0AAAAg/c5jCkVX9Ls3ptfB0+AR8HSbHy4N5UvjNujU7niYds8AAAAKAAAAAAAAAAAAAAAAAJiWgAAAAAoAAAAAAAAAAAAAAAAYgIG4AAAAEgAAAAAAAAAAy/ro3Sh7QvAT/mGgcXvBTc5SqbbA+WbDbsokbOkQmMMAAAANAAAAIGEVchw/JGQzqFGpWbqbC8jD3pvEhvXaLN0PAiutMMWpAAAAAQAAAAAAAAAAAAAAAarceP794FdT3CU97h1UE7rP5SxJtNQOVPBhiNNbQlAJAAAAA3BheQAAAAAFAAAADQAAACD9zmMKRVf0uzem18HT4BHwdJsfLg3lS+M26NTueJh2zwAAAAoAAAAAAAAAAAAAAAAAmJaAAAAACgAAAAAAAAAAAAAAABiAgbgAAAASAAAAAAAAAADL+ujdKHtC8BP+YaBxe8FNzlKptsD5ZsNuyiRs6RCYwwAAAA0AAAAgYRVyHD8kZDOoUalZupsLyMPem8SG9dos3Q8CK60wxakAAAAAAAAAAQAAAAAAAAADAAAABgAAAAGcClFWs+VS5o9FckFOu3oqWM6lVaxdPhjsOibtIRDuZgAAABQAAAABAAAABgAAAAGq3Hj+/eBXU9wlPe4dVBO6z+UsSbTUDlTwYYjTW0JQCQAAABQAAAABAAAAByLDADhl+OCPVejF3B0LG7KY74qkBtp+Lp/bT0tvDzD6AAAAAwAAAAEAAAAAy/ro3Sh7QvAT/mGgcXvBTc5SqbbA+WbDbsokbOkQmMMAAAABVVNEQwAAAACiB3aiFakjgcnqx1MPU/HkiIXkpyY8eu/hpVm6btKyjgAAAAYAAAABnApRVrPlUuaPRXJBTrt6KljOpVWsXT4Y7Dom7SEQ7mYAAAAQAAAAAQAAAAIAAAAPAAAAB0JhbGFuY2UAAAAAEgAAAAGq3Hj+/eBXU9wlPe4dVBO6z+UsSbTUDlTwYYjTW0JQCQAAAAEAAAAGAAAAAarceP794FdT3CU97h1UE7rP5SxJtNQOVPBhiNNbQlAJAAAAEAAAAAEAAAACAAAADwAAAAlQcm9jZXNzZWQAAAAAAAANAAAAIP3OYwpFV/S7N6bXwdPgEfB0mx8uDeVL4zbo1O54mHbPAAAAAQATZr8AAAB0AAAB3AAAAAAAJWApAAAAAQXOab4AAABAM/+RjfZ86SpHncDegagVp7K++gamxFv5is/v3Fwcamk/aAArwrGwlP7S7Xi+kCdH4biujwTtyMIfr/jJklPTCg==",
+        "hash": "5a3d60cc25fc82025560d1c13b74f63b619393e194ada43cc6b8317637d64f13"
+      },
+      "chain_evidence": {
+        "tx_hash": "5a3d60cc25fc82025560d1c13b74f63b619393e194ada43cc6b8317637d64f13",
+        "fetched_at_ledger": 3465066,
+        "horizon_snapshot": {
+          "function": "pay",
+          "contract_id": "CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ",
+          "source_account": "GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S",
+          "tx_id_hex": "fdce630a4557f4bb37a6d7c1d3e011f0749b1f2e0de54be336e8d4ee789876cf",
+          "amount_stroops": "10000000",
+          "applied_rate_stroops": "411075000",
+          "merchant": "GDF7V2G5FB5UF4AT7ZQ2A4L3YFG44UVJW3APSZWDN3FCI3HJCCMMGOXN",
+          "memo_hex": "6115721c3f246433a851a959ba9b0bc8c3de9bc486f5da2cdd0f022bad30c5a9"
+        }
+      },
+      "field_diff": [],
+      "verdict": "MATCHED",
+      "status": "matched",
+      "signature_valid": true,
+      "hash_consistent": true,
+      "chain_bound": true
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "matched": 1,
+    "mismatch": 0,
+    "unsettled": 0
+  }
+}

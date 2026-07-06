@@ -93,3 +93,11 @@ verify:
     node --import ./packages/reconciler/bin/block-net.mjs \
          ./packages/reconciler/bin/verify.mjs \
          ./packages/reconciler/test/fixtures/recon-report.json
+
+# Offline verification of the LIVE report — generated from a REAL testnet pay() tx (see docs/DEPLOYMENTS.md).
+# Self-verifying and reset-proof: passes with no network even after a testnet reset.
+verify-live:
+    pnpm --filter @troia/reconciler build
+    node --import ./packages/reconciler/bin/block-net.mjs \
+         ./packages/reconciler/bin/verify.mjs \
+         ./packages/reconciler/test/fixtures/recon-report.live.json

@@ -73,6 +73,13 @@ An operator-signed `pay()` moved USDC from the pool to a merchant end-to-end, us
 The double-pay revert is the on-chain half of invariant ② (the operator sequence is the primary shield; the
 contract's `Processed(tx_id)` guard is the second): the irreversible USDC leg can never pay one order twice.
 
+**Reconciled offline.** This exact payout is captured as `packages/reconciler/test/fixtures/recon-report.live.json`
+and re-verified with **no network**: `just verify-live` re-derives the verdict from the embedded evidence and
+confirms **MATCHED** (`{total:1, matched:1}`, `networkAttempts:0`). The signed evidence is reset-proof — it
+verifies offline even after a testnet reset, because the operator's signature over the real tx hash is embedded
+and unforgeable. The on-chain **settlement itself** is the payout tx above, verifiable on the explorer while the
+chain remembers it (`signed ≠ settled`). See [`RECONCILIATION.md`](RECONCILIATION.md).
+
 ## Reproduce
 
 ```bash

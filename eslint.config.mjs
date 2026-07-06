@@ -19,9 +19,9 @@ export default tseslint.config(
     },
   },
   {
-    // Plain Node CLI scripts (the offline `just verify` harness) run under the Node runtime, so provide its
-    // global identifiers. They are not TypeScript, so the type-checker cannot supply these for them.
-    files: ['**/bin/**/*.mjs'],
+    // Plain Node CLI scripts (the offline `just verify` harness and the `just demo` runner) run under the Node
+    // runtime, so provide its global identifiers. They are not TypeScript, so the type-checker cannot supply these.
+    files: ['**/bin/**/*.mjs', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         console: 'readonly',

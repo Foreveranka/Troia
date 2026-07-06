@@ -29,7 +29,8 @@ for the phased build plan. For the reviewer-verifiable proof story, see [`docs/R
 
 `just verify` runs today (offline, network-blocked reconciliation proof — see
 [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)); `just fund` bootstraps the live testnet rails (see
-[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)). `just demo` is a stub until Phase 5.3.
+[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)); `just demo` runs the full live demo — real testnet payouts →
+a recon-report → offline verify (one order is a deliberate mismatch the reconciler catches).
 
 ## Secret boundary
 
@@ -48,6 +49,9 @@ Settlement is **money-first** — the reversible TRY charge is taken before the 
 The live testnet rails are deployed — three keypairs, the USDC SAC, and a seeded `TroyPool` (`just fund`; see
 [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)).
 
-Not yet wired (deferred, not hidden): the backend's real-adapter composition and `PolicyConfig` calibration in
-the iyzico sandbox (Phase 4.5), the storefront (5.1), the browser extension (5.2), and the live `just demo` run
-(5.3). See [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
+The live demo runs end-to-end: `just demo` drives real testnet payouts, builds a recon-report, and verifies it
+offline (2 matched + 1 deliberate mismatch caught).
+
+Not yet wired (deferred, not hidden): the backend's real-adapter composition and the iyzico sandbox charge leg
+(`PolicyConfig` calibration, Phase 4.5), the storefront (5.1), and the browser extension (5.2). See
+[`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

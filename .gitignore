@@ -5,6 +5,7 @@ target/
 .env.*
 !.env.example
 deployment.testnet.json
+demo/
 *.wasm
 *.tsbuildinfo
 test_snapshots/

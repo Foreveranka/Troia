@@ -82,9 +82,21 @@ fund:
     echo "TroyPool $POOL seeded with {{pool_seed}} USDC; on-chain balance:"
     stellar contract invoke --id "$POOL" --source-account troia-admin --network "$NET" --send=no -- balance
 
-# Phase 5.3 — deterministic N-order demo run.
+# Number of demo orders (each is one real on-chain payout; the last one is the deliberate mismatch).
+demo_orders := "3"
+
+# Phase 5.3 — the live end-to-end demo: N real testnet payouts -> a recon-report -> OFFLINE verify. One order
+# is a deliberate CORRUPT_LOCAL the reconciler catches. Needs `just fund` first (deployment.testnet.json +
+# funded operator/pool + .env secrets). Re-runnable: order ids carry a live-ledger nonce (no replay collision).
 demo:
-    @echo "just demo — implemented in Phase 5.3"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    test -f deployment.testnet.json || { echo "no deployment.testnet.json — run 'just fund' first"; exit 1; }
+    pnpm -r run build >/dev/null
+    node scripts/demo.mjs {{demo_orders}}
+    echo "--- offline, network-blocked verification of the freshly-generated report ---"
+    node --import ./packages/reconciler/bin/block-net.mjs ./packages/reconciler/bin/verify.mjs demo/recon-report.json
 
 # Phase 3.4 — offline reconciliation verification.
 # Offline, network-blocked self-verification of the reconciliation report (Phase 3.4).

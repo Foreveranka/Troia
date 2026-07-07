@@ -55,7 +55,9 @@ success shape + decline codes).
 The live demo runs end-to-end: `just demo` drives real testnet payouts, builds a recon-report, and verifies it
 offline (2 matched + 1 deliberate mismatch caught).
 
-Not yet wired (deferred, not hidden): the two legs are proven **separately**, so the remaining piece is the
-Phase-4.5 composition that binds the real adapters + the PSP-inclusive quote and stands up a server, so a real
-charge automatically drives a real `pay()`; then the storefront (5.1) and the browser extension (5.2). See
+Wired offline, not yet live-run (remaining, not hidden): the Phase-4.5 composition that binds the real adapters +
+the PSP-inclusive quote and stands up a server (`just serve`) is **built, type-checked, and offline-tested** — a
+composition smoke proves the whole stack boots from the factory — so a real charge driving a real `pay()` is
+realized in code. The remaining step is the **live run** behind a public webhook tunnel (which live-smokes the
+SDK/network adapters for the first time), then the storefront (5.1) and the browser extension (5.2). See
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

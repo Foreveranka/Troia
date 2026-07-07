@@ -53,9 +53,9 @@ acceptance bar for every change.
 
 - **Self-minted USDC.** The pool is funded with our own testnet USDC (own issuer + SAC, unlimited mint). This
   means the **solvency *mechanism*** (reservation + contract guard) is fully exercised, but **economic solvency**
-  — real inventory adequacy, i.e. actually having bought the USDC — is deferred. The rebalance provider
-  (`SimulatedRebalance` on testnet, a real-CEX buy on mainnet) is a designed Phase-4.4 / Phase-2 seam, not yet a
-  built package. The token is valueless; the ledger, solvency mechanism, and reconciliation logic are real.
+  — real inventory adequacy, i.e. actually having bought the USDC — is deferred. `SimulatedRebalance` (testnet
+  mint) is a built + tested `packages/rebalance`; only the real-CEX buy that actually acquires the USDC (economic
+  solvency) is Phase-2. The token is valueless; the ledger, solvency mechanism, and reconciliation logic are real.
 - **`signed ≠ settled`.** We prove what we signed (cryptographically, reset-proof) and what settled (only while
   the chain remembers it). A wiped testnet or a never-landed tx surfaces as `UNSETTLED`, never as a false match.
 - **The one residual loss window is named, not hidden.** In the narrow case *USDC sent → the reversible TRY leg
@@ -76,26 +76,31 @@ acceptance bar for every change.
 
 ---
 
-## 4. Not yet wired (Phase 4.5 composition — deferred, not hidden)
+## 4. Wired offline, not yet live-run (Phase 4.5 live-smoke — remaining, not hidden)
 
-Phase 4.4 is done: `just fund` deployed the live testnet rails (three keypairs, USDC SAC, a seeded `TroyPool`)
-and a real on-chain `pay()` money path is proven — pool `100,000 → 99,999`, replay guard, double-pay revert
-(see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). What remains is the composition that joins the two proven legs into one
-running system. These parts are implemented behind interfaces + injected seams but the live composition is not yet
-stood up:
+Phase 4.4 deployed the live testnet rails (three keypairs, USDC SAC, a seeded `TroyPool`) and proved a real
+on-chain `pay()` money path — pool `100,000 → 99,999`, replay guard, double-pay revert (see
+[`DEPLOYMENTS.md`](DEPLOYMENTS.md)). The Phase-4.5 **composition** that joins the two legs into one running system
+is now **built, type-checked, and offline-tested**: a factory (`buildTestnetServerDeps`) assembles the real iyzico
+provider + the `stellar-client` adapters + the PSP-inclusive quote into the backend's `ServerDeps`, a server
+bootstrap (`just serve`) stands the app up, and a composition smoke proves the whole stack boots from that factory
+and its fail-closed routes work. So a real charge driving a real `pay()` is realized **in code** — what has not
+happened yet is the **live run**:
 
-- **Backend↔rails composition** — the two legs are proven **separately** (a real iyzico charge; a real on-chain
-  `pay()` via the CLI). Binding them — a factory that builds the real iyzico + `stellar-client` adapters from
-  env/`NetworkConfig` and a server bootstrap — is not built, so a real charge does not yet *automatically* drive
-  a real `pay()`. Our own `stellar-client` adapters are type-checked + fake-tested but not yet live-smoked.
-- **Production `QuoteFn` wiring** — the full quote (oracle mid → FX-risk commission → margin → PSP pass-through,
-  fed by `OFFLINE_DEFAULT_PRICING_POLICY`'s valör + iyzico-rate knobs) is unit-tested, but the live `/intent`
-  still uses the injected `deps.quote` seam; binding the PSP-inclusive quote into the composition root is pending.
-- **`PolicyConfig` knobs** — `reservationTtl`, retry budgets, and the pool low-water mark are policy decisions set
-  conservatively (the preauth/capture timing items were dropped by the money-first reordering). The
-  `classifyIyzicoResult` success shape + decline table are **already calibrated** (no longer pending).
+- **The live end-to-end smoke is not yet executed.** `just serve` needs a public webhook URL (a tunnel on
+  testnet) so iyzico can reach `/webhook`; that live run — a real charge automatically driving a real on-chain
+  `pay()` — is the remaining Phase-4.5 step, and it is what exercises the network-facing halves for the first time.
+- **The SDK/network adapters are type-checked, not yet live-smoked.** `SorobanRpcAdapter`'s pool-balance +
+  reverted-`pay()` reads and the iyzico HTTP client are exercised only by fakes / type-checks offline; the live
+  run is where they first hit a real RPC / the real sandbox. A landed-and-reverted `pay()`'s diagnostic events
+  (the input to the revert-code read) are the one shape only a live run can confirm.
+- **`InMemoryStore` / `InMemoryJournal` are single-process.** Correct for the PoC live-smoke (one process, no
+  restart); a durable store is the mainnet swap behind the same interface. A restart loses the in-flight witness,
+  which fails **safe** — an unreadable revert code re-drives, and the on-chain `Processed(tx_id)` guard is the
+  real double-pay shield — never toward a double payout.
 
-None of these are blockers for the proof story above; they are the remaining path to a live end-to-end run.
+None of these are blockers for the proof story above; they are the remaining path from a composed-offline system
+to a demonstrated live end-to-end run.
 
 ---
 

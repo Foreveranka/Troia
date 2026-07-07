@@ -127,14 +127,17 @@ Now connect the core to the outside world, one provider at a time, behind interf
   (three keypairs, USDC SAC, a seeded `TroyPool`) and a real on-chain `pay()` money path is proven — pool
   `100,000 → 99,999`, replay guard, double-pay revert (see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)).
 - **4.5 Calibration + pricing + composition** — the money-first reordering (4.6) dropped the preauth/capture
-  timing items. **Done:** `classifyIyzicoResult`'s success shape + closed terminal-decline `errorCode` set are
-  calibrated against the live sandbox (real charge + published taxonomy + declining test cards); the pricing
-  model is completed with a **PSP cost pass-through** (gross-up) and the **real ~21-day valör** (both config
-  knobs). **Remaining:** bind the real iyzico + `stellar-client` adapters and the PSP-inclusive quote into the
-  composition root + a server bootstrap, so a real charge automatically drives a real `pay()`.
+  timing items. **Done:** `classifyIyzicoResult` calibrated against the live sandbox (real charge + published
+  taxonomy + declining test cards); the pricing model completed with a **PSP cost pass-through** (gross-up) and
+  the **real ~21-day valör**; and the **composition is wired offline** — `buildStellarPort` /
+  `buildTestnetServerDeps` assemble the real adapters + the PSP-inclusive quote into `ServerDeps`, and a
+  composition smoke boots the app from that factory (with injected bootstrap reads) and drives its fail-closed
+  routes — all type-checked + offline-tested. **Remaining:** the LIVE run — `just serve` (live chain bootstrap +
+  listen) behind a public webhook tunnel, driving a real charge → a real `pay()`, which live-smokes the
+  SDK/network adapters for the first time.
 
 **Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches.
-The two legs are proven **separately** today; the remaining 4.5 composition joins them into one running system.
+The composition composes **offline** today; the remaining 4.5 live-smoke runs it end-to-end.
 
 ---
 

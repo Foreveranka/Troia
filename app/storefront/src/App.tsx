@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type FormEvent } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   PRODUCTS,
@@ -20,10 +20,69 @@ import { STORE, COINS, orderRef, buildSep7, cryptoAmount, shortAddr, type Coin, 
 // and offers to pay by card. The store knows nothing about that bridge; it just accepts USDC on Stellar.
 
 type Section = 'shop' | 'new' | 'archive' | 'sale';
-type View = { name: 'list'; section: Section } | { name: 'product'; id: string } | { name: 'checkout' };
+type View =
+  | { name: 'list'; section: Section }
+  | { name: 'product'; id: string }
+  | { name: 'checkout' }
+  | { name: 'orders' }
+  | { name: 'confirmed'; orderId: string }
+  | { name: 'order'; orderId: string };
 
 interface CartLine { product: Product; size: Size; qty: number }
 type CartMap = Record<string, CartLine>;
+
+// A placed order, persisted to localStorage so "My Orders" survives reloads. The extension posts a TROIA_PAID
+// message when a Troy-card payment settles; the app snapshots the cart into one of these.
+interface OrderLine { name: string; size: string; qty: number; price: number }
+interface Order {
+  id: string;
+  date: string;
+  total: number; // USD cart total
+  status: string;
+  method: string;
+  paidPriceTry?: string; // the TRY amount actually charged (from the backend receipt)
+  txHash?: string; // the on-chain USDC settlement pay() tx
+  lines: OrderLine[];
+}
+const ORDERS_KEY = 'troia_orders';
+// The settlement pay() lands on Stellar testnet (the demo network); a mainnet build swaps this like the rest of
+// the store's config.
+function explorerTx(hash: string): string {
+  return `https://stellar.expert/explorer/testnet/tx/${hash}`;
+}
+// Orders are scoped per signed-in identity (email), or "guest" when signed out, so different accounts don't
+// share an order list.
+function ordersKey(identity: string): string {
+  return `${ORDERS_KEY}:${identity}`;
+}
+function loadOrders(session: string | null): Order[] {
+  try {
+    const raw = localStorage.getItem(ordersKey(session ?? 'guest'));
+    return raw ? (JSON.parse(raw) as Order[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// --- demo auth (localStorage only; NOT real security — passwords are unsalted SHA-256, no server) ---
+interface StoredUser { email: string; name: string; passHash: string }
+const USERS_KEY = 'troia_users';
+const SESSION_KEY = 'troia_session';
+function loadUsers(): Record<string, StoredUser> {
+  try {
+    const raw = localStorage.getItem(USERS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, StoredUser>) : {};
+  } catch {
+    return {};
+  }
+}
+function saveUsers(users: Record<string, StoredUser>): void {
+  try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch { /* blocked — ignore */ }
+}
+async function hashPw(pw: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 const NAV: { label: string; section: Section }[] = [
   { label: 'Shop', section: 'shop' },
@@ -103,6 +162,14 @@ export default function App() {
   const [cartOpen, setCartOpen] = useState(false);
   const [view, setView] = useState<View>({ name: 'list', section: 'shop' });
   const [category, setCategory] = useState<ProductCategory | 'All'>('All');
+  const [session, setSession] = useState<string | null>(() => {
+    try { return localStorage.getItem(SESSION_KEY); } catch { return null; }
+  });
+  const [orders, setOrders] = useState<Order[]>(() => loadOrders(session));
+  const [auth, setAuth] = useState<null | 'signin' | 'signup'>(null);
+  const [pendingCheckout, setPendingCheckout] = useState(false); // set when checkout is gated behind sign-in
+  const cartRef = useRef(cart);
+  const currentUser = useMemo(() => (session ? loadUsers()[session] ?? null : null), [session]);
 
   const items = useMemo(() => Object.entries(cart).map(([key, line]) => ({ key, ...line })), [cart]);
   const count = items.reduce((n, i) => n + i.qty, 0);
@@ -122,6 +189,85 @@ export default function App() {
   };
   const goSection = (section: Section) => { setView({ name: 'list', section }); setCategory('All'); window.scrollTo(0, 0); };
   const goProduct = (id: string) => { setView({ name: 'product', id }); window.scrollTo(0, 0); };
+  // Checkout is gated behind sign-in: signed out, the Checkout button opens the auth modal (and remembers the
+  // intent, so a successful sign-in lands the shopper straight on checkout).
+  const goCheckout = () => {
+    if (!session) { setPendingCheckout(true); setAuth('signin'); return; }
+    setCartOpen(false);
+    setView({ name: 'checkout' });
+    window.scrollTo(0, 0);
+  };
+
+  useEffect(() => { cartRef.current = cart; }, [cart]);
+  useEffect(() => {
+    try { localStorage.setItem(ordersKey(session ?? 'guest'), JSON.stringify(orders)); } catch { /* blocked — ignore */ }
+  }, [orders, session]);
+  useEffect(() => {
+    try {
+      if (session) localStorage.setItem(SESSION_KEY, session);
+      else localStorage.removeItem(SESSION_KEY);
+    } catch { /* blocked — ignore */ }
+  }, [session]);
+
+  // Demo auth handlers — set the session AND load that identity's orders together, so the persisted order
+  // bucket always matches the signed-in identity.
+  const signUp = async (email: string, password: string, name: string): Promise<string | null> => {
+    const e = email.trim().toLowerCase();
+    if (!e.includes('@') || password.length < 4) return 'Enter a valid email and a 4+ character password.';
+    const users = loadUsers();
+    if (users[e]) return 'An account with this email already exists.';
+    users[e] = { email: e, name: name.trim() || e.split('@')[0] || 'you', passHash: await hashPw(password) };
+    saveUsers(users);
+    setSession(e); setOrders(loadOrders(e)); setAuth(null);
+    if (pendingCheckout) { setPendingCheckout(false); setCartOpen(false); setView({ name: 'checkout' }); window.scrollTo(0, 0); }
+    return null;
+  };
+  const signIn = async (email: string, password: string): Promise<string | null> => {
+    const e = email.trim().toLowerCase();
+    const u = loadUsers()[e];
+    if (!u) return 'No account with this email.';
+    if (u.passHash !== (await hashPw(password))) return 'Wrong password.';
+    setSession(e); setOrders(loadOrders(e)); setAuth(null);
+    if (pendingCheckout) { setPendingCheckout(false); setCartOpen(false); setView({ name: 'checkout' }); window.scrollTo(0, 0); }
+    return null;
+  };
+  const signOut = (): void => { setSession(null); setOrders(loadOrders(null)); setView({ name: 'list', section: 'shop' }); };
+
+  // The extension posts a window message when a Troy-card payment has settled (public status 'completed'). On
+  // that signal we place the order: snapshot the cart, record it under My Orders, empty the cart, and show a
+  // confirmation. A duplicate/late signal finds an empty cart and is ignored.
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data as
+        | { source?: string; type?: string; orderId?: string; txHash?: string | null; paidPriceTry?: string | null }
+        | null;
+      if (!d || d.source !== 'troia-extension' || d.type !== 'TROIA_PAID') return;
+      const lines: OrderLine[] = Object.values(cartRef.current).map((l) => ({
+        name: l.product.name, size: l.size, qty: l.qty, price: priceOf(l.product).now,
+      }));
+      if (lines.length === 0) return;
+      const sub = lines.reduce((n, l) => n + l.price * l.qty, 0);
+      const ship = sub >= 150 || sub === 0 ? 0 : 12;
+      const order: Order = {
+        id: typeof d.orderId === 'string' && d.orderId.length > 0 ? d.orderId : orderRef(),
+        date: new Date().toISOString(),
+        total: sub + ship,
+        status: 'Paid · settled in USDC',
+        method: 'Troy card (iyzico)',
+        ...(typeof d.paidPriceTry === 'string' ? { paidPriceTry: d.paidPriceTry } : {}),
+        ...(typeof d.txHash === 'string' ? { txHash: d.txHash } : {}),
+        lines,
+      };
+      setOrders((os) => [order, ...os]);
+      setCart({});
+      setCartOpen(false);
+      setView({ name: 'confirmed', orderId: order.id });
+      window.scrollTo(0, 0);
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   return (
     <>
@@ -137,7 +283,15 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <button className="cart-btn" onClick={() => setCartOpen(true)}>Cart {count > 0 && <span>[{count}]</span>}</button>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+            {currentUser ? (
+              <button className="cart-btn" onClick={signOut} title={`Signed in as ${currentUser.email} — sign out`}>{currentUser.name} · Sign out</button>
+            ) : (
+              <button className="cart-btn" onClick={() => setAuth('signin')}>Sign in</button>
+            )}
+            <button className="cart-btn" onClick={() => setView({ name: 'orders' })}>Orders{orders.length > 0 && <span> [{orders.length}]</span>}</button>
+            <button className="cart-btn" onClick={() => setCartOpen(true)}>Cart {count > 0 && <span>[{count}]</span>}</button>
+          </div>
         </div>
       </header>
 
@@ -146,6 +300,15 @@ export default function App() {
       )}
       {view.name === 'product' && <ProductView id={view.id} onAdd={add} onBack={() => goSection('shop')} />}
       {view.name === 'checkout' && <Checkout items={items} subtotal={subtotal} onBack={() => goSection('shop')} />}
+      {view.name === 'orders' && (
+        <OrdersView orders={orders} onBack={() => goSection('shop')} onOpen={(id) => setView({ name: 'order', orderId: id })} />
+      )}
+      {view.name === 'order' && (
+        <OrderDetail order={orders.find((o) => o.id === view.orderId)} onBack={() => setView({ name: 'orders' })} />
+      )}
+      {view.name === 'confirmed' && (
+        <Confirmed order={orders.find((o) => o.id === view.orderId)} onOrders={() => setView({ name: 'orders' })} onShop={() => goSection('shop')} />
+      )}
 
       <footer className="footer">
         <div className="container">
@@ -200,13 +363,162 @@ export default function App() {
                 <div className="summ"><span>Subtotal</span><b>{usd(subtotal)}</b></div>
                 <div className="summ"><span>Shipping</span><b>{estShip === 0 ? 'Free' : `from ${usd(estShip)}`}</b></div>
                 <div className="summ summ--total"><span>Total</span><b>{usd(subtotal + estShip)}</b></div>
-                <button className="btn btn--block" onClick={() => { setCartOpen(false); setView({ name: 'checkout' }); window.scrollTo(0, 0); }}>Checkout</button>
+                <button className="btn btn--block" onClick={goCheckout}>{session ? 'Checkout' : 'Sign in to checkout'}</button>
               </div>
             )}
           </aside>
         </>
       )}
+      {auth && <AuthModal mode={auth} onMode={setAuth} onSignIn={signIn} onSignUp={signUp} onClose={() => { setAuth(null); setPendingCheckout(false); }} />}
     </>
+  );
+}
+
+/* ---------------- auth (demo, localStorage) ---------------- */
+function AuthModal({ mode, onMode, onSignIn, onSignUp, onClose }: {
+  mode: 'signin' | 'signup';
+  onMode: (m: 'signin' | 'signup') => void;
+  onSignIn: (email: string, pw: string) => Promise<string | null>;
+  onSignUp: (email: string, pw: string, name: string) => Promise<string | null>;
+  onClose: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [pw, setPw] = useState('');
+  const [name, setName] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    const error = mode === 'signup' ? await onSignUp(email, pw, name) : await onSignIn(email, pw);
+    setBusy(false);
+    if (error) setErr(error);
+  };
+  const link: CSSProperties = { background: 'none', border: 0, color: 'var(--aqua)', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' };
+  return (
+    <div className="sizemodal" onClick={onClose}>
+      <div className="sizemodal__panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 360 }}>
+        <button className="sizemodal__x" onClick={onClose} aria-label="Close">×</button>
+        <div className="sizemodal__name">{mode === 'signup' ? 'Create account' : 'Sign in'}</div>
+        <form onSubmit={submit} style={{ display: 'grid', gap: 12, marginTop: 16, textAlign: 'left' }}>
+          {mode === 'signup' && (
+            <div className="field"><label>Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" /></div>
+          )}
+          <div className="field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></div>
+          <div className="field"><label>Password</label><input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••" /></div>
+          {err && <div style={{ color: '#ff8a80', fontSize: 13 }}>{err}</div>}
+          <button className="btn btn--block" type="submit" disabled={busy}>{busy ? '…' : mode === 'signup' ? 'Create account' : 'Sign in'}</button>
+        </form>
+        <div style={{ marginTop: 14, fontSize: 13, color: 'var(--muted)' }}>
+          {mode === 'signup'
+            ? <>Have an account? <button style={link} onClick={() => onMode('signin')}>Sign in</button></>
+            : <>New here? <button style={link} onClick={() => onMode('signup')}>Create account</button></>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- payment confirmation (extension flow) ---------------- */
+function Confirmed({ order, onOrders, onShop }: { order: Order | undefined; onOrders: () => void; onShop: () => void }) {
+  return (
+    <main className="checkout container">
+      <div className="placed">
+        <div className="placed__mark">✓</div>
+        <h2>Payment complete</h2>
+        <p>
+          Paid with your Troy card{order ? ` — ${usd(order.total)}` : ''}. No crypto needed. Settled in USDC to the
+          merchant on Stellar.
+        </p>
+        {order?.txHash && (
+          <p style={{ margin: '0 0 18px' }}>
+            <a href={explorerTx(order.txHash)} target="_blank" rel="noreferrer">View the settlement transaction on Stellar ↗</a>
+          </p>
+        )}
+        <div className="row-btns" style={{ justifyContent: 'center' }}>
+          <button className="btn" onClick={onOrders}>View my orders</button>
+          <button className="btn btn--ghost" onClick={onShop}>Continue shopping</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+/* ---------------- my orders ---------------- */
+function OrdersView({ orders, onBack, onOpen }: { orders: Order[]; onBack: () => void; onOpen: (id: string) => void }) {
+  return (
+    <main className="checkout container">
+      <button className="link-back" onClick={onBack}>← Back to shop</button>
+      <h2 style={{ margin: '8px 0 20px' }}>My Orders</h2>
+      {orders.length === 0 ? (
+        <div className="empty">No orders yet.</div>
+      ) : (
+        <div style={{ display: 'grid', gap: 16 }}>
+          {orders.map((o) => (
+            <div className="panel" key={o.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10 }}>
+                <div>
+                  <b>{o.id}</b>
+                  <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{new Date(o.date).toLocaleString()}</span>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--aqua)', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                  {o.status}
+                </div>
+              </div>
+              {o.lines.map((l, i) => (
+                <div className="co-line" key={i}><span>{l.name} · {l.size} × {l.qty}</span><b>{usd(l.price * l.qty)}</b></div>
+              ))}
+              <div className="co-total"><span>Total</span><span>{usd(o.total)}</span></div>
+              <button className="btn btn--ghost btn--block" style={{ marginTop: 12 }} onClick={() => onOpen(o.id)}>Order details</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}
+
+/* ---------------- order details ---------------- */
+function OrderDetail({ order, onBack }: { order: Order | undefined; onBack: () => void }) {
+  if (!order) {
+    return (
+      <main className="checkout container">
+        <button className="link-back" onClick={onBack}>← My orders</button>
+        <p style={{ padding: '40px 0' }}>Order not found.</p>
+      </main>
+    );
+  }
+  return (
+    <main className="checkout container">
+      <button className="link-back" onClick={onBack}>← My orders</button>
+      <h2 style={{ margin: '8px 0 4px' }}>Order {order.id}</h2>
+      <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 20 }}>
+        {new Date(order.date).toLocaleString()} · {order.status}
+      </div>
+      <div className="checkout__grid">
+        <div className="panel">
+          <h3>Items</h3>
+          {order.lines.map((l, i) => (
+            <div className="co-line" key={i}><span>{l.name} · {l.size} × {l.qty}</span><b>{usd(l.price * l.qty)}</b></div>
+          ))}
+          <div className="co-total"><span>Total</span><span>{usd(order.total)}</span></div>
+        </div>
+        <div className="panel panel--sticky">
+          <h3>Payment</h3>
+          <div className="co-line"><span>Method</span><b>{order.method}</b></div>
+          {order.paidPriceTry && <div className="co-line"><span>Charged</span><b>₺{order.paidPriceTry}</b></div>}
+          <div className="co-line"><span>Merchant received</span><b>{order.total.toLocaleString('en-US')} USDC</b></div>
+          {order.txHash ? (
+            <a className="btn btn--block" style={{ marginTop: 14 }} href={explorerTx(order.txHash)} target="_blank" rel="noreferrer">
+              View settlement tx on Stellar ↗
+            </a>
+          ) : (
+            <p className="hint" style={{ marginTop: 14 }}>Settlement confirming on-chain…</p>
+          )}
+        </div>
+      </div>
+    </main>
   );
 }
 
@@ -309,6 +621,9 @@ function Checkout({ items, subtotal, onBack }: { items: { key: string; product: 
   const [shipKey, setShipKey] = useState('standard');
   const [pay, setPay] = useState<'card' | 'crypto' | null>(null);
   const [placed, setPlaced] = useState(false);
+  // A stable order reference for this checkout, used as the payment memo whether the shopper pays via the
+  // extension (Troy card) or the crypto gateway — so both settle the SAME order.
+  const orderMemo = useState(() => orderRef())[0];
 
   const set = (k: keyof typeof emptyAddr) => (e: ChangeEvent<HTMLInputElement>) => setAddr((a) => ({ ...a, [k]: e.target.value }));
   const addrValid = addr.email.includes('@') && addr.first && addr.last && addr.address && addr.city && addr.postal && addr.country;
@@ -394,6 +709,14 @@ function Checkout({ items, subtotal, onBack }: { items: { key: string; product: 
           {step === 3 && (
             <div className="panel">
               <h3>Payment</h3>
+              {/* Machine-readable USDC-on-Stellar invoice, advertised the moment payment opens so a supported
+                  browser extension can offer to settle it with a Troy card — no crypto needed. Hidden from shoppers;
+                  the shopper never has to enter the crypto gateway to be offered the card option. */}
+              {total > 0 && (
+                <a href={buildSep7(cryptoAmount(total, 1), orderMemo)} style={{ display: 'none' }} aria-hidden="true">
+                  Pay this {cryptoAmount(total, 1)} USDC order on Stellar
+                </a>
+              )}
               <div className="pay-methods">
                 <button className="pay-method" data-active={pay === 'card'} onClick={() => setPay('card')}>
                   <b>Credit / debit card</b><span>Visa · Mastercard</span>
@@ -415,7 +738,7 @@ function Checkout({ items, subtotal, onBack }: { items: { key: string; product: 
                 </div>
               )}
 
-              {pay === 'crypto' && <CryptoPay total={total} />}
+              {pay === 'crypto' && <CryptoPay total={total} memo={orderMemo} />}
 
               <button className="btn btn--ghost" style={{ marginTop: 12 }} onClick={() => setStep(2)}>Back</button>
             </div>
@@ -443,10 +766,9 @@ function Checkout({ items, subtotal, onBack }: { items: { key: string; product: 
   );
 }
 
-function CryptoPay({ total }: { total: number }) {
+function CryptoPay({ total, memo }: { total: number; memo: string }) {
   const [coin, setCoin] = useState<Coin | null>(null);
   const [net, setNet] = useState<CryptoNetwork | null>(null);
-  const memo = useState(() => orderRef())[0];
   const [left, setLeft] = useState(15 * 60);
 
   useEffect(() => {

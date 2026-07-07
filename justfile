@@ -28,6 +28,14 @@ format-check:
 contract-build:
     stellar contract build
 
+# preflight: the live-smoke READINESS GATE. Smokes every dirty dependency the end-to-end run needs — operator
+# fees, pool USDC (readSacBalance), the CEX spot oracle, the Yahoo history, and iyzico reachability — and prints a
+# green/red report. Exit 0 = ready to drive a real charge; exit 1 = fix the reds first. Network IS used (a live
+# probe) but it moves NO money and creates no checkout form. Run before `just serve` + a real charge.
+preflight:
+    pnpm -r run build
+    node --env-file=.env scripts/preflight.mjs
+
 # serve: stand up the live backend — reads .env + deployment.testnet.json, seeds the pool balance + operator
 # sequence from the chain, and listens. Needs a PUBLIC TROIA_CALLBACK_URL (a tunnel on testnet, e.g. cloudflared)
 # so iyzico can reach the webhook. Live — NOT part of the offline gate; it is the Phase-4.5 end-to-end run.

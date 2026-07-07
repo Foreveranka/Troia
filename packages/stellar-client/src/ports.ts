@@ -11,11 +11,14 @@ export type UnpreparedTx = Transaction;
 /** A simulated, footprint-carrying, submittable pay() tx (still unsigned until the Signer runs). */
 export type SubmittableTx = Transaction;
 
-/** A minimal projection of a Horizon account response — only what toAccountSnapshot needs. */
+/** A minimal projection of a Horizon account response — what toAccountSnapshot needs, plus the string `balance`
+ *  the adapter already carries at runtime (used only by the preflight's fee/liquidity read; ignored by the
+ *  trustline mapping). */
 export interface HorizonBalanceLine {
   readonly asset_type: string;
   readonly asset_code?: string;
   readonly asset_issuer?: string;
+  readonly balance?: string;
 }
 export interface AccountSnapshotJson {
   readonly balances: readonly HorizonBalanceLine[];

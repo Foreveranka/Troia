@@ -30,7 +30,10 @@ for the phased build plan. For the reviewer-verifiable proof story, see [`docs/R
 `just verify` runs today (offline, network-blocked reconciliation proof — see
 [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)); `just fund` bootstraps the live testnet rails (see
 [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)); `just demo` runs the full live demo — real testnet payouts →
-a recon-report → offline verify (one order is a deliberate mismatch the reconciler catches).
+a recon-report → offline verify (one order is a deliberate mismatch the reconciler catches). `just preflight`
+smokes every live dependency (operator fees, pool USDC, oracle, iyzico) before a run, and `just serve` stands up
+the backend for the Phase-4.5 end-to-end live-smoke — a real charge driving a real `pay()` (see
+[`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)).
 
 ## Secret boundary
 
@@ -58,6 +61,9 @@ offline (2 matched + 1 deliberate mismatch caught).
 Wired offline, not yet live-run (remaining, not hidden): the Phase-4.5 composition that binds the real adapters +
 the PSP-inclusive quote and stands up a server (`just serve`) is **built, type-checked, and offline-tested** — a
 composition smoke proves the whole stack boots from the factory — so a real charge driving a real `pay()` is
-realized in code. The remaining step is the **live run** behind a public webhook tunnel (which live-smokes the
-SDK/network adapters for the first time), then the storefront (5.1) and the browser extension (5.2). See
+realized in code. The network-facing halves are now **hardened for the live run** (per-attempt timeouts + bounded
+retry on every RPC/oracle/iyzico call, so no hung source can wedge the poller or freeze a checkout) and gated by a
+**readiness preflight** (`just preflight`) plus a step-by-step runbook ([`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)).
+The remaining step is the **live run itself** behind a public webhook tunnel (which live-smokes the SDK/network
+adapters for the first time), then the storefront (5.1) and the browser extension (5.2). See
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

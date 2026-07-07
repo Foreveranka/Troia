@@ -7,6 +7,8 @@
 
 import { aggregate, RATE_SCALE } from './index.js';
 import type { OraclePolicy, OracleProvider, OracleResult, SourceQuote } from './index.js';
+import { DEFAULT_NET_POLICY, fetchJsonWithRetry } from './net.js';
+import type { NetPolicy } from './net.js';
 import type { FetchLike } from './rate-history.js';
 
 function prop(o: unknown, key: string): unknown {
@@ -79,8 +81,8 @@ interface Leg {
   readonly priceE7: bigint;
   readonly asOfMs: number | undefined; // the exchange's timestamp if it carries one, else undefined
 }
-async function fetchLeg(url: string, source: CexSource, fetch: FetchLike): Promise<Leg> {
-  const payload = await (await fetch(url)).json();
+async function fetchLeg(url: string, source: CexSource, fetch: FetchLike, net: NetPolicy): Promise<Leg> {
+  const payload = await fetchJsonWithRetry(url, fetch, net);
   return { priceE7: parseDecimalToE7(source.parsePrice(payload)), asOfMs: source.parseAsOfMs?.(payload) };
 }
 
@@ -93,10 +95,11 @@ export async function fetchCexQuote(
   source: CexSource,
   fetch: FetchLike,
   nowMs: number,
+  net: NetPolicy = DEFAULT_NET_POLICY,
 ): Promise<SourceQuote | null> {
   try {
-    const tryLeg = await fetchLeg(source.tryUsdtUrl, source, fetch);
-    const usdcLeg = await fetchLeg(source.usdcUsdtUrl, source, fetch);
+    const tryLeg = await fetchLeg(source.tryUsdtUrl, source, fetch, net);
+    const usdcLeg = await fetchLeg(source.usdcUsdtUrl, source, fetch, net);
     const tryPerUsdc = (tryLeg.priceE7 * usdcLeg.priceE7) / RATE_SCALE; // TRY/USDT × USDT/USDC
     const asOfMs = Math.min(tryLeg.asOfMs ?? nowMs, usdcLeg.asOfMs ?? nowMs);
     return { source: source.name, tryPerUsdc, asOfMs };
@@ -110,6 +113,7 @@ export interface CexOracleOptions {
   readonly sources?: readonly CexSource[]; // default: Binance + Bybit + OKX
   readonly fetch?: FetchLike; // injected in tests (a mock); defaults to global fetch
   readonly now?: () => number; // injected in tests; defaults to Date.now
+  readonly net?: NetPolicy; // per-attempt timeout + bounded retry (default DEFAULT_NET_POLICY)
 }
 
 /** The live spot mid: fetch every source, derive TRY/USDC, and aggregate fail-closed (lower-median + deviation). */
@@ -121,7 +125,8 @@ export class LiveCexOracle implements OracleProvider {
     const fetch = this.opts.fetch ?? (globalThis.fetch as unknown as FetchLike | undefined);
     if (fetch === undefined) throw new Error('no fetch available; inject opts.fetch');
     const nowMs = (this.opts.now ?? (() => Date.now()))();
-    const results = await Promise.all(sources.map((s) => fetchCexQuote(s, fetch, nowMs)));
+    const net = this.opts.net ?? DEFAULT_NET_POLICY;
+    const results = await Promise.all(sources.map((s) => fetchCexQuote(s, fetch, nowMs, net)));
     const quotes = results.filter((q): q is SourceQuote => q !== null);
     return aggregate(quotes, this.opts.policy, nowMs);
   }

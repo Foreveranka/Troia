@@ -13,22 +13,29 @@ import type {
 } from './outcomes.js';
 import type { RpcPort, UnpreparedTx } from './ports.js';
 import { SimulationError, SubmitError } from './errors.js';
+import { withTimeout } from './net-timeout.js';
 import { firstContractErrorCodeFromContract, scValI128ToBigInt } from './soroban-reads.js';
 import type { DiagnosticScVals } from './soroban-reads.js';
 
+/** Per-call RPC deadline: high enough to never trip on normal latency (<2s), low enough that a genuinely hung
+ *  socket can't wedge the poll loop indefinitely (see net-timeout.ts). Overridable via opts.timeoutMs. */
+const DEFAULT_RPC_TIMEOUT_MS = 15_000;
+
 export class SorobanRpcAdapter implements RpcPort {
   private readonly server: rpc.Server;
+  private readonly timeoutMs: number;
 
   constructor(
     rpcUrl: string,
     private readonly passphrase: string,
-    opts?: { allowHttp?: boolean },
+    opts?: { allowHttp?: boolean; timeoutMs?: number },
   ) {
     this.server = new rpc.Server(rpcUrl, opts?.allowHttp === true ? { allowHttp: true } : undefined);
+    this.timeoutMs = opts?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
   }
 
   async simulate(unprepared: UnpreparedTx): Promise<SimResult> {
-    const sim = await this.server.simulateTransaction(unprepared);
+    const sim = await withTimeout(this.server.simulateTransaction(unprepared), this.timeoutMs, 'rpc.simulate');
     if (rpc.Api.isSimulationError(sim)) throw new SimulationError(sim.error);
     if (rpc.Api.isSimulationRestore(sim)) {
       throw new SimulationError('footprint touches archived entries — RestoreFootprint required first');
@@ -46,7 +53,7 @@ export class SorobanRpcAdapter implements RpcPort {
 
   async send(signedXdrBase64: string): Promise<SendOutcome> {
     const tx = TransactionBuilder.fromXDR(signedXdrBase64, this.passphrase);
-    const res = await this.server.sendTransaction(tx);
+    const res = await withTimeout(this.server.sendTransaction(tx), this.timeoutMs, 'rpc.send');
     switch (res.status) {
       case 'PENDING':
         return { kind: 'PENDING', hashHex: res.hash };
@@ -64,7 +71,7 @@ export class SorobanRpcAdapter implements RpcPort {
   }
 
   async getTransaction(hashHex: string): Promise<GetTxOutcome> {
-    const res = await this.server.getTransaction(hashHex);
+    const res = await withTimeout(this.server.getTransaction(hashHex), this.timeoutMs, 'rpc.getTransaction');
     switch (res.status) {
       case rpc.Api.GetTransactionStatus.SUCCESS:
         return { kind: 'SUCCESS', ledger: res.ledger };
@@ -81,14 +88,14 @@ export class SorobanRpcAdapter implements RpcPort {
     const key = xdr.LedgerKey.account(
       new xdr.LedgerKeyAccount({ accountId: Keypair.fromPublicKey(operatorPublic).xdrAccountId() }),
     );
-    const res = await this.server.getLedgerEntries(key);
+    const res = await withTimeout(this.server.getLedgerEntries(key), this.timeoutMs, 'rpc.getLedgerEntries');
     const entry = res.entries[0];
     if (entry === undefined) return { exists: false, seq: '0' };
     return { exists: true, seq: entry.val.account().seqNum().toString() };
   }
 
   async latestLedger(): Promise<LedgerHead> {
-    const res = await this.server.getLatestLedger();
+    const res = await withTimeout(this.server.getLatestLedger(), this.timeoutMs, 'rpc.latestLedger');
     return { sequence: res.sequence, closeTimeUnix: Number(res.closeTime) };
   }
 
@@ -105,7 +112,7 @@ export class SorobanRpcAdapter implements RpcPort {
       .addOperation(op)
       .setTimeout(30)
       .build();
-    const sim = await this.server.simulateTransaction(tx);
+    const sim = await withTimeout(this.server.simulateTransaction(tx), this.timeoutMs, 'rpc.readSacBalance');
     if (rpc.Api.isSimulationError(sim)) throw new SimulationError(sim.error);
     const retval = sim.result?.retval;
     if (retval === undefined) throw new SimulationError('balance simulation returned no retval');
@@ -120,12 +127,38 @@ export class SorobanRpcAdapter implements RpcPort {
    *  double-pay shield, so a null can never cause a double payout). Extra method beyond RpcPort; live-smoked. */
   async readContractErrorCode(hashHex: string, contractId: string): Promise<number | null> {
     try {
-      const res = await this.server.getTransaction(hashHex);
+      const res = await withTimeout(this.server.getTransaction(hashHex), this.timeoutMs, 'rpc.readContractErrorCode');
       if (res.status !== rpc.Api.GetTransactionStatus.FAILED) return null;
       return firstContractErrorCodeFromContract(collectDiagnosticEvents(res), contractId);
     } catch {
-      return null;
+      return null; // a timeout here -> null -> classifyRevertCause 'Other' -> fresh-seq re-drive (money-safe)
     }
+  }
+
+  /** OBSERVABILITY ONLY (flag-1 live check): describe a reverted tx's diagnostics + what the contract-scoped parser
+   *  reads, so a live run can confirm the getTransaction-FAILED shape (does the node populate diagnostic events?
+   *  does the TroyPool error carry its own contractId?). No money logic; never called on the money path — the
+   *  money path uses readContractErrorCode, whose null is fail-SAFE. Used by scripts/probe-revert.mjs. */
+  async describeRevert(
+    hashHex: string,
+    contractId: string,
+  ): Promise<{
+    status: string;
+    topDiagnosticEvents: number;
+    eventContractIds: readonly (string | null)[];
+    classifiedCode: number | null;
+  }> {
+    const res = await withTimeout(this.server.getTransaction(hashHex), this.timeoutMs, 'rpc.describeRevert');
+    if (res.status !== rpc.Api.GetTransactionStatus.FAILED) {
+      return { status: String(res.status), topDiagnosticEvents: 0, eventContractIds: [], classifiedCode: null };
+    }
+    const events = collectDiagnosticEvents(res);
+    return {
+      status: String(res.status),
+      topDiagnosticEvents: (res.diagnosticEventsXdr ?? []).length,
+      eventContractIds: events.map((e) => e.contractId),
+      classifiedCode: firstContractErrorCodeFromContract(events, contractId),
+    };
   }
 }
 

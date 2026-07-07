@@ -148,6 +148,63 @@ describe('LiveCexOracle — aggregate a spot mid across CEXes (mocked fetch, no 
     if (!r.ok) expect(r.error.code).toBe('DeviationExceeded');
   });
 
+  it('drops a source that HANGS (per-attempt timeout) instead of hanging the whole quote — quorum still decides', async () => {
+    // okx hangs forever but HONORS the abort signal (as the real fetch does); binance+bybit are healthy. With a
+    // short per-attempt timeout, okx is aborted -> dropped -> the 2 healthy sources still meet the quorum. Before
+    // the timeout, one hung source made getRate() (and /intent) hang forever.
+    const healthy = mockFetch({
+      binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' },
+      bybit: { tryUsdt: '40.51', usdcUsdt: '1.0000' },
+      okx: { tryUsdt: '40.49', usdcUsdt: '1.0000' },
+    });
+    const fetch: FetchLike = (url, init) => {
+      if (url.includes('okx')) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('okx hung')));
+        });
+      }
+      return healthy(url, init);
+    };
+    const r = await new LiveCexOracle({
+      policy: POLICY,
+      sources,
+      fetch,
+      now: () => NOW,
+      net: { timeoutMs: 25, retries: 0 },
+    }).getRate();
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error.code);
+    expect(r.quote.sources).toEqual(['binance', 'bybit']); // okx aborted+dropped; quorum still met
+  });
+
+  it('recovers a source from a single transient failure via retry (net.retries) — a blip does not drop it', async () => {
+    const healthy = mockFetch({
+      binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' },
+      bybit: { tryUsdt: '40.50', usdcUsdt: '1.0000' },
+      okx: { tryUsdt: '40.50', usdcUsdt: '1.0000' },
+    });
+    // okx's FIRST fetch (its TRY leg) throws once, then succeeds — with retries:1 the source survives the blip.
+    const seen = new Map<string, number>();
+    const fetch: FetchLike = async (url, init) => {
+      if (url.includes('okx')) {
+        const n = (seen.get(url) ?? 0) + 1;
+        seen.set(url, n);
+        if (n === 1) throw new Error('okx transient');
+      }
+      return healthy(url, init);
+    };
+    const r = await new LiveCexOracle({
+      policy: POLICY,
+      sources,
+      fetch,
+      now: () => NOW,
+      net: { timeoutMs: 1000, retries: 1 },
+    }).getRate();
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error.code);
+    expect(r.quote.sources).toEqual(['binance', 'bybit', 'okx']); // okx recovered on retry -> all 3 present
+  });
+
   it('END TO END: CEX spot mid -> commission spread -> priced order (the production wiring)', async () => {
     const fetch = mockFetch({
       binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' },

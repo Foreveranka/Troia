@@ -7,6 +7,11 @@
 
 import { randomBytes } from 'node:crypto';
 import { computeAuthorizationHeader } from './auth-header.js';
+
+/** Per-request iyzico deadline. A hung POST would otherwise wedge the /webhook and poll-worker paths that await
+ *  it (there is NO retry here — a re-POST could double-charge; a timeout aborts and maps to UNKNOWN, and the
+ *  money-first state machine re-retrieves the sale by token to learn the real outcome). */
+const IYZICO_TIMEOUT_MS = 20_000;
 import type { RawIyzicoResult } from './outcomes.js';
 import type { PaymentProvider, PspNetworkConfig, PspSecrets } from './ports.js';
 import {
@@ -55,9 +60,10 @@ export class IyzicoSandboxProvider implements PaymentProvider {
           'x-iyzi-client-version': auth.xIyziClientVersion,
         },
         body: req.json,
+        signal: AbortSignal.timeout(IYZICO_TIMEOUT_MS),
       });
     } catch {
-      return { kind: 'timeout' }; // DNS / connection reset / network failure -> UNKNOWN downstream
+      return { kind: 'timeout' }; // DNS / reset / network failure / abort-timeout -> UNKNOWN downstream
     }
 
     if (!res.ok) return { kind: 'malformed', reason: `http ${res.status}` };

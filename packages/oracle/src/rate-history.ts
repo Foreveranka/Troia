@@ -4,13 +4,18 @@
 // mock the network and stay offline/deterministic), and the offline PoC uses StaticRateHistory. Production can
 // swap Yahoo for TCMB behind the same RateHistoryProvider port — the downstream math is identical (doc §3.1).
 
+import { DEFAULT_NET_POLICY, fetchJsonWithRetry } from './net.js';
+import type { NetPolicy } from './net.js';
+
 /** A source of chronological (oldest-first) daily USD/TRY closes. */
 export interface RateHistoryProvider {
   dailyCloses(): Promise<readonly number[]>;
 }
 
-/** The minimal shape of `fetch` we depend on — injectable so tests substitute a controlled fake (a "mock"). */
-export type FetchLike = (url: string) => Promise<{ json(): Promise<unknown> }>;
+/** The minimal shape of `fetch` we depend on — injectable so tests substitute a controlled fake (a "mock"). The
+ *  optional `init` carries the AbortSignal the timeout/retry wrapper passes (the real fetch honors it; fakes may
+ *  ignore it). Widened from `(url) => ...` so a hung upstream can be aborted rather than hanging forever. */
+export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ json(): Promise<unknown> }>;
 
 function prop(o: unknown, key: string): unknown {
   return typeof o === 'object' && o !== null ? (o as Record<string, unknown>)[key] : undefined;
@@ -41,6 +46,8 @@ export interface YahooOptions {
   readonly interval?: string; // default '1d'
   /** injected in tests (a mock fetch); defaults to the global fetch in production. */
   readonly fetch?: FetchLike;
+  /** per-attempt timeout + bounded retry for the live fetch (default DEFAULT_NET_POLICY). */
+  readonly net?: NetPolicy;
 }
 
 /** Live provider: fetches the USD/TRY daily closes from Yahoo Finance and parses them fail-closed. */
@@ -55,8 +62,8 @@ export class YahooUsdTryHistory implements RateHistoryProvider {
     if (doFetch === undefined) throw new Error('no fetch available; inject opts.fetch');
     // Yahoo matches the symbol literally in the path (USDTRY=X); only the query values are appended.
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`;
-    const res = await doFetch(url);
-    return parseYahooChartCloses(await res.json());
+    const payload = await fetchJsonWithRetry(url, doFetch, this.opts.net ?? DEFAULT_NET_POLICY);
+    return parseYahooChartCloses(payload);
   }
 }
 

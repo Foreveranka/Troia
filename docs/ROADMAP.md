@@ -132,9 +132,13 @@ Now connect the core to the outside world, one provider at a time, behind interf
   the **real ~21-day valör**; and the **composition is wired offline** — `buildStellarPort` /
   `buildTestnetServerDeps` assemble the real adapters + the PSP-inclusive quote into `ServerDeps`, and a
   composition smoke boots the app from that factory (with injected bootstrap reads) and drives its fail-closed
-  routes — all type-checked + offline-tested. **Remaining:** the LIVE run — `just serve` (live chain bootstrap +
-  listen) behind a public webhook tunnel, driving a real charge → a real `pay()`, which live-smokes the
-  SDK/network adapters for the first time.
+  routes — all type-checked + offline-tested. The network-facing halves are now **hardened for the live run**
+  (per-attempt timeouts + bounded retry on every RPC/oracle/iyzico call — a hung source drops fail-closed instead
+  of wedging the poller or freezing a checkout; unit-tested offline + adversarially reviewed), gated by a
+  **readiness preflight** (`just preflight`, which smokes each dirty dependency in isolation), and scripted end-to-
+  end in [`LIVE_SMOKE.md`](LIVE_SMOKE.md) (`scripts/intent.mjs` drives a charge, `scripts/probe-revert.mjs` checks
+  the revert-read shape). **Remaining:** the LIVE run itself — `just serve` behind a public webhook tunnel, driving
+  a real charge → a real `pay()`, which live-smokes the SDK/network adapters for the first time.
 
 **Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches.
 The composition composes **offline** today; the remaining 4.5 live-smoke runs it end-to-end.

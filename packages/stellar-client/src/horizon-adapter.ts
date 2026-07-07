@@ -4,21 +4,29 @@
 // Not in the offline suite; type-checked + live-smoked later.
 
 import { Horizon, NotFoundError } from '@stellar/stellar-sdk';
+import { withTimeout } from './net-timeout.js';
 import type { AccountSnapshotJson, HorizonPort } from './ports.js';
+
+/** Per-call Horizon deadline: this read is on the /intent path, so a hung socket would freeze checkout. A timeout
+ *  is NOT a NotFound, so it propagates (fail-closed: /intent errors, no charge) rather than misreading as "not
+ *  funded". Overridable via opts.timeoutMs. */
+const DEFAULT_HORIZON_TIMEOUT_MS = 15_000;
 
 export class HorizonAdapter implements HorizonPort {
   private readonly server: Horizon.Server;
+  private readonly timeoutMs: number;
 
-  constructor(horizonUrl: string, opts?: { allowHttp?: boolean }) {
+  constructor(horizonUrl: string, opts?: { allowHttp?: boolean; timeoutMs?: number }) {
     this.server = new Horizon.Server(
       horizonUrl,
       opts?.allowHttp === true ? { allowHttp: true } : undefined,
     );
+    this.timeoutMs = opts?.timeoutMs ?? DEFAULT_HORIZON_TIMEOUT_MS;
   }
 
   async loadAccountSnapshot(destination: string): Promise<AccountSnapshotJson | null> {
     try {
-      const account = await this.server.loadAccount(destination);
+      const account = await withTimeout(this.server.loadAccount(destination), this.timeoutMs, 'horizon.loadAccount');
       return { balances: account.balances };
     } catch (e) {
       if (isNotFound(e)) return null;

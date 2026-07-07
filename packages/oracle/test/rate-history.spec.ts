@@ -46,6 +46,19 @@ describe('rate-history — Yahoo USD/TRY daily-close data source', () => {
     expect(got).toEqual(closes);
   });
 
+  it('recovers from a transient network failure via retry (net.retries) — the live fetch is bounded + resilient', async () => {
+    const closes = [40.0, 40.5, 40.2, 41.0, 40.8];
+    let attempts = 0;
+    const flaky: FetchLike = async () => {
+      attempts++;
+      if (attempts === 1) throw new Error('transient reset');
+      return { json: async () => yahooPayload(closes) };
+    };
+    const got = await new YahooUsdTryHistory({ fetch: flaky, net: { timeoutMs: 1000, retries: 1 } }).dailyCloses();
+    expect(got).toEqual(closes); // second attempt served the data -> a single blip does not fail the quote
+    expect(attempts).toBe(2);
+  });
+
   it('StaticRateHistory returns its fixed series (the offline PoC data source)', async () => {
     expect(await new StaticRateHistory([40.0, 40.5, 40.2]).dailyCloses()).toEqual([40.0, 40.5, 40.2]);
     expect(() => new StaticRateHistory([40])).toThrow(RangeError); // needs >= 3

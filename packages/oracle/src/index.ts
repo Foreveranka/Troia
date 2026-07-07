@@ -10,6 +10,10 @@ export const RATE_SCALE = 10_000_000n; // a rate of X TRY-per-USDC is stored as 
 export { parseYahooChartCloses, YahooUsdTryHistory, StaticRateHistory } from './rate-history.js';
 export type { RateHistoryProvider, FetchLike, YahooOptions } from './rate-history.js';
 
+// Network-robustness for the live reads (per-attempt timeout + bounded retry on the /intent hot path).
+export { DEFAULT_NET_POLICY, fetchJsonWithRetry } from './net.js';
+export type { NetPolicy } from './net.js';
+
 // Live-CEX SPOT oracle — the mainnet-ready TRY/USDC mid (Binance + Bybit + OKX, injected fetch, fail-closed).
 export {
   parseDecimalToE7,

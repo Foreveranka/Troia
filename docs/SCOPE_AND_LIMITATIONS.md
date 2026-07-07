@@ -90,10 +90,15 @@ happened yet is the **live run**:
 - **The live end-to-end smoke is not yet executed.** `just serve` needs a public webhook URL (a tunnel on
   testnet) so iyzico can reach `/webhook`; that live run — a real charge automatically driving a real on-chain
   `pay()` — is the remaining Phase-4.5 step, and it is what exercises the network-facing halves for the first time.
+  It is now **prepared, not run**: the network calls are hardened (per-attempt timeouts + bounded retry so a hung
+  source drops fail-closed rather than wedging the poller or freezing a checkout), a **readiness preflight**
+  (`just preflight`) smokes each dirty dependency in isolation, and the whole run is scripted in
+  [`LIVE_SMOKE.md`](LIVE_SMOKE.md).
 - **The SDK/network adapters are type-checked, not yet live-smoked.** `SorobanRpcAdapter`'s pool-balance +
   reverted-`pay()` reads and the iyzico HTTP client are exercised only by fakes / type-checks offline; the live
   run is where they first hit a real RPC / the real sandbox. A landed-and-reverted `pay()`'s diagnostic events
-  (the input to the revert-code read) are the one shape only a live run can confirm.
+  (the input to the revert-code read) are the one shape only a live run can confirm — `scripts/probe-revert.mjs`
+  is the check that confirms it once such a tx exists.
 - **`InMemoryStore` / `InMemoryJournal` are single-process.** Correct for the PoC live-smoke (one process, no
   restart); a durable store is the mainnet swap behind the same interface. A restart loses the in-flight witness,
   which fails **safe** — an unreadable revert code re-drives, and the on-chain `Processed(tx_id)` guard is the

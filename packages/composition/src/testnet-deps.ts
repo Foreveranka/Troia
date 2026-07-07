@@ -65,7 +65,7 @@ export const DEFAULT_TESTNET_MERCHANT: MerchantTemplate = {
     name: 'Troia',
     surname: 'Buyer',
     identityNumber: '11111111111',
-    email: 'buyer@troia.test',
+    email: 'buyer@example.com', // iyzico rejects reserved/non-public TLDs (e.g. .test) — use a valid public one
     registrationAddress: 'Test Mah. Test Cad. No:1',
     city: 'Istanbul',
     country: 'Turkey',

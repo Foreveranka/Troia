@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { Keypair } from '@stellar/stellar-base';
 import type { OracleProvider, OracleResult, RateHistoryProvider } from '@troia/oracle';
-import { buildTestnetServerDeps } from '../src/testnet-deps.js';
+import { buildTestnetServerDeps, DEFAULT_TESTNET_MERCHANT } from '../src/testnet-deps.js';
 import type { BootstrapReads, TestnetServerConfig } from '../src/testnet-deps.js';
 
 const fakeOracle: OracleProvider = {
@@ -97,5 +97,17 @@ describe('buildTestnetServerDeps', () => {
       deployment: { ...cfg.deployment, operatorPublic: Keypair.random().publicKey() },
     };
     await expect(buildTestnetServerDeps(wrong, bootstrap)).rejects.toThrow(/operator secret/i);
+  });
+});
+
+// Regression guard for a live-smoke fix: iyzico rejects a reserved / non-resolvable email TLD (.test/.invalid/
+// .localhost/.example) with errorCode 5 "email hatalı format", which fail-closed the checkout-form init (503
+// CheckoutUnavailable). The KYC-stub buyer must use a valid public-TLD email.
+describe('DEFAULT_TESTNET_MERCHANT — the KYC-stub buyer', () => {
+  it('uses a valid, non-reserved-TLD buyer email (iyzico rejects .test etc. as an invalid format)', () => {
+    const email = DEFAULT_TESTNET_MERCHANT.buyer.email;
+    expect(email).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/); // well-formed local@domain.tld
+    const tld = (email.split('.').pop() ?? '').toLowerCase();
+    expect(['test', 'invalid', 'localhost', 'example']).not.toContain(tld);
   });
 });

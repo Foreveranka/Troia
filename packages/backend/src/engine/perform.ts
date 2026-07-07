@@ -77,8 +77,14 @@ function cancelParams(ctx: OrderCtx, deps: EngineDeps): CancelParams {
 function payRequest(ctx: OrderCtx, deps: EngineDeps): { req: PayRequest; ourSeq: bigint; maxTime: number } {
   const activeSeq = requireSeq(ctx);
   const ids = deriveIds(ctx.orderId, ctx.destination, ctx.amountStroops);
-  const minTime = deps.clock.nowUnix();
-  const maxTime = minTime + deps.config.stellar.timeboundsSecs;
+  const now = deps.clock.nowUnix();
+  const maxTime = now + deps.config.stellar.timeboundsSecs;
+  // minTime is 0 (no lower bound), NOT now(): a validated ledger's closeTime LAGS real-now by up to an
+  // inter-ledger interval (~5s), so a tx with minTime=now() is rejected `txTooEarly` at submission and never
+  // lands. maxTime is the real (deadness) expiry; the lower bound carries no money-safety role — replay/liveness
+  // are covered by the order-pinned sequence + the on-chain Processed(tx_id) guard + maxTime — so 0 is safe and,
+  // unlike a now()-derived bound, immune to clock skew / ledger lag.
+  const minTime = 0;
   const ourSeq = BigInt(activeSeq);
   const req: PayRequest = {
     orderId: ctx.orderId,

@@ -177,6 +177,33 @@ bottleneck → the **head-of-line** rule (one in-flight payout at a time). Phase
 
 ---
 
+## 5a. Treasury & rebalance cash-flow cycle
+
+The pool is the **treasury**, and its refill is timed by **iyzico's settlement, not by pool drainage**. The two
+legs are **asynchronous**: USDC leaves the pool **instantly** at settlement, but the matching TRY is released by
+iyzico only after its **valör (blokaj)** hold — **2–21 days** (worst ~28), volume/contract-tied, *not* the
+marketed T+1. So the treasury spends now and is reimbursed ~21 days later; **rebalance can only run once iyzico
+has actually paid us the held TRY** (we have no fiat to buy USDC with until then).
+
+- **The pre-funded pool bridges the gap.** The seed USDC must cover a whole valör window of outflow before the
+  first TRY returns — that is *why* the pool is pre-funded rather than paid-as-you-go (§1), and why the merchant
+  never waits for a TRY→USDC conversion.
+- **Rebalance = collected-TRY → buy USDC → top up.** Only *after* iyzico settles the held TRY can we acquire
+  replacement USDC (mainnet: a real CEX buy + withdraw on the same venues the oracle reads; testnet:
+  `SimulatedRebalance` mints self-issued USDC). Idempotent per `ref`; books an `EXTERNAL_FUNDING` leg (§7a), so
+  the double-entry ledger stays in sync with the on-chain balance.
+- **The FX-risk buffer already prices this window.** Because we pay out USDC at today's rate and re-buy ~21 days
+  later at an unknown one, the commission's `z·σ·√n` term (n = the valör) is sized to that drift (invariant ⑤,
+  `packages/pricing`). The "when" (~21 days) is therefore **priced in before the top-up ever runs**.
+
+**Status (PoC).** `SimulatedRebalance.topUp` is built + tested (`packages/rebalance`) but is **NOT wired to an
+automatic trigger** — no rebalance loop runs. The pool is pre-seeded and re-funded **manually** (`just fund`);
+the `poolLowWatermarkStroops` low-water mark only **warns** (`/intent → poolLow:true`), it does not top up. An
+automatic trigger (watermark → `topUp`) and the real-CEX buy that actually *acquires* the USDC are **Phase-2**
+(invariant ③b — economic solvency; testnet mints infinitely, so real inventory adequacy is deferred).
+
+---
+
 ## 6. Invariants (each owned by exactly one module)
 
 | # | Invariant | Owner |

@@ -121,8 +121,11 @@ to a demonstrated live end-to-end run.
 
 ## 5. Explicitly out of scope for this PoC (Phase-2, boundary only)
 
-- **Real CEX rebalance** — buying USDC on a real exchange (e.g. Binance/Bybit/OKX, the same venues the oracle
-  reads); async `topUp` signature designed at the interface level, not yet built.
+- **Real CEX rebalance + the automatic top-up trigger** — the `topUp` interface + `SimulatedRebalance` (testnet
+  mint) are built + tested, but (a) the real-exchange buy+withdraw that actually *acquires* the USDC (e.g.
+  Binance/Bybit/OKX, the venues the oracle reads; async finality) and (b) any automatic trigger are deferred —
+  the pool is pre-seeded and re-funded manually today, and the low-water mark only warns. See the treasury
+  cash-flow cycle + timing (rebalance runs on iyzico's valör cadence, not pool drainage) in **ARCHITECTURE §5a**.
 - **KYC** (a designed boundary, no-op on testnet; not yet a package).
 - **HSM / multisig real thresholds** (the `Signer` boundary already exists in `stellar-client`; testnet
   threshold = 1, same flow shape).

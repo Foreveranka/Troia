@@ -33,9 +33,10 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
   });
 
   it('a success envelope with a non-terminal / fraud-review payment is UNKNOWN, not SUCCESS', () => {
-    // INTERMEDIATE payment states keep polling (UNKNOWN); a terminal 'FAILURE' is a definitive decline handled
-    // separately (see the failed-charge test below), so it is deliberately NOT in this intermediate list.
-    for (const paymentStatus of ['INIT_THREEDS', 'CALLBACK_THREEDS', 'BKM_POS_SELECTED', 'PENDING_CREDIT']) {
+    // 'FAILURE' is UNKNOWN too (not a charge FAILURE): iyzico's hosted form allows a retry on the SAME token, so a
+    // failed attempt is not terminal — keeping it UNKNOWN lets a retry-success settle the order (see the dedicated
+    // retry-safety test below).
+    for (const paymentStatus of ['INIT_THREEDS', 'CALLBACK_THREEDS', 'BKM_POS_SELECTED', 'PENDING_CREDIT', 'FAILURE']) {
       expect(classifyIyzicoResult(body({ status: 'success', paymentStatus, fraudStatus: 1 }), 'preauth')).toBe('UNKNOWN');
     }
     // fraud not approved (0 = manual review, -1 = reject) is UNKNOWN even with paymentStatus SUCCESS
@@ -69,20 +70,18 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
     expect(classifyIyzicoResult(body({ ...captured, fraudStatus: 0 }), 'sale')).toBe('UNKNOWN');
   });
 
-  it('a terminal paymentStatus FAILURE (decline / failed 3DS) is a definitive charge FAILURE, not UNKNOWN', () => {
-    // The hosted checkout form reports a failed attempt as status:'success' + paymentStatus:'FAILURE' (e.g. a
-    // failed 3DS, mdStatus 0), NOT via a status:'failure' body. It is a definitive no-capture decline, so the
-    // charge ops fail-clean (releasing the seq + reservation) instead of holding UNKNOWN forever.
+  it('a paymentStatus FAILURE stays UNKNOWN (retry-safe) — never a fail-clean that could strand a retry capture', () => {
+    // MONEY-SAFETY (live-smoke lesson): iyzico's hosted form lets the customer retry on the SAME token, so a
+    // success-envelope paymentStatus 'FAILURE' (e.g. a failed 3DS, mdStatus 0) is NOT terminal — a later attempt
+    // may CAPTURE. Classifying it FAILURE would fail-clean the order, and a subsequent retry-success would then be
+    // stranded (charged TRY, no USDC, no void = LOSS). So it must read UNKNOWN: the order stays open and a
+    // retry-success settles it (chargeUnknown, re-driven by the recovery worklist). A genuinely abandoned order's
+    // sequence is freed by late seq allocation, NOT by fail-cleaning a possibly-retryable charge.
     const failed = { status: 'success', paymentStatus: 'FAILURE', mdStatus: 0, paymentId: 'p1' };
     for (const op of ['sale', 'checkout', 'preauth'] as PspOp[]) {
-      expect(classifyIyzicoResult(body(failed), op)).toBe('FAILURE');
+      expect(classifyIyzicoResult(body(failed), op)).toBe('UNKNOWN');
     }
-    expect(chargeEvent(body(failed))).toEqual({ type: 'chargeRejected' });
-    // capture / void / refund do NOT get the paymentStatus-FAILURE treatment (different response shapes): capture
-    // needs its own captured shape (no paymentId here -> UNKNOWN), and a void/refund success-envelope ack is a
-    // SUCCESS regardless of a paymentStatus field.
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'FAILURE' }), 'capture')).toBe('UNKNOWN');
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'FAILURE' }), 'void')).toBe('SUCCESS');
+    expect(chargeEvent(body(failed))).toEqual({ type: 'chargeUnknown' });
   });
 
   it('an out-of-enum op fails safe to UNKNOWN', () => {
@@ -169,9 +168,11 @@ describe('live iyzico sandbox ground truth (Phase 4.5 success-shape calibration)
     expect(typeof LIVE_SALE_SUCCESS.paymentId).toBe('string');
   });
 
-  // The exact shape retrieveCheckoutFormResult returned for a REAL sandbox failed 3DS (card 5528790000000008,
-  // paymentId 36434664, 2026-07-07): status 'success' (the API call), paymentStatus 'FAILURE', mdStatus 0. This
-  // pins the definitive-decline shape so the fail-clean path (release the seq + reservation) can't silently drift.
+  // The exact shape retrieveCheckoutFormResult returned for a REAL sandbox failed 3DS (paymentStatus 'FAILURE',
+  // mdStatus 0). A later live Troy run (order 3480449, card 9792072000017956) proved this is NOT terminal: the
+  // SAME order read 'FAILURE' at one poll, then 'SUCCESS' / mdStatus 1 with the money CAPTURED after the customer
+  // retried the 3DS. So a 'FAILURE' retrieve MUST stay UNKNOWN (keep the order open for the retry), never a
+  // fail-clean that would strand the eventual capture.
   const LIVE_SALE_FAILURE = {
     status: 'success',
     paymentStatus: 'FAILURE',
@@ -181,9 +182,9 @@ describe('live iyzico sandbox ground truth (Phase 4.5 success-shape calibration)
     errorMessage: null,
   };
 
-  it('classifies the real sandbox failed 3DS as FAILURE -> chargeRejected (order fails-clean, seq released)', () => {
-    expect(classifyIyzicoResult(body(LIVE_SALE_FAILURE), 'sale')).toBe('FAILURE');
-    expect(chargeEvent(body(LIVE_SALE_FAILURE))).toEqual({ type: 'chargeRejected' });
+  it('classifies the real sandbox failed 3DS as UNKNOWN -> chargeUnknown (retry-safe; a retry may still capture)', () => {
+    expect(classifyIyzicoResult(body(LIVE_SALE_FAILURE), 'sale')).toBe('UNKNOWN');
+    expect(chargeEvent(body(LIVE_SALE_FAILURE))).toEqual({ type: 'chargeUnknown' });
   });
 });
 

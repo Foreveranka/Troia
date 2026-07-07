@@ -240,7 +240,7 @@ export default function App() {
     function onMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin) return;
       const d = e.data as
-        | { source?: string; type?: string; orderId?: string; txHash?: string | null; paidPriceTry?: string | null }
+        | { source?: string; type?: string; orderId?: string; amount?: string | null; txHash?: string | null; paidPriceTry?: string | null }
         | null;
       if (!d || d.source !== 'troia-extension' || d.type !== 'TROIA_PAID') return;
       const lines: OrderLine[] = Object.values(cartRef.current).map((l) => ({
@@ -248,11 +248,14 @@ export default function App() {
       }));
       if (lines.length === 0) return;
       const sub = lines.reduce((n, l) => n + l.price * l.qty, 0);
-      const ship = sub >= 150 || sub === 0 ? 0 : 12;
+      // The order total is the amount actually settled on-chain (the SEP-7 amount the extension paid), so it
+      // always matches the tx and the selected shipping — never a re-estimated shipping cost.
+      const amt = d.amount != null ? Number(d.amount) : NaN;
+      const total = Number.isFinite(amt) && amt > 0 ? amt : sub + (sub >= 150 || sub === 0 ? 0 : 12);
       const order: Order = {
         id: typeof d.orderId === 'string' && d.orderId.length > 0 ? d.orderId : orderRef(),
         date: new Date().toISOString(),
-        total: sub + ship,
+        total,
         status: 'Paid · settled in USDC',
         method: 'Troy card (iyzico)',
         ...(typeof d.paidPriceTry === 'string' ? { paidPriceTry: d.paidPriceTry } : {}),
@@ -489,6 +492,8 @@ function OrderDetail({ order, onBack }: { order: Order | undefined; onBack: () =
       </main>
     );
   }
+  const itemsSub = order.lines.reduce((n, l) => n + l.price * l.qty, 0);
+  const ship = order.total - itemsSub;
   return (
     <main className="checkout container">
       <button className="link-back" onClick={onBack}>← My orders</button>
@@ -502,6 +507,8 @@ function OrderDetail({ order, onBack }: { order: Order | undefined; onBack: () =
           {order.lines.map((l, i) => (
             <div className="co-line" key={i}><span>{l.name} · {l.size} × {l.qty}</span><b>{usd(l.price * l.qty)}</b></div>
           ))}
+          <div className="co-line"><span>Subtotal</span><b>{usd(itemsSub)}</b></div>
+          <div className="co-line"><span>Shipping</span><b>{ship <= 0 ? 'Free' : usd(ship)}</b></div>
           <div className="co-total"><span>Total</span><span>{usd(order.total)}</span></div>
         </div>
         <div className="panel panel--sticky">

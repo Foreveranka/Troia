@@ -39,7 +39,7 @@ function clearBanner(): void {
   handle = null;
 }
 
-function startPolling(orderId: string, h: BannerHandle): void {
+function startPolling(orderId: string, h: BannerHandle, amount: string): void {
   stopPolling();
   let polls = 0;
   pollTimer = setInterval(() => {
@@ -62,7 +62,7 @@ function startPolling(orderId: string, h: BannerHandle): void {
         chrome.runtime.sendMessage({ type: 'TROIA_RECEIPT', orderId }, (receipt: ReceiptOutcome | undefined) => {
           const txHash = receipt !== undefined && receipt.ok ? receipt.txHash : null;
           const paidPriceTry = receipt !== undefined && receipt.ok ? receipt.paidPriceTry : null;
-          window.postMessage({ source: 'troia-extension', type: 'TROIA_PAID', orderId, txHash, paidPriceTry }, location.origin);
+          window.postMessage({ source: 'troia-extension', type: 'TROIA_PAID', orderId, amount, txHash, paidPriceTry }, location.origin);
         });
       }
       if (terminal) stopPolling();
@@ -90,7 +90,7 @@ function pay(detection: Detection): void {
         // Only claim the card form is opening when the background actually opened one (paymentPageUrl present).
         const action = intentUiAction(outcome.response);
         h.setStatus(action.text, action.kind === 'error' ? 'error' : 'info');
-        if (action.poll) startPolling(outcome.response.orderId, h);
+        if (action.poll) startPolling(outcome.response.orderId, h, detection.sep7.amount);
         console.info('[troia] intent outcome', { orderId: outcome.response.orderId, action: action.kind });
       } else {
         h.setStatus(`Couldn't start the payment${NOT_CHARGED}`, 'error');

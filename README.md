@@ -35,6 +35,12 @@ smokes every live dependency (operator fees, pool USDC, oracle, iyzico) before a
 the backend for the Phase-4.5 end-to-end live-smoke — a real charge driving a real `pay()` (see
 [`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)).
 
+**Paying in the demo:** the iyzico **sandbox** hosted form takes valueless test cards (no real money). Troy cards
+(all succeed): Akbank `9792072000017956`, QNB `9792023757123604` / `9792020000000001` / `9792030000000000`,
+Vakıfbank `6500528865390837` / `6501700194147183`. Any future expiry (e.g. `12/30`), any 3-digit CVC. The **3DS
+OTP is shown in parentheses on the verification screen** — enter what it displays. Decline (fail-closed path):
+Visa `4111111111111129`. Full list: [iyzico test cards](https://docs.iyzico.com/en/add-ons/test-cards).
+
 ## Secret boundary
 
 Secrets live **only** in `.env` (git-ignored). The repo contains `.env.example` placeholders and nothing

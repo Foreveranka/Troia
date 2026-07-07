@@ -1,0 +1,101 @@
+// buildTestnetServerDeps assembles the full ServerDeps offline: the store is seeded from INJECTED bootstrap reads
+// (so the network is never touched), and a valid operator keypair is generated so the fail-closed key check passes.
+// The money-relevant assertions: the store's available balance == the read pool balance, and the first allocated
+// seq == the on-chain seq + 1 (a valid tx seqNum); a mismatched operator secret fails closed.
+
+import { describe, expect, it } from 'vitest';
+import { Keypair } from '@stellar/stellar-base';
+import type { OracleProvider, OracleResult, RateHistoryProvider } from '@troia/oracle';
+import { buildTestnetServerDeps } from '../src/testnet-deps.js';
+import type { BootstrapReads, TestnetServerConfig } from '../src/testnet-deps.js';
+
+const fakeOracle: OracleProvider = {
+  getRate: () =>
+    Promise.resolve({ ok: true, quote: { midTryPerUsdc: 405_000_000n, sources: ['fake'], asOfMs: 0 } } as OracleResult),
+};
+const fakeHistory: RateHistoryProvider = {
+  dailyCloses: () => Promise.resolve([40.0, 40.1, 40.2, 40.3, 40.4]),
+};
+
+function baseCfg(): { cfg: TestnetServerConfig; pub: string } {
+  const kp = Keypair.random();
+  const pub = kp.publicKey();
+  const cfg: TestnetServerConfig = {
+    deployment: {
+      usdcIssuer: 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W',
+      usdcSacContractId: 'CCOAUUKWWPSVFZUPIVZECTV3PIVFRTVFKWWF2PQY5Q5CN3JBCDXGNCMB',
+      troyPool: 'CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ',
+      operatorPublic: pub,
+      adminPublic: 'GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ',
+    },
+    secrets: { operatorSecret: kp.secret(), iyzicoApiKey: 'ak', iyzicoSecretKey: 'sk', webhookSigningSecret: 'wh' },
+    callbackUrl: 'https://troia.example/webhook',
+    spotOracle: fakeOracle,
+    history: fakeHistory,
+  };
+  return { cfg, pub };
+}
+
+const bootstrap: BootstrapReads = {
+  operatorSeqNum: () => Promise.resolve(4242n),
+  poolBalanceStroops: () => Promise.resolve(99_994n * 10_000_000n),
+};
+
+describe('buildTestnetServerDeps', () => {
+  it('assembles ServerDeps: network from the deployment, store seeded from the bootstrap reads', async () => {
+    const { cfg, pub } = baseCfg();
+    const deps = await buildTestnetServerDeps(cfg, bootstrap);
+
+    expect(deps.network.network).toBe('testnet');
+    expect(deps.network.operatorPublic).toBe(pub);
+    expect(deps.network.contracts.troyPool).toBe(cfg.deployment.troyPool);
+    // store seeded from the reads: available == pool balance, first seq == on-chain seq + 1
+    expect(deps.ports.store.availableStroops()).toBe(99_994n * 10_000_000n);
+    expect(deps.ports.store.sequences.allocate('o1')).toBe(4243n);
+    expect(deps.webhookSigningSecret).toBe('wh');
+    expect(typeof deps.quote).toBe('function');
+    // ports wired
+    expect(typeof deps.ports.stellar.readPoolBalanceStroops).toBe('function');
+    expect(typeof deps.ports.psp.initializeCheckoutForm).toBe('function');
+    expect(typeof deps.ports.clock.nowUnix).toBe('function');
+  });
+
+  it('fills the merchant template with the callbackUrl + fixed TRY currency', async () => {
+    const { cfg } = baseCfg();
+    const deps = await buildTestnetServerDeps(cfg, bootstrap);
+    expect(deps.extras.psp.callbackUrl).toBe('https://troia.example/webhook');
+    expect(deps.extras.psp.currency).toBe('TRY');
+    expect(deps.extras.psp.buyer.id).toBe('buyer-stub'); // the KYC-stub default
+  });
+
+  it('applies extras defaults and honours overrides', async () => {
+    const { cfg } = baseCfg();
+    const def = await buildTestnetServerDeps(cfg, bootstrap);
+    expect(def.extras.feeStroops).toBe('100');
+    expect(def.extras.timeboundsSecs).toBe(45);
+    expect(def.extras.policy.maxDeadRetries).toBeGreaterThan(0);
+
+    const over = await buildTestnetServerDeps({ ...cfg, feeStroops: '250', timeboundsSecs: 60 }, bootstrap);
+    expect(over.extras.feeStroops).toBe('250');
+    expect(over.extras.timeboundsSecs).toBe(60);
+  });
+
+  it('seeds the store so allocate() returns the on-chain seq + 1 and available == the read balance', async () => {
+    const { cfg } = baseCfg();
+    const deps = await buildTestnetServerDeps(cfg, {
+      operatorSeqNum: () => Promise.resolve(100n),
+      poolBalanceStroops: () => Promise.resolve(5n),
+    });
+    expect(deps.ports.store.sequences.allocate('x')).toBe(101n);
+    expect(deps.ports.store.availableStroops()).toBe(5n);
+  });
+
+  it('FAILS CLOSED when the operator secret does not match the deployment operatorPublic', async () => {
+    const { cfg } = baseCfg();
+    const wrong: TestnetServerConfig = {
+      ...cfg,
+      deployment: { ...cfg.deployment, operatorPublic: Keypair.random().publicKey() },
+    };
+    await expect(buildTestnetServerDeps(wrong, bootstrap)).rejects.toThrow(/operator secret/i);
+  });
+});

@@ -24,6 +24,7 @@ const PURE_CORE = [
   'deadness.ts',
   'account-snapshot.ts',
   'soroban-reads.ts',
+  'in-memory-journal.ts',
   'ports.ts',
   'outcomes.ts',
   'errors.ts',

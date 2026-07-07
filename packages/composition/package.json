@@ -16,10 +16,14 @@
   },
   "dependencies": {
     "@troia/backend": "workspace:*",
+    "@troia/config": "workspace:*",
     "@troia/oracle": "workspace:*",
-    "@troia/pricing": "workspace:*"
+    "@troia/pricing": "workspace:*",
+    "@troia/psp": "workspace:*",
+    "@troia/stellar-client": "workspace:*"
   },
   "devDependencies": {
+    "@stellar/stellar-base": "15.0.0",
     "@types/node": "^22.10.5"
   }
 }

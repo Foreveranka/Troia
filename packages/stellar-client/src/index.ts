@@ -53,4 +53,7 @@ export type {
   ObserveResult,
 } from './client.js';
 
+// Concrete PoC seams for the composition root (SDK-free: a Map + Date.now, so they may cross the main surface).
+export { InMemoryJournal, SystemClock } from './in-memory-journal.js';
+
 export { BuildError, SimulationError, SubmitError, DeadnessIndeterminate } from './errors.js';

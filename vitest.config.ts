@@ -11,6 +11,7 @@ export default defineConfig({
     include: ['packages/**/test/**/*.spec.ts'],
     environment: 'node',
     alias: {
+      '@troia/backend': pkg('backend'),
       '@troia/config': pkg('config'),
       '@troia/core': pkg('core'),
       '@troia/ledger': pkg('ledger'),
@@ -19,6 +20,11 @@ export default defineConfig({
       '@troia/psp': pkg('psp'),
       '@troia/rebalance': pkg('rebalance'),
       '@troia/reconciler': pkg('reconciler'),
+      // the "/adapters" subpath must precede the bare package alias — first match wins, and the bare alias would
+      // otherwise prefix-match "@troia/stellar-client/adapters" and mis-resolve it into <index.ts>/adapters.
+      '@troia/stellar-client/adapters': fileURLToPath(
+        new URL('./packages/stellar-client/src/adapters.ts', import.meta.url),
+      ),
       '@troia/stellar-client': pkg('stellar-client'),
     },
   },

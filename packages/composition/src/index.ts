@@ -4,3 +4,12 @@
 
 export { makeQuoteFn } from './quote.js';
 export type { QuoteSources } from './quote.js';
+
+export { wrapStellarPort } from './stellar-port.js';
+export type { SorobanReads, StellarPortWiring } from './stellar-port.js';
+
+export { buildStellarPort } from './build-stellar-port.js';
+export type { BuildStellarPortOptions } from './build-stellar-port.js';
+
+export { buildTestnetServerDeps, DEFAULT_TESTNET_MERCHANT } from './testnet-deps.js';
+export type { TestnetSecrets, TestnetServerConfig, MerchantTemplate, BootstrapReads } from './testnet-deps.js';

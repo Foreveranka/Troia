@@ -28,6 +28,13 @@ format-check:
 contract-build:
     stellar contract build
 
+# serve: stand up the live backend — reads .env + deployment.testnet.json, seeds the pool balance + operator
+# sequence from the chain, and listens. Needs a PUBLIC TROIA_CALLBACK_URL (a tunnel on testnet, e.g. cloudflared)
+# so iyzico can reach the webhook. Live — NOT part of the offline gate; it is the Phase-4.5 end-to-end run.
+serve:
+    pnpm -r run build
+    node --env-file=.env packages/composition/dist/main.js
+
 # --- Phase-gated stubs (implemented later) ---
 
 # Pool seed in whole USDC (7 decimals under the hood).

@@ -30,7 +30,8 @@ hit a real RPC / the real sandbox. This run smokes:
 
 - Toolchain per [`README.md`](../README.md): Node 22, pnpm, Rust + `wasm32v1-none`, stellar CLI 26.0.0, `just`.
 - **iyzico sandbox account** — register free at `sandbox-merchant.iyzipay.com`, copy `apiKey` + `secretKey` into
-  `.env`. In the sandbox dashboard, **enable webhooks** (the `X-IYZ-SIGNATURE-V3` callback is account-activated).
+  `.env`. (The signed server-to-server notification webhook is deferred — settlement is driven by the poll worker's
+  authenticated pull, so no dashboard webhook config is needed for this run.)
 - **A public tunnel** — e.g. `cloudflared` (`brew install cloudflared`), `ngrok`, or any https reverse tunnel to
   `localhost`. iyzico must be able to POST the webhook to a public URL.
 - `.env` filled from `.env.example` (see the secret list there). `.env` + `deployment.testnet.json` are git-ignored.
@@ -65,10 +66,11 @@ In a dedicated terminal:
 cloudflared tunnel --url http://localhost:3000     # prints a public https URL, e.g. https://abc-xyz.trycloudflare.com
 ```
 
-Put that URL + `/webhook` into `.env`:
+Put that URL + `/return` into `.env` (iyzico redirects the customer's browser here after payment; the actual
+settlement is driven separately by the poll worker's server-side pull, so this is just a friendly landing page):
 
 ```
-TROIA_CALLBACK_URL=https://abc-xyz.trycloudflare.com/webhook
+TROIA_CALLBACK_URL=https://abc-xyz.trycloudflare.com/return
 ```
 
 ## Step 4 — Serve
@@ -96,9 +98,10 @@ file in a browser** and pay with a **Troy sandbox test card** (see iyzico's test
 ## Step 6 — Watch it settle
 
 - **Coarse status** (never the crypto leg): `curl -s http://localhost:3000/status/<orderId>` →
-  `pending → processing → completed`.
-- **The `just serve` logs** show the webhook arriving (verified before any side effect), the money-first advance,
-  and the `pay()` submit.
+  `pending → processing → completed`. The customer's browser lands on the `/return` page after paying; the
+  **poll/recovery worker** (every `POLL_INTERVAL_MS`) then re-retrieves the sale by its token and drives the USDC
+  leg — settlement is this authenticated **pull**, not a browser redirect.
+- **The `just serve` logs** show the money-first advance and the `pay()` submit as the worker picks the order up.
 - **The explorer** confirms the on-chain truth: the pool balance drops by the amount, the merchant receives USDC,
   and `PaymentMade` carries the derived `tx_id`/`memo`. See [`DEPLOYMENTS.md`](DEPLOYMENTS.md) for the address table.
 
@@ -134,5 +137,5 @@ diagnostics, the code sits on a different contractId (SAC vs TroyPool) or nested
 | `just serve` throws on boot | a missing/blank env var, or the operator secret ≠ deployment operator (run `just preflight`) |
 | `/intent` → `409 PoolInsufficient` | the pool cannot cover the amount — reduce it or re-`just fund` |
 | `/intent` → `502 PriceUnavailable` | the live oracle/history is down — re-run `just preflight` to see which |
-| webhook never arrives | the tunnel is down, `TROIA_CALLBACK_URL` is stale, or webhooks are not enabled in the iyzico dashboard |
-| the charge succeeds but no `pay()` | check the `just serve` logs; the poll worker re-drives an `UNKNOWN` charge on its interval |
+| the browser shows an error after paying | the tunnel is down or `TROIA_CALLBACK_URL` is stale/not pointing at `/return` — settlement still proceeds via the poll worker regardless |
+| the charge succeeds but no `pay()` | check the `just serve` logs; the poll worker re-retrieves the sale by token and drives it on each `POLL_INTERVAL_MS` tick (an `UNKNOWN` charge is re-driven, a declined one fails clean) |

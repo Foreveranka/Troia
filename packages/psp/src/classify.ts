@@ -76,6 +76,21 @@ export function classifyIyzicoResult(raw: RawIyzicoResult, op: PspOp): IyzicoCla
 
   if (status !== 'success') return 'UNKNOWN'; // any non-{success,failure} status value
 
+  // A terminal FAILURE paymentStatus inside a success ENVELOPE is a DEFINITIVE no-capture decline — the hosted
+  // checkout form reports a failed attempt this way (e.g. a failed 3DS: paymentStatus 'FAILURE', mdStatus 0),
+  // NOT via a status:'failure' body. For a CHARGE op this is safe to classify FAILURE (fail-clean): 'FAILURE' and
+  // a successful capture are MUTUALLY EXCLUSIVE in iyzico's model (a captured sale is paymentStatus 'SUCCESS'), so
+  // it can never wrongly fail-clean a captured charge (validated against the live sandbox). Without this a
+  // declined checkout-form order fell to UNKNOWN and held its sequence + pool reservation forever (a real leak
+  // the Phase-4.5 live run hit). INTERMEDIATE states (INIT_THREEDS/PENDING_*/…) are not 'FAILURE', so they still
+  // fall through to UNKNOWN and keep polling.
+  if (
+    (op === 'sale' || op === 'checkout' || op === 'preauth') &&
+    readString(body, 'paymentStatus') === 'FAILURE'
+  ) {
+    return 'FAILURE';
+  }
+
   // status === 'success' — the envelope is OK; apply the per-op TERMINAL-success shape.
   switch (op) {
     case 'preauth':

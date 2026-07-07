@@ -64,6 +64,14 @@ export function createApp(deps: AppDeps): FastifyInstance {
   const orderLocks = deps.orderLocks ?? new KeyedMutex(); // load-bearing: the composition shares ONE instance
   const app = Fastify({ bodyLimit: 1024 * 1024 });
 
+  // iyzico posts the customer's BROWSER to the checkout callbackUrl (the /return landing page below) as
+  // application/x-www-form-urlencoded. Fastify has no default parser for that content type, so register a
+  // permissive one (keep the raw string, never fail) — otherwise the browser redirect would 415. The landing page
+  // ignores the body, and no money route relies on this parser (/intent + /webhook send application/json).
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
+  });
+
   // POST /intent — the fail-closed ① gate. A rejected intent consumes NO sequence and starts NO order.
   app.post('/intent', async (request, reply) => {
     const raw = request.body;
@@ -260,6 +268,20 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
     return reply.send(result);
   });
+
+  // GET/POST /return — where the customer's browser lands after paying on the hosted form (iyzico's checkout
+  // callbackUrl). It is a friendly landing page ONLY: it verifies nothing and moves no money. Settlement is driven
+  // by the poll/recovery worker's authenticated server-side re-retrieve (a PULL keyed on the backend-issued
+  // token), so a forged or replayed browser redirect here is inert. (The signed server-to-server /webhook is the
+  // deferred instant-notify path; the poll worker is the active, safer settlement path.) The storefront (5.1) will
+  // own the real customer-facing page + Turkish copy — this is the minimal placeholder that avoids a 415.
+  const RETURN_PAGE =
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Troia</title></head>' +
+    '<body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center">' +
+    '<h1>Payment received</h1><p>Your transaction is being confirmed. You can close this page.</p></body></html>';
+  app.get('/return', async (_request, reply) => reply.type('text/html').send(RETURN_PAGE));
+  app.post('/return', async (_request, reply) => reply.type('text/html').send(RETURN_PAGE));
 
   return app;
 }

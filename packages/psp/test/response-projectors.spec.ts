@@ -19,6 +19,9 @@ describe('response projectors — carry happy-path fields, never fabricate a mis
     const ok = projectCheckoutFormResult(body({ token: 't', paymentId: 'p1', paymentStatus: 'SUCCESS', conversationId: 'c1' }));
     expect(ok).toEqual({ kind: 'ok', token: 't', paymentId: 'p1', paymentStatus: 'SUCCESS', conversationId: 'c1' });
     expect(projectCheckoutFormResult(body({ token: 't', paymentStatus: 'SUCCESS' })).kind).toBe('malformed');
+    // A FAILED attempt (e.g. failed 3DS) still projects to 'ok' when it carries the four fields, so the poll
+    // worker / webhook call chargeEvent (-> chargeRejected -> release the seq), NOT the chargeUnknown fallback.
+    expect(projectCheckoutFormResult(body({ token: 't', paymentId: '36434664', paymentStatus: 'FAILURE', conversationId: 'c1' })).kind).toBe('ok');
   });
 
   it('projectPayment extracts paymentId/conversationId', () => {

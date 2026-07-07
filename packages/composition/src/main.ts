@@ -25,7 +25,9 @@ async function main(): Promise<void> {
     // the webhook HMAC key; iyzico signs the callback with the account secretKey unless a distinct key is issued.
     webhookSigningSecret: env.WEBHOOK_SIGNING_SECRET?.trim() || iyzicoSecretKey,
   };
-  const callbackUrl = requireEnv(env, 'TROIA_CALLBACK_URL'); // the PUBLIC webhook url (a tunnel on testnet)
+  // the PUBLIC url iyzico redirects the customer's browser to after payment — point it at the /return landing
+  // page (a tunnel on testnet, e.g. https://<tunnel>/return). Settlement is the poll worker's pull, not this URL.
+  const callbackUrl = requireEnv(env, 'TROIA_CALLBACK_URL');
   const port = intEnv(env, 'PORT', 3000, 1, 65535);
   const host = env.HOST ?? '0.0.0.0';
   const pollIntervalMs = intEnv(env, 'POLL_INTERVAL_MS', 5000, 1000); // >= 1s; fail-closed on a bad value

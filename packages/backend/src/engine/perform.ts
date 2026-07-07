@@ -153,7 +153,12 @@ export async function perform(
       if (proj.kind === 'malformed') return { event: { type: 'checkoutInitFailed' } };
       return {
         event: null,
-        sideOutput: { kind: 'checkoutForm', token: proj.token, formContent: proj.checkoutFormContent },
+        sideOutput: {
+          kind: 'checkoutForm',
+          token: proj.token,
+          formContent: proj.checkoutFormContent,
+          ...(proj.paymentPageUrl !== undefined ? { paymentPageUrl: proj.paymentPageUrl } : {}),
+        },
       };
     }
 

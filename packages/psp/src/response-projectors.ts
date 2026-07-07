@@ -31,7 +31,16 @@ export function projectCheckoutFormInit(raw: RawIyzicoResult): Projection<Checko
   if (token === undefined || checkoutFormContent === undefined || conversationId === undefined) {
     return { kind: 'malformed', reason: 'missing token/checkoutFormContent/conversationId' };
   }
-  return { kind: 'ok', token, checkoutFormContent, conversationId };
+  // paymentPageUrl is optional: iyzico returns it for the hosted page, but its absence must not malform a
+  // valid init (the content-embed path still works). Only carry it forward when present.
+  const paymentPageUrl = str(body, 'paymentPageUrl');
+  return {
+    kind: 'ok',
+    token,
+    checkoutFormContent,
+    conversationId,
+    ...(paymentPageUrl !== undefined ? { paymentPageUrl } : {}),
+  };
 }
 
 export function projectCheckoutFormResult(raw: RawIyzicoResult): Projection<CheckoutFormResultFields> {

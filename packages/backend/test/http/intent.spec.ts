@@ -15,6 +15,7 @@ describe('POST /intent — money-first ① order start', () => {
       orderId: 'order-1',
       token: 'tok-1',
       checkoutFormContent: '<html/>',
+      paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1', // iyzico's hosted card page (opened by the extension)
       paidPriceTry: '41.42', // priced server-side: 1 USDC @ 40.50 mid + 229 bps commission (T+15)
       spreadBps: 229,
       poolLow: false,
@@ -46,6 +47,23 @@ describe('POST /intent — money-first ① order start', () => {
     expect(ctx?.currency).toBe('TRY'); // server-fixed currency, NOT the client's 'USD' (would charge TRY as USD)
   });
 
+  it('surfaces the iyzico hosted payment page URL on a fresh intent', async () => {
+    const h = makeHttpHarness();
+    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1' });
+  });
+
+  it('GET /receipt exposes the settlement tx hash (null until it lands) + the TRY charged', async () => {
+    const h = makeHttpHarness();
+    await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const res = await h.app.inject({ method: 'GET', url: '/receipt/order-1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ orderId: 'order-1', status: 'pending', txHash: null, paidPriceTry: '41.42' });
+    const missing = await h.app.inject({ method: 'GET', url: '/receipt/nope' });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it('rejects a malformed body (400) without starting an order or consuming a sequence', async () => {
     const h = makeHttpHarness();
     const { orderId: _o, ...missingOrderId } = intentBody('order-1');
@@ -61,7 +79,13 @@ describe('POST /intent — money-first ① order start', () => {
 
     const second = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
     expect(second.statusCode).toBe(200);
-    expect(second.json()).toMatchObject({ orderId: 'order-1', token: 'tok-1', alreadyStarted: true });
+    // the duplicate re-presents the SAME hosted form (paymentPageUrl carried through) so a re-click reopens it
+    expect(second.json()).toMatchObject({
+      orderId: 'order-1',
+      token: 'tok-1',
+      alreadyStarted: true,
+      paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1',
+    });
     // the registry record still carries the backend-issued token -> the webhook can still settle
     expect(h.registry.getByOrderId('order-1')?.ctx.token).toBe('tok-1');
     // the hosted checkout form was initialized exactly once across both calls (idempotent createIfAbsent)

@@ -13,6 +13,11 @@ describe('response projectors — carry happy-path fields, never fabricate a mis
     const ok = projectCheckoutFormInit(body({ status: 'success', token: 't', checkoutFormContent: '<script>', conversationId: 'c1' }));
     expect(ok).toEqual({ kind: 'ok', token: 't', checkoutFormContent: '<script>', conversationId: 'c1' });
     expect(projectCheckoutFormInit(body({ status: 'success', token: 't' })).kind).toBe('malformed');
+    // carries the optional hosted-page URL when present (and omits it when absent — never fabricated)
+    const withUrl = projectCheckoutFormInit(
+      body({ token: 't', checkoutFormContent: '<script>', conversationId: 'c1', paymentPageUrl: 'https://cpp/x' }),
+    );
+    expect(withUrl).toEqual({ kind: 'ok', token: 't', checkoutFormContent: '<script>', conversationId: 'c1', paymentPageUrl: 'https://cpp/x' });
   });
 
   it('projectCheckoutFormResult extracts token/paymentId/paymentStatus/conversationId', () => {

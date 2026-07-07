@@ -9,7 +9,7 @@
 // (never the webhook-echoed one) plus the state===SolvencyReserved guard, never the webhook's status field.
 
 import Fastify from 'fastify';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { canonicalizeOrderId, PayoutIntent } from '@troia/core';
 import { chargeEvent, projectCheckoutFormResult, verifyWebhookSignature } from '@troia/psp';
 import type { WebhookEvent } from '@troia/psp';
@@ -56,13 +56,41 @@ function headerStr(v: string | string[] | undefined): string | null {
   return null;
 }
 
+// The buyer IP is derived server-side (zero-trust — never the client's self-reported value, same principle as
+// the server-fixed price/currency). With trustProxy, request.ip is the real customer IP behind the tunnel/proxy
+// in production. A local-dev source is loopback/private (which iyzico would reject as a buyer IP), so it falls
+// back to a fixed demo public IP purely so the sandbox checkout form still initializes.
+const DEV_FALLBACK_BUYER_IP = '85.34.78.112';
+
+function isPrivateOrLoopback(ip: string): boolean {
+  return (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip.startsWith('::ffff:127.') ||
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ||
+    ip.startsWith('fc') ||
+    ip.startsWith('fd')
+  );
+}
+
+function buyerIpOf(request: FastifyRequest): string {
+  const ip = request.ip;
+  if (typeof ip !== 'string' || ip.length === 0 || isPrivateOrLoopback(ip)) return DEV_FALLBACK_BUYER_IP;
+  return ip;
+}
+
 export function createApp(deps: AppDeps): FastifyInstance {
   if (typeof deps.webhookSigningSecret !== 'string' || deps.webhookSigningSecret.length === 0) {
     throw new Error('createApp: webhookSigningSecret must be a non-empty string');
   }
   const { engine, registry, webhookSigningSecret } = deps;
   const orderLocks = deps.orderLocks ?? new KeyedMutex(); // load-bearing: the composition shares ONE instance
-  const app = Fastify({ bodyLimit: 1024 * 1024 });
+  // trustProxy: request.ip honors X-Forwarded-For behind the tunnel/proxy, so the server-derived buyer IP is the
+  // real customer IP in production (the buyer IP is only iyzico's fraud-score field, so trusting the proxy hop
+  // here carries no auth/money authority).
+  const app = Fastify({ bodyLimit: 1024 * 1024, trustProxy: true });
 
   // iyzico posts the customer's BROWSER to the checkout callbackUrl (the /return landing page below) as
   // application/x-www-form-urlencoded. Fastify has no default parser for that content type, so register a
@@ -82,13 +110,14 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const amountStr = optStr(body, 'amountStroops');
     const assetIssuer = optStr(body, 'assetIssuer');
     const memoHex = optStr(body, 'memoHex');
-    const ip = optStr(body, 'ip');
-    // appliedRateStroops / paidPriceTry / currency are NOT read from the body — the backend PRICES the order in
-    // its OWN (TRY) currency via deps.quote, so a client can never dictate what it pays NOR the currency it is
-    // charged in (a client 'currency: USD' would otherwise charge a TRY amount as dollars). Such fields are ignored.
+    // The buyer IP is derived server-side from the request (never the client's self-reported value), so a client
+    // cannot dictate the fraud-check IP and it works on any machine. Likewise appliedRateStroops / paidPriceTry /
+    // currency are NOT read from the body — the backend PRICES the order in its OWN (TRY) currency via deps.quote,
+    // so a client can never dictate what it pays NOR the currency it is charged in. Such body fields are ignored.
+    const ip = buyerIpOf(request);
     if (
       rawOrderId === undefined || rawOrderId.length === 0 || destination === undefined || amountStr === undefined ||
-      assetIssuer === undefined || memoHex === undefined || ip === undefined
+      assetIssuer === undefined || memoHex === undefined
     ) {
       return reply.code(400).send({ error: 'BadRequest' });
     }
@@ -148,6 +177,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       memoHex: ids.memoHex,
       paymentId: null,
       token: null,
+      paymentPageUrl: null,
       paidPriceTry: quote.paidPriceTry,
       currency: engine.config.psp.currency, // server-fixed (TRY), never the client's
       ip,
@@ -172,17 +202,28 @@ export function createApp(deps: AppDeps): FastifyInstance {
           kind: 'alreadyStarted' as const,
           token: existing?.token ?? null,
           paidPriceTry: existing?.paidPriceTry ?? null,
+          paymentPageUrl: existing?.paymentPageUrl ?? null,
         };
       }
       const checkout = result.sideOutputs.find((s) => s.kind === 'checkoutForm');
-      const finalCtx: OrderCtx = checkout !== undefined ? { ...result.ctx, token: checkout.token } : result.ctx;
+      const finalCtx: OrderCtx =
+        checkout !== undefined
+          ? { ...result.ctx, token: checkout.token, paymentPageUrl: checkout.paymentPageUrl ?? null }
+          : result.ctx;
       registry.put(finalCtx, result.state); // in-lock single-writer
       return { kind: 'started' as const, quiescence: result.quiescence, checkout };
     });
 
     if (outcome.kind === 'alreadyStarted') {
       if (outcome.token === null) return reply.code(409).send({ error: 'AlreadyStarted' });
-      return reply.send({ orderId, token: outcome.token, alreadyStarted: true, paidPriceTry: outcome.paidPriceTry });
+      // Re-present the SAME hosted form on a duplicate click (the extension reopens it when paymentPageUrl is set).
+      return reply.send({
+        orderId,
+        token: outcome.token,
+        alreadyStarted: true,
+        paidPriceTry: outcome.paidPriceTry,
+        paymentPageUrl: outcome.paymentPageUrl ?? undefined,
+      });
     }
     if (outcome.checkout === undefined) {
       // no form issued: the atomic reserve lost a race with the gate, the reserve was unknown, or the form init
@@ -195,6 +236,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       orderId,
       token: outcome.checkout.token,
       checkoutFormContent: outcome.checkout.formContent,
+      paymentPageUrl: outcome.checkout.paymentPageUrl, // iyzico's hosted card page — the extension opens it in a new tab
       paidPriceTry: quote.paidPriceTry, // the server-computed price (the user is charged EXACTLY this)
       spreadBps: quote.spreadBps, // the commission bps, for storefront transparency
       poolLow,
@@ -210,6 +252,24 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const rec = registry.getByOrderId(orderId);
     if (rec === undefined) return reply.code(404).send({ error: 'NotFound' });
     return reply.send({ orderId, status: toPublicStatus(rec.state) });
+  });
+
+  // GET /receipt/:orderId — reviewer-facing PROOF: the settlement pay() tx hash + the TRY charged, once known.
+  // Kept SEPARATE from /status (which stays coarse, Track E) so the customer status never leaks the crypto leg;
+  // this is the "don't trust us, verify the tx yourself" surface. txHash is null until the USDC pay() has landed.
+  app.get('/receipt/:orderId', async (request, reply) => {
+    const params = request.params as { orderId?: string };
+    const rawOrderId = params.orderId;
+    if (typeof rawOrderId !== 'string' || rawOrderId.length === 0) return reply.code(400).send({ error: 'BadRequest' });
+    const orderId = canonicalizeOrderId(rawOrderId);
+    const rec = registry.getByOrderId(orderId);
+    if (rec === undefined) return reply.code(404).send({ error: 'NotFound' });
+    return reply.send({
+      orderId,
+      status: toPublicStatus(rec.state),
+      txHash: rec.ctx.hashHex, // the on-chain USDC pay() witness (null until it lands)
+      paidPriceTry: rec.ctx.paidPriceTry,
+    });
   });
 
   // POST /webhook — SPIKE-4 money gate. verify FIRST; bounded body so a forged request only pays a small parse.

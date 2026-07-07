@@ -142,7 +142,7 @@ export class FakeStellarPort implements StellarPort {
 }
 
 export class FakePspPort implements PspPort {
-  init: RawIyzicoResult = body({ status: 'success', token: 'tok-1', checkoutFormContent: '<html/>', conversationId: 'cid' });
+  init: RawIyzicoResult = body({ status: 'success', token: 'tok-1', checkoutFormContent: '<html/>', conversationId: 'cid', paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1' });
   cancelResult: RawIyzicoResult = body({ status: 'success', conversationId: 'cid' });
 
   constructor(private readonly trace: Trace) {}
@@ -251,6 +251,7 @@ export function makePreChargeCtx(_store: FakeStore, overrides: Partial<OrderCtx>
     memoHex: ids.memoHex,
     paymentId: 'pay-1',
     token: null,
+    paymentPageUrl: null,
     paidPriceTry: '3400.00',
     currency: 'TRY',
     ip: '1.2.3.4',

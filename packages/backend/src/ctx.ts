@@ -17,6 +17,9 @@ export interface OrderCtx {
    *  webhook re-retrieves the form result by THIS backend-issued token (never the webhook-echoed one) — the V3
    *  preimage concatenates fields with no separator, so a webhook token is not uniquely bound. */
   readonly token: string | null;
+  /** iyzico's hosted card page URL for this order, set alongside token when the form is issued. Persisted so a
+   *  duplicate/retried /intent (alreadyStarted) can re-present the SAME hosted form instead of dead-ending. */
+  readonly paymentPageUrl: string | null;
   readonly paidPriceTry: string; // TRY amount charged at the direct sale (money-first: taken up front)
   readonly currency: string;
   readonly ip: string;

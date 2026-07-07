@@ -22,7 +22,12 @@ export interface EngineDeps {
 }
 
 /** A non-event product of an effect: the hosted-checkout URL/token, surfaced to the /intent response (4.3c). */
-export type SideOutput = { readonly kind: 'checkoutForm'; readonly token: string; readonly formContent: string };
+export type SideOutput = {
+  readonly kind: 'checkoutForm';
+  readonly token: string;
+  readonly formContent: string;
+  readonly paymentPageUrl?: string;
+};
 
 export interface PerformResult {
   /** the next core event, or null for observe-only / local / start-and-wait (firePreauth) effects. */

@@ -14,7 +14,9 @@ describe('engine happy path — full settlement drive', () => {
     const r0 = await start(ctx, h.deps);
     expect(r0.state).toBe('SolvencyReserved');
     expect(r0.quiescence).toBe('waiting');
-    expect(r0.sideOutputs).toEqual([{ kind: 'checkoutForm', token: 'tok-1', formContent: '<html/>' }]);
+    expect(r0.sideOutputs).toEqual([
+      { kind: 'checkoutForm', token: 'tok-1', formContent: '<html/>', paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1' },
+    ]);
     expect(h.trace.filter((t) => t === 'psp.initializeCheckoutForm')).toHaveLength(1);
 
     // A redelivered start() must NOT re-fire fireCheckoutForm (a MUTATION_EFFECT) or re-reserve the pool.

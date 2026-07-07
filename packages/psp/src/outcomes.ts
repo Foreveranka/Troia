@@ -26,6 +26,9 @@ export interface CheckoutFormInitFields {
   readonly token: string;
   readonly checkoutFormContent: string;
   readonly conversationId: string;
+  /** iyzico's fully-hosted checkout page URL — where a client can open the card form directly (optional; the
+   *  content-embed path uses checkoutFormContent instead). */
+  readonly paymentPageUrl?: string;
 }
 export interface CheckoutFormResultFields {
   readonly token: string;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SequenceAllocator } from '@troia/core';
 import { TIMEOUT } from '../fakes/harness.js';
 import type { QuoteFn } from '../../src/http/app.js';
 import { AMOUNT, intentBody, makeHttpHarness } from './http-harness.js';
@@ -22,6 +23,10 @@ describe('POST /intent — money-first ① order start', () => {
     expect(h.registry.getByOrderId('order-1')?.ctx.token).toBe('tok-1');
     // a successful start reserves the pool then quiesces at SolvencyReserved (charge pending, form shown)
     expect(h.registry.getByOrderId('order-1')?.state).toBe('SolvencyReserved');
+    // late allocation (Approach B): /intent does NOT hand out an operator seq — a reserved-but-uncharged order
+    // holds none, so an abandoned checkout leaves the operator sequence space untouched (no gap for later orders)
+    expect(h.registry.getByOrderId('order-1')?.ctx.activeSeq).toBeNull();
+    expect((h.store.sequences as SequenceAllocator).activeSeqFor('order-1')).toBeUndefined();
 
     const status = await h.app.inject({ method: 'GET', url: '/status/order-1' });
     expect(status.json()).toEqual({ orderId: 'order-1', status: 'pending' });

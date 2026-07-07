@@ -25,6 +25,17 @@ describe('planEffect — the pure effect->port/call/event mapping seam', () => {
     });
   });
 
+  it('allocateSeq -> sequences.allocate (late allocation), a mutation that patches ctx and feeds no event', () => {
+    // Approach B: the operator seq is handed out at chargeOk, not at /intent. mutates:true (mirrors
+    // reallocateSeq) so it can never sit on an observe-only edge; feedsEventVia:'none' — it only patches ctx.
+    expect(planEffect('allocateSeq')).toEqual({
+      port: 'sequences',
+      call: 'allocate',
+      mutates: true,
+      feedsEventVia: 'none',
+    });
+  });
+
   it('fireSolvencyCheck -> store.reserve -> reserveOutcome (not a mutation effect)', () => {
     expect(planEffect('fireSolvencyCheck')).toEqual({
       port: 'store',
@@ -57,6 +68,7 @@ describe('planEffect — the pure effect->port/call/event mapping seam', () => {
     const ALL_EFFECTS: readonly Effect[] = [
       'fireSolvencyCheck',
       'fireCheckoutForm',
+      'allocateSeq',
       'persistInFlight',
       'submitPay',
       'submitReplacementSameSeq',

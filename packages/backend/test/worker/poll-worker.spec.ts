@@ -5,26 +5,30 @@ import type { State } from '@troia/core';
 import { InMemoryOrderRegistry } from '../../src/http/order-registry.js';
 import { KeyedMutex } from '../../src/store/mutex.js';
 import { pollInFlight } from '../../src/worker/poll-worker.js';
-import { makeCtx, makeHarness } from '../fakes/harness.js';
+import { makeCtx, makeHarness, makePreChargeCtx } from '../fakes/harness.js';
 
 // The money-first crash-recovery worker: READ (re-observe / re-retrieve) THEN DECIDE, never a blind resubmit.
 // Every USDC send it drives is a positively-proven-safe path (same-seq replacement under the sequence shield).
 
-/** Seed one order into the registry at `state` with a REAL allocated seq. Defaults give a witnessed USDC row
- *  (hashHex/signedXdr/payMaxTimeUnix set) — override to model a crash-before-submit or a pre-charge row. */
+/** Seed one order into the registry at `state`. By default (charged) it has a REAL allocated seq and a
+ *  witnessed USDC row (hashHex/signedXdr/payMaxTimeUnix set) — the honest shape for UsdcSubmitted/UsdcPending.
+ *  Pass { charged: false } for a PRE-charge SolvencyReserved row: no seq and no witness yet (late allocation). */
 function seed(
   h: ReturnType<typeof makeHarness>,
   orderId: string,
   state: State,
   overrides: Partial<OrderCtx> = {},
+  opts: { charged?: boolean } = {},
 ) {
-  const ctx = makeCtx(h.store, {
-    orderId,
-    hashHex: `hash_${orderId}`,
-    signedXdr: `xdr_${orderId}`,
-    payMaxTimeUnix: 2_000_000_000,
-    ...overrides,
-  });
+  const ctx = (opts.charged ?? true)
+    ? makeCtx(h.store, {
+        orderId,
+        hashHex: `hash_${orderId}`,
+        signedXdr: `xdr_${orderId}`,
+        payMaxTimeUnix: 2_000_000_000,
+        ...overrides,
+      })
+    : makePreChargeCtx(h.store, { orderId, ...overrides });
   const registry = new InMemoryOrderRegistry();
   registry.put(ctx, state);
   return { ctx, registry, locks: new KeyedMutex() };
@@ -33,11 +37,13 @@ function seed(
 describe('pollInFlight — crash-recovery worker', () => {
   // ---- (A) stuck-charge recovery: re-retrieve the direct-sale result and re-drive chargeEvent ----
 
-  it('(A) re-retrieves a stuck SolvencyReserved charge and, on chargeOk, resumes the irreversible USDC leg', async () => {
+  it('(A) re-retrieves a stuck SolvencyReserved charge and, on chargeOk, allocates the seq + resumes the USDC leg', async () => {
     const h = makeHarness();
     h.stellar.observeVerdict = 'STILL_PENDING'; // the resumed USDC leg lands in the durable pending wait
-    // token set (a form was issued); default psp retrieve => paymentStatus SUCCESS + fraud 1 => chargeOk
-    const { registry, locks } = seed(h, 'order-1', 'SolvencyReserved', { token: 'tok-1' });
+    // pre-charge row (late allocation: no seq yet); token set (a form was issued); default psp retrieve =>
+    // paymentStatus SUCCESS + fraud 1 => chargeOk
+    const { ctx, registry, locks } = seed(h, 'order-1', 'SolvencyReserved', { token: 'tok-1' }, { charged: false });
+    expect(ctx.activeSeq).toBeNull(); // the stuck order held NO seq while awaiting the charge
 
     const report = await pollInFlight(registry, locks, h.deps);
 
@@ -45,12 +51,15 @@ describe('pollInFlight — crash-recovery worker', () => {
     expect(registry.getByOrderId('order-1')?.state).toBe('UsdcPending'); // charged, USDC submitted, now pending
     expect(h.trace).toContain('psp.retrieveCheckoutFormResult'); // the direct-sale re-retrieve ran
     expect(h.stellar.submitReqs).toHaveLength(1); // the USDC leg was fired exactly once
+    // late allocation happened DURING recovery: the order now holds a real seq it did not have before
+    expect(registry.getByOrderId('order-1')?.ctx.activeSeq).not.toBeNull();
+    expect((h.store.sequences as SequenceAllocator).activeSeqFor('order-1')).toBeDefined();
   });
 
-  it('(A) a still-UNKNOWN charge (PRE_AUTH read) stays in SolvencyReserved — NEVER submits USDC on an unknown', async () => {
+  it('(A) a still-UNKNOWN charge (PRE_AUTH read) stays in SolvencyReserved — NEVER submits USDC nor allocates a seq', async () => {
     const h = makeHarness();
     h.psp.retrievePhase = 'PRE_AUTH'; // an uncaptured hold reads UNKNOWN => chargeUnknown
-    const { registry, locks } = seed(h, 'order-1', 'SolvencyReserved', { token: 'tok-1' });
+    const { registry, locks } = seed(h, 'order-1', 'SolvencyReserved', { token: 'tok-1' }, { charged: false });
 
     const report = await pollInFlight(registry, locks, h.deps);
 
@@ -58,6 +67,8 @@ describe('pollInFlight — crash-recovery worker', () => {
     expect(registry.getByOrderId('order-1')?.state).toBe('SolvencyReserved'); // unchanged
     expect(h.trace).toContain('psp.retrieveCheckoutFormResult');
     expect(h.stellar.submitReqs).toHaveLength(0); // an unknown charge never advances to the money leg
+    // late allocation: an unknown charge allocates NO seq (only chargeOk does)
+    expect((h.store.sequences as SequenceAllocator).activeSeqFor('order-1')).toBeUndefined();
   });
 
   // ---- (B) never-sent pay recovery: witness-null + charge done + seq active => same-seq replacement ----

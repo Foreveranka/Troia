@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SequenceAllocator } from '@troia/core';
 import { advance, start } from '../../src/engine/driver.js';
-import { body, makeCtx, makeHarness, TIMEOUT } from '../fakes/harness.js';
+import { body, makeCtx, makeHarness, makePreChargeCtx, TIMEOUT } from '../fakes/harness.js';
 
 // The money-critical FAILURE paths (money-first, Phase 4.6): the bounded reversal (same-day void) loop, the
 // dead-retry-budget exhaustion that voids the completed sale, the whole USDC-revert (double-pay) family, the
@@ -108,24 +108,26 @@ describe('USDC-revert family (D2) — the double-pay-critical chain', () => {
 });
 
 describe('clean rejection paths (nothing charged, no void)', () => {
-  it('solvencyFail -> FailedClean with releaseSeq only, NO releaseReservation and NO void', async () => {
+  it('solvencyFail -> FailedClean with NO seq release (none held) and NO releaseReservation, no void', async () => {
     const h = makeHarness();
     h.store.reserveResult = { kind: 'insufficient', available: 0n, requested: 1n };
-    const ctx = makeCtx(h.store);
+    const ctx = makePreChargeCtx(h.store); // late allocation: a pre-charge order holds no seq
 
     // money-first: solvency is reserved FIRST (at bootstrap). An insufficient reserve fails clean before any charge.
     const r = await start(ctx, h.deps);
 
     expect(r.state).toBe('FailedClean');
     expect(r.quiescence).toBe('terminal');
-    expect(h.store.releases).toHaveLength(0); // solvencyFail emits releaseSeq only, never releaseReservation
+    expect(h.store.releases).toHaveLength(0); // reserve failed -> nothing reserved to release
     expect(h.trace).not.toContain('psp.cancel'); // nothing was charged -> nothing to void
-    expect((h.store.sequences as SequenceAllocator).activeSeqFor(ctx.orderId)).toBeUndefined(); // seq released
+    // late allocation: the order never held a seq (never allocated, so nothing to release, and none leaked)
+    expect((h.store.sequences as SequenceAllocator).activeSeqFor(ctx.orderId)).toBeUndefined();
+    expect((h.store.sequences as SequenceAllocator).snapshot().nextSeq).toBe(1001n); // no seq consumed at all
   });
 
-  it('chargeRejected -> FailedClean with releaseSeq + releaseReservation, NO void', async () => {
+  it('chargeRejected -> FailedClean with releaseReservation only (no seq held), NO void', async () => {
     const h = makeHarness();
-    const ctx = makeCtx(h.store);
+    const ctx = makePreChargeCtx(h.store); // late allocation: the seq is not handed out until chargeOk
 
     const r = await advance(ctx, 'SolvencyReserved', { type: 'chargeRejected' }, h.deps);
 
@@ -134,15 +136,17 @@ describe('clean rejection paths (nothing charged, no void)', () => {
     expect(h.store.releases).toEqual([{ orderId: ctx.orderId, reason: 'abandoned' }]); // reservation freed, sale declined
     expect(h.trace).not.toContain('psp.cancel'); // a declined sale takes nothing -> no void
     expect(h.stellar.submitReqs).toHaveLength(0); // no USDC leg on a declined charge
-    expect((h.store.sequences as SequenceAllocator).activeSeqFor(ctx.orderId)).toBeUndefined(); // seq released
+    // late allocation: the declined order never held a seq (none allocated, none released, none leaked)
+    expect((h.store.sequences as SequenceAllocator).activeSeqFor(ctx.orderId)).toBeUndefined();
+    expect((h.store.sequences as SequenceAllocator).snapshot().nextSeq).toBe(1001n); // no seq consumed
   });
 });
 
 describe('checkout-init failure is a money-safe clean failure (not silently bricked)', () => {
-  it('a malformed checkout-init drives checkoutInitFailed -> FailedClean, releasing the reservation', async () => {
+  it('a malformed checkout-init drives checkoutInitFailed -> FailedClean, releasing the reservation (no seq held)', async () => {
     const h = makeHarness();
     h.psp.init = TIMEOUT; // -> projectCheckoutFormInit malformed -> checkoutInitFailed (a clean, money-safe failure)
-    const ctx = makeCtx(h.store);
+    const ctx = makePreChargeCtx(h.store);
 
     const r = await start(ctx, h.deps);
 
@@ -151,6 +155,8 @@ describe('checkout-init failure is a money-safe clean failure (not silently bric
     expect(h.trace).toContain('psp.initializeCheckoutForm');
     expect(h.store.losses).toHaveLength(0); // NEVER an indeterminate-loss escalate — the form never opened
     expect(h.store.releases).toEqual([{ orderId: ctx.orderId, reason: 'abandoned' }]); // the reservation is freed
+    // late allocation: the form never completed a charge, so no seq was ever handed out
+    expect((h.store.sequences as SequenceAllocator).activeSeqFor(ctx.orderId)).toBeUndefined();
   });
 });
 

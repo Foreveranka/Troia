@@ -182,6 +182,27 @@ export async function perform(
       deps.store.sequences.reuseOnDead(BigInt(requireSeq(ctx)), ctx.orderId);
       return doSubmitAndObserve(ctx, coreState, deps);
 
+    case 'allocateSeq': {
+      // LATE allocation (Approach B): hand out the operator seq HERE, on chargeOk — the first step of the USDC
+      // leg — so a pending/failed/abandoned order never holds one (no gap in the operator sequence space).
+      // allocate() is idempotent per order, so a crash-retry of chargeOk returns the SAME seq (no leak, no
+      // double-allocation). The trailing persistInFlight/submitPay in the same batch read this patched seq.
+      //
+      // Ordering note (adversarial-audited): allocate() persists the SequenceStore snapshot immediately, one
+      // effect BEFORE persistInFlight writes the OrderRow with this seq. A crash in that window leaves the
+      // SequenceStore holding seq S for an order whose durable OrderRow is still SolvencyReserved (seq null).
+      // This is money-SAFE (no double-pay: the on-chain Processed(order_id) guard + the single-use sequence
+      // shield both cap USDC delivery at one per order regardless of S) and, for a completed charge, self-heals:
+      // recovery (poll worker group A) re-retrieves the SAME sale, which by iyzico retrieve monotonicity yields
+      // chargeOk again -> idempotent allocate() returns S -> submitPay(S). The only residual is a THEORETICAL
+      // liveness stranding of S (a durable-store-only, never-reachable-in-PoC case: the in-memory SequenceStore
+      // is wiped by the very crash, so on restart the allocator re-bootstraps from the live on-chain seq). A
+      // durable SequenceStore (Phase 2) closes it by reconciling ctx.activeSeq from activeSeqFor(orderId) on
+      // recovery; see docs/SCOPE_AND_LIMITATIONS.md.
+      const seq = deps.store.sequences.allocate(ctx.orderId);
+      return { event: null, ctxPatch: { activeSeq: seq.toString() } };
+    }
+
     case 'reallocateSeq': {
       // UsdcReverted 'other': the burned seq is abandoned, a fresh one is handed out. The trailing submitPay
       // in the same effect list feeds the event; this only patches ctx.

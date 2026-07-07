@@ -34,6 +34,9 @@ const TABLE: Readonly<Record<Effect, EffectPlan>> = {
   // hosted DIRECT-SALE form initialize -> URL side-output, no happy-path event (outcome via webhook). Inline
   // checkoutInitFailed only if the init itself malforms. mutates:true so it can never fire on an Unknown/stay.
   fireCheckoutForm: { port: 'psp', call: 'initializeCheckoutForm', mutates: true, feedsEventVia: 'none' },
+  // LATE allocation (Approach B): hand out the operator seq at chargeOk, then the trailing persist/submit read
+  // it. mutates:true (mirrors reallocateSeq) so it can never sit on an observe-only edge. Patches ctx, no event.
+  allocateSeq: { port: 'sequences', call: 'allocate', mutates: true, feedsEventVia: 'none' },
   // write-ahead: persist the next state + in-flight artifact BEFORE the entering effect runs.
   persistInFlight: { port: 'store', call: 'persistState', mutates: false, feedsEventVia: 'none' },
   // submit pay() -> observe -> verdictToCore -> evidenceSuccess|evidenceReverted|evidencePending.

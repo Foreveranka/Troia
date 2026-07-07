@@ -103,6 +103,16 @@ happened yet is the **live run**:
   restart); a durable store is the mainnet swap behind the same interface. A restart loses the in-flight witness,
   which fails **safe** — an unreadable revert code re-drives, and the on-chain `Processed(tx_id)` guard is the
   real double-pay shield — never toward a double payout.
+- **Late sequence allocation, two-store crash window (durable-store only).** The operator sequence is allocated
+  late — on `chargeOk`, the first step of the USDC leg — so an abandoned checkout consumes no sequence (a
+  gap-free operator account). `allocate()` persists the sequence snapshot one effect before the `OrderRow` is
+  persisted with that seq. A crash in that window is **money-safe** (the `Processed(order_id)` guard + the
+  single-use sequence shield both cap USDC delivery at one per order) and, for a completed charge, **self-heals**
+  (recovery re-retrieves the same sale → `chargeOk` again → idempotent `allocate` returns the same seq →
+  submit). The only residual is a *theoretical* liveness stranding of that seq, and it is **not reachable in the
+  PoC**: the in-memory sequence store is wiped by the very crash, so on restart the allocator re-bootstraps from
+  the live on-chain sequence. A durable sequence store (Phase 2) closes it by reconciling the order's seq from
+  `activeSeqFor(orderId)` on recovery.
 
 None of these are blockers for the proof story above; they are the remaining path from a composed-offline system
 to a demonstrated live end-to-end run.

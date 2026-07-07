@@ -6,6 +6,7 @@ import { planEffect } from '../../src/engine/plan.js';
 const ALL_EFFECTS: readonly Effect[] = [
   'fireSolvencyCheck',
   'fireCheckoutForm',
+  'allocateSeq',
   'persistInFlight',
   'submitPay',
   'submitReplacementSameSeq',
@@ -29,9 +30,9 @@ const LOCAL_EFFECTS: readonly Effect[] = [
   'rePollObserveOnly',
 ];
 
-describe('effect matrix — all 13 effects map, and `mutates` mirrors core MUTATION_EFFECTS', () => {
+describe('effect matrix — all 14 effects map, and `mutates` mirrors core MUTATION_EFFECTS', () => {
   it('every effect has a total plan', () => {
-    expect(ALL_EFFECTS).toHaveLength(13);
+    expect(ALL_EFFECTS).toHaveLength(14);
     for (const e of ALL_EFFECTS) {
       const plan = planEffect(e);
       expect(plan, e).toBeDefined();

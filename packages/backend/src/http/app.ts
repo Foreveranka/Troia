@@ -136,7 +136,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
     }
 
     const ids = built.value.fields.ids;
-    const seq = engine.store.sequences.allocate(orderId);
+    // Late allocation (Approach B): NO operator seq is handed out at /intent. A reserved-but-never-charged
+    // (abandoned) order must hold no seq, so the sequence is allocated later, on chargeOk (the first step of
+    // the USDC leg). This keeps the operator sequence space gap-free regardless of how many orders abandon.
     const ctx: OrderCtx = {
       orderId,
       conversationId: ids.idempotencyKeyHex,
@@ -149,7 +151,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       paidPriceTry: quote.paidPriceTry,
       currency: engine.config.psp.currency, // server-fixed (TRY), never the client's
       ip,
-      activeSeq: seq.toString(),
+      activeSeq: null,
       hashHex: null,
       signedXdr: null,
       payMaxTimeUnix: null,

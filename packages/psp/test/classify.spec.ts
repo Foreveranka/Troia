@@ -130,6 +130,33 @@ describe('per-op mappers onto core §3 events', () => {
     expect(chargeEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }))).toEqual({ type: 'chargeUnknown' });
   });
 
+  it('LATE-ALLOCATION SAFETY: a success-envelope charge NEVER classifies as chargeRejected (only status:failure does)', () => {
+    // Load-bearing invariant behind Approach B (late sequence allocation): the operator seq is handed out ONLY
+    // on chargeOk, and the clean-failure edges (chargeRejected / checkoutInitFailed -> FailedClean) drop the old
+    // releaseSeq because they PROVABLY never hold a seq. That proof rests on iyzico retrieve monotonicity: a sale
+    // that once produced chargeOk (a captured success-envelope) can only re-retrieve as chargeOk or chargeUnknown
+    // — NEVER chargeRejected. chargeRejected requires status:'failure' + a whitelisted decline code; a
+    // status:'success' body can never satisfy it (status is one field). So no completed charge can slip onto a
+    // seq-freeing FailedClean edge while holding a late-allocated seq. This test pins that asymmetry.
+    const successEnvelopes: Record<string, unknown>[] = [
+      { status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 }, // the captured chargeOk shape
+      { status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 0 }, // fraud review -> Unknown
+      { status: 'success', paymentId: 'pay-1', paymentStatus: 'FAILURE', mdStatus: 0 }, // failed 3DS attempt (retry-safe)
+      { status: 'success', paymentStatus: 'INIT_THREEDS', fraudStatus: 1 }, // intermediate -> Unknown
+      { status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }, // no paymentId -> Unknown
+      { status: 'success' }, // bare success envelope
+      { status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1, phase: 'PRE_AUTH' }, // live hold
+    ];
+    for (const env of successEnvelopes) {
+      expect(chargeEvent(body(env)).type, JSON.stringify(env)).not.toBe('chargeRejected');
+    }
+    // and the converse: chargeRejected ONLY ever comes from a status:'failure' + a whitelisted decline code.
+    for (const code of TERMINAL_DECLINE_WHITELIST) {
+      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({ type: 'chargeRejected' });
+    }
+    expect(chargeEvent(body({ status: 'failure', errorCode: '99999' }))).toEqual({ type: 'chargeUnknown' }); // non-whitelisted -> Unknown
+  });
+
   it('reversalEvent: only SUCCESS confirms; FAILURE and UNKNOWN both re-drive within budget (no reversalUnknown-stay)', () => {
     expect(reversalEvent(body({ status: 'success' }), true)).toEqual({ type: 'reversalConfirmed' });
     expect(reversalEvent(body({ status: 'failure' }), true)).toEqual({ type: 'reversalNotDone', retriesRemaining: true });

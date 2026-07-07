@@ -236,11 +236,12 @@ const DESTINATION = 'GDESTINATIONACCOUNTPLACEHOLDER0000000000000000';
 const AMOUNT = 1_000_000_000n; // 100.0 USDC @ 7 decimals
 const RATE = 340_000_000n; // 34.0 TRY/USDC @ 7 decimals
 
-/** A canonical OrderCtx with a REAL allocated seq (so submitPay's seq math runs for real). Overridable. */
-export function makeCtx(store: FakeStore, overrides: Partial<OrderCtx> = {}): OrderCtx {
+/** A PRE-charge OrderCtx exactly as POST /intent builds it under late allocation (Approach B): activeSeq is
+ *  NULL — the operator seq is handed out later, on chargeOk. Allocates NOTHING in the store. Use for
+ *  Reserved / SolvencyReserved rows and every no-leak / late-allocation assertion. */
+export function makePreChargeCtx(_store: FakeStore, overrides: Partial<OrderCtx> = {}): OrderCtx {
   const orderId = overrides.orderId ?? 'order-001';
   const ids = deriveIds(orderId, DESTINATION, AMOUNT);
-  const seq = store.sequences.allocate(orderId);
   return {
     orderId,
     conversationId: ids.idempotencyKeyHex,
@@ -253,7 +254,7 @@ export function makeCtx(store: FakeStore, overrides: Partial<OrderCtx> = {}): Or
     paidPriceTry: '3400.00',
     currency: 'TRY',
     ip: '1.2.3.4',
-    activeSeq: seq.toString(),
+    activeSeq: null,
     hashHex: null,
     signedXdr: null,
     payMaxTimeUnix: null,
@@ -261,4 +262,13 @@ export function makeCtx(store: FakeStore, overrides: Partial<OrderCtx> = {}): Or
     reversalRetries: 0,
     ...overrides,
   };
+}
+
+/** A POST-charge OrderCtx with a REAL allocated seq (the order is past chargeOk — UsdcSubmitted and later),
+ *  so submitPay's seq math runs for real. Under late allocation a seq only exists once the charge succeeded,
+ *  so this is the honest ctx for any state at/after the USDC leg. Overridable. */
+export function makeCtx(store: FakeStore, overrides: Partial<OrderCtx> = {}): OrderCtx {
+  const orderId = overrides.orderId ?? 'order-001';
+  const seq = store.sequences.allocate(orderId);
+  return makePreChargeCtx(store, { activeSeq: seq.toString(), ...overrides });
 }

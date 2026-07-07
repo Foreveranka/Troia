@@ -10,7 +10,7 @@
 // The user is never charged unless a USDC reservation is already held (fail-closed at /intent).
 
 export type State =
-  | 'Reserved' // order created, seq allocated; about to reserve pool solvency
+  | 'Reserved' // order created; about to reserve pool solvency (NO seq yet — allocated LATE, at chargeOk)
   | 'SolvencyReserved' // reservation held, direct-sale hosted form shown; awaiting the charge outcome
   | 'UsdcSubmitted'
   | 'UsdcConfirmed' // USDC landed; awaiting the offline reconciler (no capture leg anymore)
@@ -64,12 +64,14 @@ export function isManualReview(state: State): boolean {
 export type Effect =
   | 'fireSolvencyCheck' // reserve pool USDC BEFORE the user can be charged (moved to the front, D-4.6)
   | 'fireCheckoutForm' // initialize the direct-SALE hosted form (replaces the preauth form)
+  | 'allocateSeq' // LATE allocation (Approach B): hand out the operator seq at chargeOk — the first step of
+  // the USDC leg — so a pending/failed/abandoned order never holds a seq (no gap in the operator seq space)
   | 'persistInFlight' // write-ahead: persist the in-flight state BEFORE the side-effecting call
   | 'submitPay' // submit pay() with the order's current (fresh) seq
   | 'submitReplacementSameSeq' // UsdcDead retry / never-sent recovery: SAME seq S, new timebounds
   | 'reallocateSeq' // UsdcReverted 'other': NEW seq, then submit (never same-seq)
   | 'confirmBurnedSeq' // tx landed + reverted → burn the seq
-  | 'releaseSeq' // true-abandonment: return the unburned seq to the pool
+  | 'releaseSeq' // true-abandonment (only post-charge, on UsdcDead): return the unburned seq to the pool
   | 'releaseReservation'
   | 'fireCancel' // iyzico.cancel — void the completed TRY sale (same-day reversal)
   | 'flagLoss' // LossReview: record the one irreversible-loss / stuck-reversal bucket
@@ -79,6 +81,7 @@ export type Effect =
 /** Effects that move money or place/void a charge — forbidden on Unknown/stay/recover transitions. */
 export const MUTATION_EFFECTS: readonly Effect[] = [
   'fireCheckoutForm',
+  'allocateSeq',
   'submitPay',
   'submitReplacementSameSeq',
   'reallocateSeq',
@@ -132,7 +135,8 @@ function rejected(state: State, event: Event): TransitionResult {
   return { status: 'rejected', reason: `no transition for event '${event.type}' in state '${state}'` };
 }
 
-/** The entry point: a freshly reserved order (seq allocated) reserves pool solvency BEFORE any charge. */
+/** The entry point: a freshly created order reserves pool solvency BEFORE any charge. No seq is allocated
+ *  here — the operator seq is handed out LATE, at chargeOk (Approach B), so an abandoned order holds none. */
 export function initialState(): { state: State; effects: readonly Effect[] } {
   return { state: 'Reserved', effects: ['fireSolvencyCheck'] };
 }
@@ -167,7 +171,7 @@ export function transition(state: State, event: Event): TransitionResult {
         case 'solvencyOk':
           return t('SolvencyReserved', ['fireCheckoutForm']); // reserve held → show the direct-sale form
         case 'solvencyFail':
-          return t('FailedClean', ['releaseSeq']); // nothing committed; the allocated seq goes back
+          return t('FailedClean', []); // nothing committed; no seq held yet (late allocation), nothing to release
         case 'solvencyUnknown':
           return t('Reserved', ['rePollObserveOnly']); // never charge while solvency is unknown
         default:
@@ -177,13 +181,15 @@ export function transition(state: State, event: Event): TransitionResult {
     case 'SolvencyReserved':
       switch (event.type) {
         case 'chargeOk':
-          return t('UsdcSubmitted', ['persistInFlight', 'submitPay']); // TRY charged → USDC leg (LAST)
+          // TRY charged → USDC leg (LAST). Allocate the operator seq HERE (late, Approach B): this is the
+          // first moment a seq is actually needed, so an order that never reaches chargeOk holds none.
+          return t('UsdcSubmitted', ['allocateSeq', 'persistInFlight', 'submitPay']);
         case 'chargeRejected':
-          return t('FailedClean', ['releaseSeq', 'releaseReservation']); // sale declined, nothing taken
+          return t('FailedClean', ['releaseReservation']); // sale declined; no seq held yet, only free the reserve
         case 'chargeUnknown':
           return t('SolvencyReserved', ['rePollObserveOnly']); // NEVER submit USDC on an unknown charge
         case 'checkoutInitFailed':
-          return t('FailedClean', ['releaseSeq', 'releaseReservation']); // form never opened, nothing taken
+          return t('FailedClean', ['releaseReservation']); // form never opened; no seq held yet, only free the reserve
         default:
           return rejected(state, event);
       }

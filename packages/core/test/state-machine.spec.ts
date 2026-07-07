@@ -192,6 +192,33 @@ describe('state machine — money-safety invariants', () => {
     }
   });
 
+  it('the operator sequence is allocated LATE — only on chargeOk, never before the charge (Approach B)', () => {
+    // The seq is handed out at the FIRST step of the USDC leg, so a pending/failed/abandoned order holds none.
+    const allocs = transitions.filter((e) => e.result.effects.includes('allocateSeq' as Effect));
+    expect(allocs).toHaveLength(1); // exactly one edge allocates a seq
+    expect(allocs[0]!.state).toBe('SolvencyReserved');
+    expect(allocs[0]!.event.type).toBe('chargeOk');
+    // allocateSeq is FIRST so persistInFlight/submitPay downstream read the freshly-allocated seq
+    expect(allocs[0]!.result.effects).toEqual(['allocateSeq', 'persistInFlight', 'submitPay']);
+  });
+
+  it('no pre-charge edge (Reserved, or a non-chargeOk SolvencyReserved event) touches the sequence', () => {
+    // Money-safety of late allocation: nothing before the charge may allocate/release/burn a seq — the whole
+    // point is that an order that never charges leaves the operator sequence space untouched (no gap).
+    const seqEffects = new Set<Effect>(['allocateSeq' as Effect, 'releaseSeq', 'reallocateSeq', 'confirmBurnedSeq']);
+    for (const e of transitions) {
+      const preCharge = e.state === 'Reserved' || (e.state === 'SolvencyReserved' && e.event.type !== 'chargeOk');
+      if (!preCharge) continue;
+      for (const eff of e.result.effects) {
+        expect(seqEffects.has(eff), `${e.state}/${e.event.type} must not touch the seq`).toBe(false);
+      }
+    }
+  });
+
+  it('allocateSeq is a MUTATION_EFFECT (can never sit on an observe-only edge)', () => {
+    expect(MUTATIONS.has('allocateSeq' as Effect)).toBe(true);
+  });
+
   it('DEAD reuses the SAME seq while REVERTED-other reallocates a NEW seq', () => {
     const deadRetry = transition('UsdcDead', { type: 'deadRetry', retriesRemaining: true });
     const revertOther = transition('UsdcReverted', { type: 'revertOther' });
@@ -257,19 +284,19 @@ describe('state machine — canonical walks', () => {
     }
   });
 
-  it('solvency-fail is clean before any charge: Reserved -> FailedClean (release seq, no void)', () => {
+  it('solvency-fail is clean before any charge: Reserved -> FailedClean (no seq held yet, no void)', () => {
     expect(transition('Reserved', { type: 'solvencyFail' })).toEqual({
       status: 'transition',
       next: 'FailedClean',
-      effects: ['releaseSeq'],
+      effects: [], // late allocation: no seq is held before the charge, so there is nothing to release
     });
   });
 
-  it('a declined sale is clean: SolvencyReserved -> FailedClean (release seq + reservation, no void)', () => {
+  it('a declined sale is clean: SolvencyReserved -> FailedClean (release reservation only; no seq held yet, no void)', () => {
     expect(transition('SolvencyReserved', { type: 'chargeRejected' })).toEqual({
       status: 'transition',
       next: 'FailedClean',
-      effects: ['releaseSeq', 'releaseReservation'],
+      effects: ['releaseReservation'], // late allocation: the seq is not handed out until chargeOk
     });
   });
 

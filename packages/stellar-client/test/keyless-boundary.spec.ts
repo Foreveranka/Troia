@@ -23,6 +23,7 @@ const PURE_CORE = [
   'submit-reducer.ts',
   'deadness.ts',
   'account-snapshot.ts',
+  'soroban-reads.ts',
   'ports.ts',
   'outcomes.ts',
   'errors.ts',

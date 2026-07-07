@@ -55,6 +55,22 @@ importers:
         specifier: ^22.10.5
         version: 22.20.0
 
+  packages/composition:
+    dependencies:
+      '@troia/backend':
+        specifier: workspace:*
+        version: link:../backend
+      '@troia/oracle':
+        specifier: workspace:*
+        version: link:../oracle
+      '@troia/pricing':
+        specifier: workspace:*
+        version: link:../pricing
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.20.0
+
   packages/config: {}
 
   packages/core:

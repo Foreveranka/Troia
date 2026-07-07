@@ -1,0 +1,25 @@
+{
+  "name": "@troia/composition",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@troia/backend": "workspace:*",
+    "@troia/oracle": "workspace:*",
+    "@troia/pricing": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5"
+  }
+}

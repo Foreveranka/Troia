@@ -1,6 +1,9 @@
-// NetworkConfig — the single authority for network-specific, NON-SECRET values.
-// Secrets (keys, API credentials) are NEVER here; they come from env. Any network-specific
-// literal outside this package is a bug (guarded by a test).
+// NetworkConfig — the config authority for network-specific, NON-SECRET values for the backend/contracts/core.
+// Secrets (keys, API credentials) are NEVER here; they come from env. Network literals live only in a
+// designated config module per deployable: this package, plus each app's own config module (the storefront +
+// extension are standalone packages that can't import this one). A guard test (test/no-network-literal.spec.ts)
+// enforces that boundary across BOTH packages/ and app/ — any host, passphrase, or bare Stellar address literal
+// outside a config module fails. So mainnet stays a config swap, not a hunt for scattered constants.
 
 export interface UsdcConfig {
   readonly code: 'USDC';

@@ -35,7 +35,7 @@ payoff — the same money-first flow from Act 3, now moving real testnet USDC th
 
 ```bash
 just build      # all TypeScript packages compile (tsc, strict)
-just test       # 553 TypeScript tests across 77 files
+just test       # 554 TypeScript tests across 77 files
 just lint       # ESLint clean
 cargo test      # 14 Soroban contract tests (unit + integration + fuzz conservation)
 ```

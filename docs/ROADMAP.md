@@ -137,11 +137,11 @@ Now connect the core to the outside world, one provider at a time, behind interf
   of wedging the poller or freezing a checkout; unit-tested offline + adversarially reviewed), gated by a
   **readiness preflight** (`just preflight`, which smokes each dirty dependency in isolation), and scripted end-to-
   end in [`LIVE_SMOKE.md`](LIVE_SMOKE.md) (`scripts/intent.mjs` drives a charge, `scripts/probe-revert.mjs` checks
-  the revert-read shape). **Remaining:** the LIVE run itself — `just serve` behind a public webhook tunnel, driving
-  a real charge → a real `pay()`, which live-smokes the SDK/network adapters for the first time.
+  the revert-read shape). **✅ The live run is done** — `just serve` behind a public webhook tunnel drove a real
+  Troy sandbox card charge that auto-submitted a real `pay()` (74 USDC settled, tx `cd643d71…`; see
+  [`DEPLOYMENTS.md`](DEPLOYMENTS.md)), live-smoking the SDK/network adapters for the first time.
 
-**Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches.
-The composition composes **offline** today; the remaining 4.5 live-smoke runs it end-to-end.
+**Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches. ✅
 
 ---
 
@@ -149,12 +149,21 @@ The composition composes **offline** today; the remaining 4.5 live-smoke runs it
 
 Showcase, not proof — comes last on purpose.
 
-- **5.1 `merchant-frontend`** — Next.js demo store emitting a SEP-7 pay URI; 3-screen mapping + phase flag.
-- **5.2 `extension`** (MV3, thin) — own-store origin only, holds no keys, fail-closed to a manual button.
-- **5.3 Proof docs** — `RECONCILIATION.md`, `DEPLOYMENTS.md`, `SCOPE_AND_LIMITATIONS.md`, `DEMO_SCRIPT.md`;
-  `just demo` (deterministic N-order run) + 3–5 min proof video.
+- **5.1 `storefront`** ✅ — a Vite/React demo store (streetwear) that emits a USDC-on-Stellar SEP-7 pay URI at
+  checkout, with localStorage auth (sign-in gates checkout), per-user orders, and a settlement-tx proof link on
+  the confirmation + order-details views. Drives the real backend on `localhost`.
+- **5.2 `extension`** ✅ — the MV3 "Pay with Troy card" bridge. A content script scans the storefront DOM for a
+  payable USDC SEP-7 (fail-closed: 7-check confidence, banner only when every required check passes), a background
+  worker (the only holder of the backend host permission) posts `/intent` and opens iyzico's hosted card page, then
+  polls coarse status and hands the settlement receipt (tx hash + TRY charged) back to the storefront. Holds no
+  keys, signs nothing, allowlisted origins only. **Proven live end-to-end** (Troy sandbox card → 74 USDC settled,
+  tx `cd643d71…`). 72 extension tests green.
+- **5.3 Proof docs** — `RECONCILIATION.md`, `DEPLOYMENTS.md`, `SCOPE_AND_LIMITATIONS.md`, `DEMO_SCRIPT.md` ✅;
+  `just verify` offline proof ✅. Remaining: a public shareable deploy (storefront → Vercel, backend → Render) and
+  a 3–5 min proof video.
 
-**Done when:** `just demo` reproduces the seeded run; docs + video complete.
+**Done when:** the storefront + extension settle a real order end-to-end on testnet ✅; docs ✅; shareable deploy +
+video remain.
 
 ---
 

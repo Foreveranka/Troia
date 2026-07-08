@@ -1,10 +1,15 @@
 # Troia — Live-Smoke Runbook (Phase 4.5 end-to-end)
 
-> This is the operational script for the **one remaining Phase-4.5 step**: a real iyzico charge automatically
-> driving a real on-chain `TroyPool.pay()`, behind a public webhook tunnel on testnet. Everything the run needs is
-> wired + offline-tested (see [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4); this doc is how a human
-> actually drives it. Honest boundary: **`signed ≠ settled`** — we prove what we signed cryptographically and what
-> settled while the chain remembers it.
+> **✅ Executed.** This run has been driven end-to-end: a real Troy sandbox card charge automatically drove a real
+> on-chain `TroyPool.pay()` (74 USDC pool → merchant, tx
+> [`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded);
+> see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). This doc remains the runbook for reproducing it.
+>
+> This is the operational script for the Phase-4.5 live step: a real iyzico charge automatically driving a real
+> on-chain `TroyPool.pay()`, behind a public webhook tunnel on testnet. Everything the run needs is wired +
+> offline-tested (see [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4); this doc is how a human actually
+> drives it. Honest boundary: **`signed ≠ settled`** — we prove what we signed cryptographically and what settled
+> while the chain remembers it.
 >
 > Nothing here runs in the offline gate. It uses the network and the iyzico **sandbox** (valueless test cards); the
 > USDC is our own testnet mint. No real money moves.

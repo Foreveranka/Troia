@@ -61,15 +61,18 @@ The live testnet rails are deployed — three keypairs, the USDC SAC, and a seed
 fiat leg is validated against the sandbox (a real charge; `classifyIyzicoResult` calibrated to iyzico's real
 success shape + decline codes).
 
-The live demo runs end-to-end: `just demo` drives real testnet payouts, builds a recon-report, and verifies it
-offline (2 matched + 1 deliberate mismatch caught).
+The reviewer-verifiable demo runs end-to-end offline: `just verify` re-derives a recon-report and confirms it
+(2 matched + 1 deliberate mismatch caught) with `networkAttempts: 0`.
 
-Wired offline, not yet live-run (remaining, not hidden): the Phase-4.5 composition that binds the real adapters +
-the PSP-inclusive quote and stands up a server (`just serve`) is **built, type-checked, and offline-tested** — a
-composition smoke proves the whole stack boots from the factory — so a real charge driving a real `pay()` is
-realized in code. The network-facing halves are now **hardened for the live run** (per-attempt timeouts + bounded
-retry on every RPC/oracle/iyzico call, so no hung source can wedge the poller or freeze a checkout) and gated by a
-**readiness preflight** (`just preflight`) plus a step-by-step runbook ([`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)).
-The remaining step is the **live run itself** behind a public webhook tunnel (which live-smokes the SDK/network
-adapters for the first time), then the storefront (5.1) and the browser extension (5.2). See
+The **full stack now settles a real order end-to-end on testnet.** The demo **storefront** (5.1) emits a USDC
+SEP-7 at checkout; the MV3 **"Pay with Troy card" browser extension** (5.2) detects it, opens iyzico's hosted
+form, and — after a real Troy **sandbox card** charge confirms — the backend auto-submits the irreversible USDC
+leg. This was proven live: **74 USDC** settled pool → merchant, tx
+[`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded)
+(see [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)). The extension holds no keys and signs nothing; it is scoped to
+the storefront's origins and fails closed. The money-first ordering — reversible TRY charge first, irreversible
+USDC last — held over the live network.
+
+Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend → Render) so the demo runs without
+a local machine, and a 3–5 min proof video. The live run was a single manual smoke, not a load/soak test. See
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

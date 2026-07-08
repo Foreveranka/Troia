@@ -80,6 +80,23 @@ verifies offline even after a testnet reset, because the operator's signature ov
 and unforgeable. The on-chain **settlement itself** is the payout tx above, verifiable on the explorer while the
 chain remembers it (`signed ≠ settled`). See [`RECONCILIATION.md`](RECONCILIATION.md).
 
+## Full-stack live settlement (extension → charge → `pay()`)
+
+The payout above (`5a3d60cc…`) was a direct `pay()` call proving the on-chain leg in isolation. Phase 4.5/5.2
+then drove the **whole stack live**: the demo storefront emitted a SEP-7 pay URI, the **browser extension**
+detected it and opened iyzico's hosted form, a real **Troy sandbox card** paid TRY, and — only after the charge
+confirmed — the backend submitted the irreversible USDC leg automatically. No step was hand-run.
+
+- **Order:** a storefront checkout; settlement amount **74 USDC** (`740000000` stroops).
+- **Merchant:** `GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX` (the demo merchant; balance 10 → **84 USDC**).
+- **Operator-signed `pay()`:** [tx `cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded)
+  — `invoke_host_function` on `TroyPool`, pool `contract_debited` 74 USDC → merchant `account_credited` 74 USDC,
+  operator source `GDMAG4EM…`, `2026-07-07T23:02:50Z`. Verifiable on the explorer while the chain remembers it.
+
+This is the money-first ordering realized end-to-end over the network: **reversible TRY charge first, irreversible
+USDC last** (`signed ≠ settled`). It is the first run that exercises the live SDK/RPC/iyzico adapters — the halves
+that were type-checked-only before. See [`LIVE_SMOKE.md`](LIVE_SMOKE.md) for the runbook this executed.
+
 ## Reproduce
 
 ```bash

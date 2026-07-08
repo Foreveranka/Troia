@@ -264,10 +264,12 @@ troia/
     ├── composition/            # Phase-4.5 root: real adapters + PSP-inclusive quote → ServerDeps; `just serve`
     └── integration/            # cross-package composition smoke tests
 
-Deferred, not yet built: app/merchant-frontend (Phase 5.1), extension (Phase 5.2),
-packages/kyc (Phase-2 boundary). packages/rebalance IS built (SimulatedRebalance, tested); only the real-CEX
-economic-solvency impl is Phase-2. The Signer abstraction currently lives in stellar-client
-(LocalKey → KMS/HSM+multisig is the Phase-2 path).
+Built (Phase 5): app/storefront (5.1, the demo store emitting a USDC SEP-7) and app/extension (5.2, the MV3
+"Pay with Troy card" bridge) — both proven live end-to-end (a Troy sandbox card charge auto-drove a real
+`pay()`, 74 USDC settled, tx `cd643d71…`; see DEPLOYMENTS.md). Deferred, not yet built: packages/kyc (Phase-2
+boundary). packages/rebalance IS built (SimulatedRebalance, tested); only the real-CEX economic-solvency impl
+is Phase-2. The Signer abstraction currently lives in stellar-client (LocalKey → KMS/HSM+multisig is the
+Phase-2 path).
 ```
 
 Stack pins: `soroban-sdk 26.0.0`, stellar CLI 26.0.0, node 22, pnpm, `@stellar/stellar-sdk 15.1.0`. The iyzico
@@ -383,8 +385,8 @@ The ADRs are summarized inline below (they are not split into separate `docs/adr
    **margin**, then a **PSP cost pass-through** grossed up `÷(1−rate)+fixed` so the net still covers mid+FX+margin
    after the provider's cut — gross-up, NOT addition (addition under-recovers by `rate × our-markup`). The iyzico
    rate (4.29%+0.25₺) and the valör are config knobs, swappable per ADR-9. Pricing primitive + policy are built
-   and tested, and bound into the composition root (`makeQuoteFn` feeds the backend's injected `/intent` quote);
-   the remaining Phase-4.5 step is the live run.
+   and tested, and bound into the composition root (`makeQuoteFn` feeds the backend's injected `/intent` quote),
+   and exercised in the live run (a real charge auto-drove a real `pay()`, 74 USDC settled).
 5. Solvency = backend AND contract.
 6. Memo fail-closed invariant (`PayoutIntent`, flat `BuildError`, deterministic order).
 7. USDC = 7 decimals on Stellar.

@@ -76,7 +76,7 @@ acceptance bar for every change.
 
 ---
 
-## 4. Wired offline, not yet live-run (Phase 4.5 live-smoke — remaining, not hidden)
+## 4. Live-run done; the residual limitations are operational (not hidden)
 
 Phase 4.4 deployed the live testnet rails (three keypairs, USDC SAC, a seeded `TroyPool`) and proved a real
 on-chain `pay()` money path — pool `100,000 → 99,999`, replay guard, double-pay revert (see
@@ -84,21 +84,20 @@ on-chain `pay()` money path — pool `100,000 → 99,999`, replay guard, double-
 is now **built, type-checked, and offline-tested**: a factory (`buildTestnetServerDeps`) assembles the real iyzico
 provider + the `stellar-client` adapters + the PSP-inclusive quote into the backend's `ServerDeps`, a server
 bootstrap (`just serve`) stands the app up, and a composition smoke proves the whole stack boots from that factory
-and its fail-closed routes work. So a real charge driving a real `pay()` is realized **in code** — what has not
-happened yet is the **live run**:
+and its fail-closed routes work. The Phase-4.5/5.2 **live run has now executed**: a real Troy sandbox card charge
+automatically drove a real on-chain `pay()` end-to-end (74 USDC pool → merchant, tx
+[`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded);
+see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) — so the network-facing halves are now live-smoked, not just type-checked.
+The remaining honest limitations are operational, not "unrun":
 
-- **The live end-to-end smoke is not yet executed.** `just serve` needs a public webhook URL (a tunnel on
-  testnet) so iyzico can reach `/webhook`; that live run — a real charge automatically driving a real on-chain
-  `pay()` — is the remaining Phase-4.5 step, and it is what exercises the network-facing halves for the first time.
-  It is now **prepared, not run**: the network calls are hardened (per-attempt timeouts + bounded retry so a hung
-  source drops fail-closed rather than wedging the poller or freezing a checkout), a **readiness preflight**
-  (`just preflight`) smokes each dirty dependency in isolation, and the whole run is scripted in
-  [`LIVE_SMOKE.md`](LIVE_SMOKE.md).
-- **The SDK/network adapters are type-checked, not yet live-smoked.** `SorobanRpcAdapter`'s pool-balance +
-  reverted-`pay()` reads and the iyzico HTTP client are exercised only by fakes / type-checks offline; the live
-  run is where they first hit a real RPC / the real sandbox. A landed-and-reverted `pay()`'s diagnostic events
-  (the input to the revert-code read) are the one shape only a live run can confirm — `scripts/probe-revert.mjs`
-  is the check that confirms it once such a tx exists.
+- **The live run is a single manual smoke, not a load/soak test.** It proved the money-first path over the real
+  SDK/RPC/iyzico network once, hardened (per-attempt timeouts + bounded retry so a hung source drops fail-closed
+  rather than wedging the poller or freezing a checkout) and gated by a **readiness preflight** (`just preflight`).
+  Concurrent-load behavior (the SPIKE-3 solvency race under many simultaneous webhooks) is unit-proven offline but
+  not yet exercised against live rails.
+- **The revert-code read path is exercised only by fakes.** A *successful* live `pay()` is proven (above), but a
+  landed-and-**reverted** `pay()`'s diagnostic events (the input to the revert-code read) are the one shape only a
+  live failing tx confirms — `scripts/probe-revert.mjs` is the check for it once such a tx exists on testnet.
 - **`InMemoryStore` / `InMemoryJournal` are single-process.** Correct for the PoC live-smoke (one process, no
   restart); a durable store is the mainnet swap behind the same interface. A restart loses the in-flight witness,
   which fails **safe** — an unreadable revert code re-drives, and the on-chain `Processed(tx_id)` guard is the
@@ -114,8 +113,8 @@ happened yet is the **live run**:
   the live on-chain sequence. A durable sequence store (Phase 2) closes it by reconciling the order's seq from
   `activeSeqFor(orderId)` on recovery.
 
-None of these are blockers for the proof story above; they are the remaining path from a composed-offline system
-to a demonstrated live end-to-end run.
+None of these are blockers for the proof story above; the live end-to-end run is demonstrated, and what remains is
+hardening (load/soak, the reverted-tx read path) — not "unrun."
 
 ---
 
@@ -132,6 +131,10 @@ to a demonstrated live end-to-end run.
 - **Channel accounts for concurrency** (the single-writer sequence allocator is today's seam; a channel pool is
   Phase-2 with the allocator interface unchanged).
 - **StellarPay / Beans extension adapters** (bonus rail; the demo storefront does not depend on them).
+- **Extension origin scope.** The browser extension is deliberately scoped to the demo storefront's origins (a
+  narrow `matches`/`host_permissions` allowlist), not `<all_urls>`. This keeps the reviewer's Chrome permission
+  prompt honest and the attack surface small. A production build widens the allowlist to any storefront emitting a
+  USDC SEP-7 — the DOM-scan mechanism is unchanged; only the manifest match patterns change.
 - **Mainnet.** Mainnet is a **separate, regulated phase**. Turkish regulatory engagement (MASAK) is a deliberate
   post-code step, handled with counsel — it is future work, never an excuse for a gap in what is claimed here.
 

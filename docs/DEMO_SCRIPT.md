@@ -2,7 +2,7 @@
 
 > The demo's job is to make one claim undeniable: **Troia never silently loses money, and you can verify it
 > yourself, offline, in seconds.** Everything below is scripted so the run is deterministic and honest — each
-> beat is labeled **[runs today]** or **[phase-gated]** so nothing is oversold.
+> beat is labeled **[runs today]** (zero setup) or **[runs live — stack up]** so nothing is oversold.
 
 One-line pitch to open with: *"A custodial TRY→USDC settlement layer that makes every lira accountable
 hash-by-hash. Don't trust me — run one command and check the math yourself."*
@@ -13,9 +13,11 @@ hash-by-hash. Don't trust me — run one command and check the math yourself."*
 
 1. The whole system compiles, tests, and lints clean. **[runs today]**
 2. The reviewer-verifiable reconciler passes offline — and *fails* on a tampered report. **[runs today]**
-3. The money-first settlement flow, narrated end-to-end, with the honest `signed ≠ settled` boundary. **[narration today; live run phase-gated]**
+3. The money-first settlement flow, narrated end-to-end, with the honest `signed ≠ settled` boundary. **[runs today]**
+4. "Pay with Troy card" — the storefront + browser extension settling a real order live on testnet. **[runs live — stack up]**
 
-Total budget: ~4 minutes. Keep Act 2 the emotional center — it is the part a reviewer cannot get anywhere else.
+Total budget: ~5 minutes. Keep Act 2 the emotional center (a reviewer cannot get it anywhere else); Act 4 is the
+payoff — the same money-first flow from Act 3, now moving real testnet USDC through a real card charge.
 
 ---
 
@@ -33,7 +35,7 @@ Total budget: ~4 minutes. Keep Act 2 the emotional center — it is the part a r
 
 ```bash
 just build      # all TypeScript packages compile (tsc, strict)
-just test       # 413 TypeScript tests across 59 files
+just test       # 553 TypeScript tests across 77 files
 just lint       # ESLint clean
 cargo test      # 14 Soroban contract tests (unit + integration + fuzz conservation)
 ```
@@ -84,7 +86,7 @@ Exit code `1`. Say: *"A report that lies about its own outcome cannot pass. That
 
 ---
 
-## Act 3 — The money-first flow, narrated (~90s) **[narration today; live run phase-gated]**
+## Act 3 — The money-first flow, narrated (~75s) **[runs today — narration]**
 
 > "Now, how the money actually moves — and why it's ordered the way it is."
 
@@ -108,27 +110,59 @@ settled while the chain remembers it. We never blur the two."*
 
 ---
 
+## Act 4 — "Pay with Troy card," live (~90s) **[runs live — stack up]**
+
+> "And here it is actually moving money. Same flow as Act 3 — now with a real card and a real testnet payout."
+
+Setup (before recording): `just serve` (backend on `:3000`), `npm run dev` in `app/storefront`, the extension
+loaded unpacked, a public webhook tunnel so iyzico can reach `/webhook`.
+
+1. **Shop like a customer.** On the demo storefront, sign in, add items, pick a shipping tier, reach the payment
+   step. The customer sees only a ₺ total — never USDC, never a wallet, never a memo.
+2. **The extension notices.** A "Pay with Troy card" banner appears at the bottom of the page. Say: *"The merchant
+   integrated nothing. The extension read a standard SEP-7 payment request off the page, verified it fail-closed —
+   allowlisted USDC issuer, valid destination, byte-exact memo — and only then offered to pay."*
+3. **Pay with a Troy sandbox card.** Click the banner → iyzico's **hosted** card form opens in a new tab (the PAN
+   never touches our servers or the extension). Use a Troy test card (see `README.md`); the 3DS OTP is shown in
+   parentheses on the verification screen.
+4. **Money-first, live.** The charge confirms first; **only then** does the backend submit the irreversible USDC
+   leg. The banner reflects coarse status (`pending → processing → completed`) — the crypto leg is never shown.
+5. **Order settled + verifiable.** The storefront shows the confirmation and "My Orders" with a **settlement tx
+   link**. Open it: this is a real on-chain `pay()` moving USDC pool → merchant. In the proven run it was **74
+   USDC**, tx `cd643d71…`.
+
+Say, pointing at the explorer: *"The customer paid a lira price with a Troy card. On-chain, the merchant received
+USDC — and neither of them had to see the other's world. That's the whole product in one screen."*
+
+> Honest note for the reviewer: this is a single manual live smoke on **testnet** with iyzico **sandbox** (no real
+> money). If recording without the stack up, narrate it over the confirmation screenshots + the explorer tx — do
+> not fake a charge.
+
+---
+
 ## What runs today vs. what is phase-gated
 
 | Beat | Status |
 |---|---|
-| `just build` / `just test` / `cargo test` / `just lint` | ✅ **runs today** |
-| `just verify` (offline reconciler proof + tampered-report failure) | ✅ **runs today** |
+| `just build` / `just test` / `cargo test` / `just lint` | ✅ **runs today** (zero setup) |
+| `just verify` (offline reconciler proof + tampered-report failure) | ✅ **runs today** (zero setup) |
 | Money-first flow **narration** + public-status mapping | ✅ **runs today** (design + tests) |
-| `just fund` (friendbot + USDC SAC deploy + mint) | ⏳ Phase 4.4 |
-| Live storefront (`merchant-frontend`, SEP-7 pay URI) | ⏳ Phase 5.1 |
-| `just demo` — deterministic N-order run on **live** testnet → fresh `recon-report.json` | ⏳ Phase 5.3 (live variant) |
-| `DEPLOYMENTS.md` explorer table (real deployed addresses) | ⏳ Phase 4.4 |
+| `just fund` (friendbot + USDC SAC deploy + mint) | ✅ done (Phase 4.4) |
+| Live storefront (`app/storefront`, SEP-7 pay URI) | ✅ built (Phase 5.1) |
+| "Pay with Troy card" extension → real charge → real `pay()` | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run |
+| `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done (Phase 4.4 + 5.2) |
 
-When the live rails land (Phase 4.4), Act 3 upgrades from narration to a real `just demo` run that produces a
-fresh report Act 2 then verifies — closing the loop on real testnet transactions. Until then, the proof that
-matters most (Act 2) is fully reproducible today.
+Acts 1–3 run today with zero setup; Act 2 (the offline, zero-trust proof) is the reproducible centerpiece. Act 4
+is proven — a real Troy sandbox card charge auto-drove a real on-chain `pay()` (74 USDC, tx `cd643d71…`) — but
+re-running it live needs the stack up (`just serve` + storefront + extension + webhook tunnel). The remaining
+polish is a public shareable deploy so Act 4 runs without a local machine.
 
 ---
 
 ## If recording a video
 
-- Keep it to 3–5 minutes; Act 2 gets the most time.
+- Keep it to ~5 minutes; Act 2 gets the most time, Act 4 is the payoff.
 - Show the terminal exit codes explicitly (`echo $?` after `just verify` and after the tampered run).
-- Do not fake a live payment. Narrate Act 3 honestly as design-under-test; mark the phase-gated parts as such.
-- End on the tampered-report failure — a memorable, undeniable beat.
+- In Act 4, show the real explorer tx — do not fake a charge. If the stack isn't up, narrate over confirmation
+  screenshots + the on-chain `pay()` (tx `cd643d71…`) rather than staging a fake payment.
+- Two undeniable beats to land: the tampered-report **failure** (Act 2) and the real settlement **tx** (Act 4).

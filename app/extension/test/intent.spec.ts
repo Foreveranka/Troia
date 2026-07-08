@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { evaluate } from '../src/lib/adapter';
+import { evaluate, type Detection } from '../src/lib/adapter';
 import { buildIntentBody, intentUiAction, statusCopy } from '../src/lib/intent';
 import type { IntentResponse, PublicStatus } from '../src/lib/intent';
 
@@ -35,6 +35,17 @@ describe('buildIntentBody', () => {
     const detection = evaluate(`web+stellar:pay?destination=${MERCHANT}&amount=1&memo=X&memo_type=text`)!;
     const r = await buildIntentBody(detection);
     expect(r).toEqual({ ok: false, reason: 'not-payable' });
+  });
+
+  it('fails closed on a malformed order_id (lone surrogate) instead of sending a doomed memo', async () => {
+    const detection: Detection = {
+      sep7: { operation: 'pay', destination: MERCHANT, amount: '62.00', assetCode: 'USDC', assetIssuer: ISSUER, memo: 'ab\uD83D', memoType: 'text' },
+      checks: [],
+      confidence: 1,
+      payable: true,
+    };
+    const r = await buildIntentBody(detection);
+    expect(r).toEqual({ ok: false, reason: 'bad-order-ref' });
   });
 });
 

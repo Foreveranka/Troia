@@ -17,7 +17,7 @@ export interface IntentBody {
 
 export type BuildIntentResult =
   | { readonly ok: true; readonly body: IntentBody }
-  | { readonly ok: false; readonly reason: 'not-payable' | 'no-order-ref' | 'no-issuer' | 'bad-amount' };
+  | { readonly ok: false; readonly reason: 'not-payable' | 'no-order-ref' | 'bad-order-ref' | 'no-issuer' | 'bad-amount' };
 
 /** The coarse public status the backend exposes on GET /status/:orderId (never the internal crypto state). */
 export type PublicStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'review';
@@ -86,7 +86,14 @@ export async function buildIntentBody(detection: Detection): Promise<BuildIntent
   const stroops = toStroops(sep7.amount);
   if (stroops === null) return { ok: false, reason: 'bad-amount' };
 
-  const memoHex = await deriveMemoHex(orderId);
+  // Reject a malformed order_id (lone surrogate) up front, exactly as the backend's canonicalizeOrderId does,
+  // so we fail closed instead of sending a memo the backend would never accept.
+  let memoHex: string;
+  try {
+    memoHex = await deriveMemoHex(orderId);
+  } catch {
+    return { ok: false, reason: 'bad-order-ref' };
+  }
   return {
     ok: true,
     body: {

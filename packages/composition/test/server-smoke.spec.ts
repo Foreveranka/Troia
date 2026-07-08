@@ -24,15 +24,22 @@ const bootstrap: BootstrapReads = {
 
 async function makeServer(): Promise<Server> {
   const kp = Keypair.random();
+  const issuerKp = Keypair.random(); // usdcIssuer DERIVED so the issuer (mint) key check passes offline
   const cfg: TestnetServerConfig = {
     deployment: {
-      usdcIssuer: 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W',
+      usdcIssuer: issuerKp.publicKey(),
       usdcSacContractId: 'CCOAUUKWWPSVFZUPIVZECTV3PIVFRTVFKWWF2PQY5Q5CN3JBCDXGNCMB',
       troyPool: 'CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ',
       operatorPublic: kp.publicKey(),
       adminPublic: 'GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ',
     },
-    secrets: { operatorSecret: kp.secret(), iyzicoApiKey: 'ak', iyzicoSecretKey: 'sk', webhookSigningSecret: 'wh' },
+    secrets: {
+      operatorSecret: kp.secret(),
+      issuerSecret: issuerKp.secret(),
+      iyzicoApiKey: 'ak',
+      iyzicoSecretKey: 'sk',
+      webhookSigningSecret: 'wh',
+    },
     callbackUrl: 'https://troia.example/webhook',
     spotOracle: fakeOracle,
     history: fakeHistory,
@@ -67,5 +74,12 @@ describe('the composed server boots from buildTestnetServerDeps (offline fail-cl
   it('a poll tick with no in-flight orders is a no-op', async () => {
     const server = await makeServer();
     expect(await server.pollTick()).toMatchObject({ polled: 0, advanced: 0 });
+  });
+
+  it('exposes settleTick — the TRY-driven rebalance bot is wired into the composed server', async () => {
+    const server = await makeServer();
+    expect(typeof server.settleTick).toBe('function');
+    // no money-good orders yet -> a settle tick is a clean no-op (touches no network)
+    expect(await server.settleTick!()).toMatchObject({ armed: 0, settled: 0 });
   });
 });

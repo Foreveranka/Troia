@@ -63,6 +63,9 @@ importers:
       '@troia/config':
         specifier: workspace:*
         version: link:../config
+      '@troia/ledger':
+        specifier: workspace:*
+        version: link:../ledger
       '@troia/oracle':
         specifier: workspace:*
         version: link:../oracle
@@ -72,6 +75,9 @@ importers:
       '@troia/psp':
         specifier: workspace:*
         version: link:../psp
+      '@troia/rebalance':
+        specifier: workspace:*
+        version: link:../rebalance
       '@troia/stellar-client':
         specifier: workspace:*
         version: link:../stellar-client

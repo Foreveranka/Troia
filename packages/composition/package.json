@@ -17,9 +17,11 @@
   "dependencies": {
     "@troia/backend": "workspace:*",
     "@troia/config": "workspace:*",
+    "@troia/ledger": "workspace:*",
     "@troia/oracle": "workspace:*",
     "@troia/pricing": "workspace:*",
     "@troia/psp": "workspace:*",
+    "@troia/rebalance": "workspace:*",
     "@troia/stellar-client": "workspace:*"
   },
   "devDependencies": {

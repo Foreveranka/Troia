@@ -20,6 +20,8 @@ async function main(): Promise<void> {
   const iyzicoSecretKey = requireEnv(env, 'IYZICO_SECRET_KEY');
   const secrets: TestnetSecrets = {
     operatorSecret: requireEnv(env, 'TROIA_OPERATOR_SECRET'),
+    // the USDC SAC admin key — signs the rebalance mint. SEPARATE from the operator payout key.
+    issuerSecret: requireEnv(env, 'TROIA_ISSUER_SECRET'),
     iyzicoApiKey: requireEnv(env, 'IYZICO_API_KEY'),
     iyzicoSecretKey,
     // the webhook HMAC key; iyzico signs the callback with the account secretKey unless a distinct key is issued.
@@ -31,11 +33,15 @@ async function main(): Promise<void> {
   const port = intEnv(env, 'PORT', 3000, 1, 65535);
   const host = env.HOST ?? '0.0.0.0';
   const pollIntervalMs = intEnv(env, 'POLL_INTERVAL_MS', 5000, 1000); // >= 1s; fail-closed on a bad value
+  const settlementTickMs = intEnv(env, 'SETTLEMENT_TICK_MS', 5000, 1000); // rebalance sim cadence; fail-closed
+  // the COMPRESSED settlement valör for the demo (real iyzico valör is ~21 days). Default 30s.
+  const demoValorSecs = intEnv(env, 'DEMO_VALOR_SECS', 30, 1);
 
   const deps = await buildTestnetServerDeps({
     deployment,
     secrets,
     callbackUrl,
+    demoValorSecs,
     // Settlement-rate oracle: sources must agree within 0.5% AND a genuine 3-source majority must be present
     // (minQuorum 3), so a single compromised in-band source cannot move the median — the money-safe default the
     // oracle doc demands. A CEX outage fails a quote CLOSED (retry) rather than settling on a 2-source mid.
@@ -60,6 +66,24 @@ async function main(): Promise<void> {
         polling = false;
       });
   }, pollIntervalMs);
+
+  // TRY-driven rebalance loop, with its OWN in-flight guard (same shape as the poll loop): each tick arms
+  // money-good orders and refills the pool for any whose compressed valör has elapsed. A slow tick or a fast
+  // interval can never STACK mints. Present only when the settlement bundle was wired.
+  const settleTick = server.settleTick;
+  if (settleTick !== undefined) {
+    let settling = false;
+    setInterval(() => {
+      if (settling) return;
+      settling = true;
+      void settleTick()
+        .catch((err: unknown) => console.error('settleTick failed', err))
+        .finally(() => {
+          settling = false;
+        });
+    }, settlementTickMs);
+    console.log(`troia rebalance bot armed — demo valör ${demoValorSecs}s, tick ${settlementTickMs}ms`);
+  }
 }
 
 main().catch((err: unknown) => {

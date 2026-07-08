@@ -54,6 +54,11 @@ export type {
 } from './client.js';
 
 // Concrete PoC seams for the composition root (SDK-free: a Map + Date.now, so they may cross the main surface).
+export { buildSacMintTransaction } from './sac-mint.js';
+export type { SacMintParams } from './sac-mint.js';
+export { createSacMintClient } from './mint-client.js';
+export type { SacMintPort, SacMintClientPorts, SacMintClientConfig } from './mint-client.js';
+
 export { InMemoryJournal, SystemClock } from './in-memory-journal.js';
 
 export { BuildError, SimulationError, SubmitError, DeadnessIndeterminate } from './errors.js';

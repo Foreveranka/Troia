@@ -20,15 +20,22 @@ const fakeHistory: RateHistoryProvider = {
 function baseCfg(): { cfg: TestnetServerConfig; pub: string } {
   const kp = Keypair.random();
   const pub = kp.publicKey();
+  const issuerKp = Keypair.random(); // the USDC SAC admin — usdcIssuer is DERIVED so the issuer key check passes
   const cfg: TestnetServerConfig = {
     deployment: {
-      usdcIssuer: 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W',
+      usdcIssuer: issuerKp.publicKey(),
       usdcSacContractId: 'CCOAUUKWWPSVFZUPIVZECTV3PIVFRTVFKWWF2PQY5Q5CN3JBCDXGNCMB',
       troyPool: 'CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ',
       operatorPublic: pub,
       adminPublic: 'GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ',
     },
-    secrets: { operatorSecret: kp.secret(), iyzicoApiKey: 'ak', iyzicoSecretKey: 'sk', webhookSigningSecret: 'wh' },
+    secrets: {
+      operatorSecret: kp.secret(),
+      issuerSecret: issuerKp.secret(),
+      iyzicoApiKey: 'ak',
+      iyzicoSecretKey: 'sk',
+      webhookSigningSecret: 'wh',
+    },
     callbackUrl: 'https://troia.example/webhook',
     spotOracle: fakeOracle,
     history: fakeHistory,
@@ -97,6 +104,25 @@ describe('buildTestnetServerDeps', () => {
       deployment: { ...cfg.deployment, operatorPublic: Keypair.random().publicKey() },
     };
     await expect(buildTestnetServerDeps(wrong, bootstrap)).rejects.toThrow(/operator secret/i);
+  });
+
+  it('FAILS CLOSED when the issuer secret does not match the deployment usdcIssuer (the mint key)', async () => {
+    const { cfg } = baseCfg();
+    const wrong: TestnetServerConfig = {
+      ...cfg,
+      deployment: { ...cfg.deployment, usdcIssuer: Keypair.random().publicKey() },
+    };
+    await expect(buildTestnetServerDeps(wrong, bootstrap)).rejects.toThrow(/issuer secret/i);
+  });
+
+  it('wires the TRY-driven rebalance settlement bundle (demo valör default 30s)', async () => {
+    const { cfg } = baseCfg();
+    const deps = await buildTestnetServerDeps(cfg, bootstrap);
+    expect(deps.settlement?.demoValorSecs).toBe(30);
+    expect(typeof deps.settlement?.rebalance.topUp).toBe('function');
+    expect(typeof deps.settlement?.rate.liveRateStroops).toBe('function');
+    // the live-rate reader returns the oracle mid (scaled by RATE_SCALE == the policy's stroops)
+    await expect(deps.settlement?.rate.liveRateStroops()).resolves.toBe(405_000_000n);
   });
 });
 

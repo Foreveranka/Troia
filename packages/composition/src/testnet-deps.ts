@@ -10,11 +10,19 @@
 
 import { testnetConfig } from '@troia/config';
 import type { TestnetDeployment } from '@troia/config';
-import { InMemoryStore, OFFLINE_DEFAULT_POLICY, OFFLINE_DEFAULT_PRICING_POLICY } from '@troia/backend';
-import type { EnginePspConfig, PolicyConfig, PricingPolicy, ServerDeps } from '@troia/backend';
+import {
+  InMemoryStore,
+  InMemoryPendingSettlementStore,
+  TryDrivenRebalancePolicy,
+  OFFLINE_DEFAULT_POLICY,
+  OFFLINE_DEFAULT_PRICING_POLICY,
+} from '@troia/backend';
+import type { EnginePspConfig, PolicyConfig, PricingPolicy, ServerDeps, SettlementBundle } from '@troia/backend';
 import { createPaymentProvider } from '@troia/psp';
 import type { OracleProvider, RateHistoryProvider } from '@troia/oracle';
-import { SystemClock } from '@troia/stellar-client';
+import { SimulatedRebalance } from '@troia/rebalance';
+import { Ledger } from '@troia/ledger';
+import { SystemClock, createSacMintClient } from '@troia/stellar-client';
 import { LocalKeySigner, SorobanRpcAdapter } from '@troia/stellar-client/adapters';
 import { buildStellarPort } from './build-stellar-port.js';
 import type { BuildStellarPortOptions } from './build-stellar-port.js';
@@ -23,6 +31,9 @@ import { makeQuoteFn } from './quote.js';
 /** Secrets injected from env at the composition root — NEVER from NetworkConfig/deployment. */
 export interface TestnetSecrets {
   readonly operatorSecret: string;
+  /** the USDC SAC admin (asset issuer) key — signs the rebalance mint. SEPARATE from operatorSecret so a mint
+   *  never consumes an operator payout sequence. */
+  readonly issuerSecret: string;
   readonly iyzicoApiKey: string;
   readonly iyzicoSecretKey: string;
   readonly webhookSigningSecret: string;
@@ -44,6 +55,8 @@ export interface TestnetServerConfig {
   readonly policy?: PolicyConfig; // default OFFLINE_DEFAULT_POLICY
   readonly feeStroops?: string; // default '100'
   readonly timeboundsSecs?: number; // default 45
+  /** the compressed settlement valör for the TRY-driven rebalance demo — real is ~21 days; default 30s. */
+  readonly demoValorSecs?: number;
   readonly merchant?: MerchantTemplate; // override the KYC-stub buyer/addresses/basket
   readonly opts?: BuildStellarPortOptions;
 }
@@ -83,6 +96,58 @@ function assertOperatorKeyMatches(operatorSecret: string, expectedPublic: string
       `operator secret does not match the deployment operatorPublic (${expectedPublic}) — check .env / deployment`,
     );
   }
+}
+
+function assertIssuerKeyMatches(issuerSecret: string, expectedPublic: string): void {
+  const derived = new LocalKeySigner(issuerSecret).publicKey();
+  if (derived !== expectedPublic) {
+    throw new Error(
+      `issuer secret does not match the deployment usdc issuer (${expectedPublic}) — check .env / deployment`,
+    );
+  }
+}
+
+/** Build the TRY-driven rebalance bundle: a real issuer-signed USDC SAC mint provider + the live-rate reader +
+ *  the decision policy + the top-up ledger. Fail-closed: the issuer key is validated before any wiring. */
+function buildSettlementBundle(
+  network: ReturnType<typeof testnetConfig>,
+  issuerSecret: string,
+  clock: SystemClock,
+  spotOracle: OracleProvider,
+  readPoolBalanceStroops: () => Promise<bigint>,
+  demoValorSecs: number,
+  feeStroops: string,
+  timeboundsSecs: number,
+  opts?: BuildStellarPortOptions,
+): SettlementBundle {
+  assertIssuerKeyMatches(issuerSecret, network.usdc.issuer); // fail-closed BEFORE any wiring
+  const mintPort = createSacMintClient(
+    { rpc: new SorobanRpcAdapter(network.rpcUrl, network.passphrase, opts), signer: new LocalKeySigner(issuerSecret), nowUnix: () => clock.nowUnix() },
+    {
+      sacContractId: network.usdc.sacContractId,
+      pool: network.contracts.troyPool,
+      passphrase: network.passphrase,
+      feeStroops,
+      timeboundsSecs,
+      finalityPollMs: 2_000,
+      finalityMaxAttempts: 30, // ~60s finality budget, then fail-closed (retry next tick)
+      readPoolBalanceStroops,
+    },
+  );
+  return {
+    pending: new InMemoryPendingSettlementStore(),
+    policy: new TryDrivenRebalancePolicy(),
+    rebalance: new SimulatedRebalance(mintPort),
+    ledger: new Ledger(),
+    rate: {
+      async liveRateStroops(): Promise<bigint> {
+        const r = await spotOracle.getRate();
+        if (!r.ok) throw r.error; // oracle down -> fail-closed (the worker skips this tick, retries later)
+        return r.quote.midTryPerUsdc; // scaled by RATE_SCALE (1e7) == the policy's stroops scale
+      },
+    },
+    demoValorSecs,
+  };
 }
 
 /** The DEFAULT bootstrap: read the operator seq (throwaway rpc adapter) and the pool balance (via the port). */
@@ -125,6 +190,19 @@ export async function buildTestnetServerDeps(cfg: TestnetServerConfig, bootstrap
   const [baseSeq, balanceStroops] = await Promise.all([reads.operatorSeqNum(), reads.poolBalanceStroops()]);
   const store = new InMemoryStore({ balanceStroops, baseSeq });
 
+  const clock = new SystemClock(); // shared: the app/worker clock AND the mint client's timebounds source
+  const settlement = buildSettlementBundle(
+    network,
+    cfg.secrets.issuerSecret,
+    clock,
+    cfg.spotOracle,
+    () => stellar.readPoolBalanceStroops(),
+    cfg.demoValorSecs ?? 30,
+    cfg.feeStroops ?? '100',
+    cfg.timeboundsSecs ?? 45,
+    cfg.opts,
+  );
+
   const merchant = cfg.merchant ?? DEFAULT_TESTNET_MERCHANT;
   return {
     network,
@@ -134,8 +212,9 @@ export async function buildTestnetServerDeps(cfg: TestnetServerConfig, bootstrap
       psp: { ...merchant, callbackUrl: cfg.callbackUrl, currency: 'TRY' },
       policy: cfg.policy ?? OFFLINE_DEFAULT_POLICY,
     },
-    ports: { stellar, psp, store, clock: new SystemClock() },
+    ports: { stellar, psp, store, clock },
     quote,
     webhookSigningSecret: cfg.secrets.webhookSigningSecret,
+    settlement,
   };
 }

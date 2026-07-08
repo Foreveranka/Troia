@@ -178,15 +178,75 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     expect(statusPolls()).toBe(settled);
   });
 
-  it('caps polling at MAX_POLLS (200) when the status never reaches a terminal state', async () => {
+  it('polls through the generous pending window, then gives up with a not-charged message (never silent)', async () => {
     stub.script.intent = OPEN_INTENT;
-    stub.script.defaultStatus = 'pending'; // never terminal
+    stub.script.defaultStatus = 'pending'; // buyer never completes the card payment
 
     await loadWithBanner();
     await clickPay();
-    await vi.advanceTimersByTimeAsync(3000 * 205);
+    await vi.advanceTimersByTimeAsync(3000 * 402);
 
-    expect(statusPolls()).toBe(200);
+    expect(statusPolls()).toBe(400); // PENDING_MAX_POLLS — not the old silent 200 cap
+    expect(statusText()).toBe('Payment session timed out — you were not charged. Refresh to try again.');
+    const settled = statusPolls();
+    await vi.advanceTimersByTimeAsync(3000 * 10);
+    expect(statusPolls()).toBe(settled); // stopped
+  });
+
+  it('resets the budget once payment is received, then gives up with a settlement-pending message', async () => {
+    stub.script.intent = OPEN_INTENT;
+    stub.script.statuses = ['processing']; // first poll: payment received
+    stub.script.defaultStatus = 'processing'; // stays processing, never completes
+
+    await loadWithBanner();
+    await clickPay();
+    await vi.advanceTimersByTimeAsync(3000 * 85); // first tick sees processing (reset), then ~CONFIRM_MAX_POLLS more
+
+    expect(statusText()).toBe(
+      'Payment received — settlement is taking a little longer and will complete shortly. You can safely close this.',
+    );
+    const settled = statusPolls();
+    expect(settled).toBeGreaterThan(1); // polled well past the first processing tick (budget was reset)
+    await vi.advanceTimersByTimeAsync(3000 * 10);
+    expect(statusPolls()).toBe(settled); // stopped
+  });
+
+  it('does not fire a second intent when Pay is clicked again while a payment is in progress', async () => {
+    stub.script.intent = OPEN_INTENT;
+    stub.script.defaultStatus = 'pending';
+
+    await loadWithBanner();
+    await clickPay(); // first intent; polling started; button disabled + in-flight
+
+    (shadow().querySelector('.pay') as HTMLButtonElement).click(); // repeat click must be a no-op
+    await flush();
+
+    const intents = stub.sendMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'TROIA_INTENT').length;
+    expect(intents).toBe(1);
+  });
+
+  it('re-enables Pay after a clean failure so the buyer can retry (a retry fires a fresh intent)', async () => {
+    stub.script.intent = { ok: false, status: 409, error: 'PoolInsufficient' };
+
+    await loadWithBanner();
+    await clickPay(); // first intent → rejected → banner re-enabled
+    await clickPay(); // retry → second intent
+
+    const intents = stub.sendMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'TROIA_INTENT').length;
+    expect(intents).toBe(2);
+  });
+
+  it('shows a card-form error and does not poll when the tab could not be opened', async () => {
+    const post = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
+    stub.script.intent = { ok: false, status: null, error: 'tab_open_failed' };
+
+    await loadWithBanner();
+    await clickPay();
+
+    expect(statusText()).toBe("Couldn't open the card form — you were not charged.");
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(statusPolls()).toBe(0);
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('stops polling when the shopper dismisses the banner', async () => {

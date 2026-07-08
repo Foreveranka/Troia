@@ -21,15 +21,48 @@ export type ReceiptOutcome =
 export interface PostIntentOptions {
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
+  readonly timeoutMs?: number;
 }
 
 export interface GetStatusOptions {
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
+  readonly timeoutMs?: number;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
+}
+
+// Default request budgets. A stalled socket (accepted then never answered) must reject after a bound instead
+// of hanging forever — otherwise the background never replies, the content-script callback never fires, and
+// the banner freezes on "Processing…" with no error and no retry. POST /intent is a one-shot; the /status +
+// /receipt polls recur every few seconds, so they get a tighter budget.
+const INTENT_TIMEOUT_MS = 15000;
+const POLL_TIMEOUT_MS = 8000;
+
+function isTimeout(e: unknown): boolean {
+  return e instanceof Error && e.name === 'AbortError';
+}
+
+/** Fetch with an abort-on-timeout race so a fetch that never settles rejects after `timeoutMs`. The race also
+ *  covers a fetch impl that ignores the AbortSignal; the real fetch is aborted regardless. */
+async function fetchWithTimeout(doFetch: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      const err = new Error('request timed out');
+      err.name = 'AbortError';
+      reject(err);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([doFetch(url, { ...init, signal: controller.signal }), timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 export async function postIntent(body: IntentBody, opts: PostIntentOptions = {}): Promise<IntentOutcome> {
@@ -38,14 +71,19 @@ export async function postIntent(body: IntentBody, opts: PostIntentOptions = {})
 
   let res: Response;
   try {
-    res = await doFetch(`${baseUrl}/intent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // The client sends no IP — the backend derives the buyer IP server-side from the request (zero-trust).
-      body: JSON.stringify(body),
-    });
-  } catch {
-    return { ok: false, status: null, error: 'network' };
+    res = await fetchWithTimeout(
+      doFetch,
+      `${baseUrl}/intent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // The client sends no IP — the backend derives the buyer IP server-side from the request (zero-trust).
+        body: JSON.stringify(body),
+      },
+      opts.timeoutMs ?? INTENT_TIMEOUT_MS,
+    );
+  } catch (e) {
+    return { ok: false, status: null, error: isTimeout(e) ? 'timeout' : 'network' };
   }
 
   const json: unknown = await res.json().catch(() => null);
@@ -69,9 +107,9 @@ export async function getStatus(orderId: string, opts: GetStatusOptions = {}): P
 
   let res: Response;
   try {
-    res = await doFetch(`${baseUrl}/status/${encodeURIComponent(orderId)}`);
-  } catch {
-    return { ok: false, error: 'network' };
+    res = await fetchWithTimeout(doFetch, `${baseUrl}/status/${encodeURIComponent(orderId)}`, {}, opts.timeoutMs ?? POLL_TIMEOUT_MS);
+  } catch (e) {
+    return { ok: false, error: isTimeout(e) ? 'timeout' : 'network' };
   }
 
   const json: unknown = await res.json().catch(() => null);
@@ -90,9 +128,9 @@ export async function getReceipt(orderId: string, opts: GetStatusOptions = {}): 
 
   let res: Response;
   try {
-    res = await doFetch(`${baseUrl}/receipt/${encodeURIComponent(orderId)}`);
-  } catch {
-    return { ok: false, error: 'network' };
+    res = await fetchWithTimeout(doFetch, `${baseUrl}/receipt/${encodeURIComponent(orderId)}`, {}, opts.timeoutMs ?? POLL_TIMEOUT_MS);
+  } catch (e) {
+    return { ok: false, error: isTimeout(e) ? 'timeout' : 'network' };
   }
 
   const json: unknown = await res.json().catch(() => null);

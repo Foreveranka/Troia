@@ -19,9 +19,15 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   if (msg?.type === 'TROIA_INTENT' && msg.body !== undefined) {
     postIntent(msg.body).then((outcome) => {
       // On success, open iyzico's hosted card page in a new tab. Opening from the background needs no user
-      // gesture (a content-script window.open could be popup-blocked after the async round-trip).
+      // gesture (a content-script window.open could be popup-blocked after the async round-trip). If the tab
+      // fails to open, surface it as a failure so the banner says so and does NOT poll — no form opened means
+      // the buyer never reached the card page, so nothing was charged.
       if (outcome.ok && typeof outcome.response.paymentPageUrl === 'string') {
-        void chrome.tabs.create({ url: outcome.response.paymentPageUrl });
+        chrome.tabs.create({ url: outcome.response.paymentPageUrl }).then(
+          () => sendResponse(outcome),
+          () => sendResponse({ ok: false, status: null, error: 'tab_open_failed' }),
+        );
+        return;
       }
       sendResponse(outcome);
     }, () => sendResponse({ ok: false, status: null, error: 'internal' }));

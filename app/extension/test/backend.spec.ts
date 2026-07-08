@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getReceipt, getStatus, postIntent } from '../src/lib/backend';
 import type { IntentBody } from '../src/lib/intent';
 
@@ -142,5 +142,36 @@ describe('getReceipt', () => {
 
   it('maps a 404 to a fail outcome', async () => {
     expect(await getReceipt('nope', { fetchImpl: fakeFetch(404, { error: 'NotFound' }) })).toEqual({ ok: false, error: 'NotFound' });
+  });
+});
+
+describe('request timeouts', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // A socket accepted then never answered: the fetch never settles and ignores the abort signal, so the
+  // abort-on-timeout race is what must resolve the call (otherwise the caller hangs forever).
+  const hangingFetch = (() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+
+  it('postIntent resolves to a timeout outcome when the fetch never settles', async () => {
+    vi.useFakeTimers();
+    const p = postIntent(BODY, { fetchImpl: hangingFetch, timeoutMs: 100 });
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(p).resolves.toEqual({ ok: false, status: null, error: 'timeout' });
+  });
+
+  it('getStatus resolves to a timeout outcome when the fetch never settles', async () => {
+    vi.useFakeTimers();
+    const p = getStatus('ST-AB12CD', { fetchImpl: hangingFetch, timeoutMs: 100 });
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(p).resolves.toEqual({ ok: false, error: 'timeout' });
+  });
+
+  it('getReceipt resolves to a timeout outcome when the fetch never settles', async () => {
+    vi.useFakeTimers();
+    const p = getReceipt('ST-AB12CD', { fetchImpl: hangingFetch, timeoutMs: 100 });
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(p).resolves.toEqual({ ok: false, error: 'timeout' });
   });
 });

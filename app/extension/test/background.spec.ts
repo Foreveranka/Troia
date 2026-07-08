@@ -52,6 +52,20 @@ describe('background message router', () => {
     expect(sendResponse).toHaveBeenCalledWith({ ok: true, response });
   });
 
+  it('replies with tab_open_failed (and does not throw) when the tab cannot be opened', async () => {
+    const response = { orderId: 'o1', token: 't', paymentPageUrl: 'https://iyzico.test/form', paidPriceTry: '10.00' };
+    postIntent.mockResolvedValue({ ok: true, response });
+    stub.tabsCreate.mockRejectedValueOnce(new Error('no active window'));
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, {}, sendResponse);
+    await flush();
+
+    expect(stub.tabsCreate).toHaveBeenCalledTimes(1);
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, status: null, error: 'tab_open_failed' });
+  });
+
   it('does NOT open a tab for an already-started duplicate (no paymentPageUrl) but still replies', async () => {
     const response = { orderId: 'o1', token: 't', paidPriceTry: '10.00', alreadyStarted: true };
     postIntent.mockResolvedValue({ ok: true, response });

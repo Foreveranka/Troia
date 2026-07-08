@@ -90,5 +90,11 @@ export interface Store {
    *  authoritative solvency gate — reserve() is (atomic, under the pool mutex); a dirty read here only fast-
    *  fails the obvious empty-pool case and surfaces the warning. */
   availableStroops(): bigint;
+  /** Raise the in-memory pool base by a landed rebalance top-up (mint), so the /intent hard gate and the
+   *  low-watermark warning reflect the new liquidity (the base is otherwise seeded once at bootstrap and only
+   *  ever decreases via held reservations). Runs under the pool mutex — serialized with reserve()'s
+   *  check→commit. Exactly-once is the CALLER's (the settlement worker's per-order claim); this is a raw
+   *  additive credit. */
+  creditPool(stroops: bigint): Promise<void>;
   readonly sequences: SequenceProvider;
 }

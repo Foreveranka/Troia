@@ -106,6 +106,14 @@ export class InMemoryStore implements Store {
     });
   }
 
+  /** Raise the pool base by a landed rebalance top-up, under the pool mutex so a mint credit can never
+   *  interleave with reserve()'s CHECK→COMMIT and transiently mis-report headroom. */
+  creditPool(stroops: bigint): Promise<void> {
+    return this.poolMutex.run(async () => {
+      this.ledger.credit(stroops);
+    });
+  }
+
   // --- per-order / per-event state (strictly synchronous RMW; see the header) ---
 
   async createIfAbsent(orderId: string): Promise<'created' | 'exists'> {

@@ -55,5 +55,20 @@ export type { PublicStatus } from './http/public-status.js';
 
 export { pollInFlight } from './worker/poll-worker.js';
 export type { PollReport } from './worker/poll-worker.js';
+
+// TRY-driven rebalance (settlement-sim). The pure/impure pieces are here; the mint provider + the live-rate
+// reader are concretes wired at the composition root.
+export { InMemoryPendingSettlementStore } from './settlement/pending-settlement-store.js';
+export type {
+  PendingSettlementStore,
+  PendingSettlement,
+  PendingSettlementInput,
+  SettlementStatus,
+} from './settlement/pending-settlement-store.js';
+export { TryDrivenRebalancePolicy } from './settlement/rebalance-policy.js';
+export type { RebalancePolicy, TopUpRequest } from './settlement/rebalance-policy.js';
+export { settleAndRebalance, tryToKurus } from './settlement/settlement-worker.js';
+export type { SettleReport, SettlementDeps, TopUpExecution } from './settlement/settlement-worker.js';
+
 export { buildEngineConfig, createServer } from './composition.js';
-export type { EngineExtras, ServerDeps, ServerPorts, Server } from './composition.js';
+export type { EngineExtras, ServerDeps, ServerPorts, Server, SettlementBundle } from './composition.js';

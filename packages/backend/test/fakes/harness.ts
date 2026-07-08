@@ -103,6 +103,12 @@ export class FakeStore implements Store {
     this.reversalRetries.set(orderId, n);
     return n;
   }
+  readonly credits: bigint[] = [];
+  async creditPool(stroops: bigint): Promise<void> {
+    this.trace.push('store.creditPool');
+    this.credits.push(stroops);
+    this.availableResult += stroops; // reflect the landed top-up so a later gate read sees it
+  }
   availableStroops(): bigint {
     return this.availableResult;
   }

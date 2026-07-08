@@ -23,10 +23,22 @@ export interface Reservation {
 export class ReservationLedger {
   private readonly reservations = new Map<string, Reservation>();
 
-  constructor(private readonly balanceStroops: bigint) {}
+  constructor(private balanceStroops: bigint) {}
 
   balance(): bigint {
     return this.balanceStroops;
+  }
+
+  /**
+   * Raise the pool base by a LANDED rebalance top-up (mint). This is the ONLY thing that raises the base —
+   * a successful payout keeps its reservation permanently held, so the base moves DOWN only via a held
+   * reservation and UP only here. The caller (the settlement worker, under its per-order claim) owns
+   * exactly-once; this is a raw additive credit and MUST run under the InMemoryStore pool mutex so it
+   * serializes with reserve()'s check-then-commit.
+   */
+  credit(stroops: bigint): void {
+    if (stroops <= 0n) throw new RangeError('credit amount must be > 0');
+    this.balanceStroops += stroops;
   }
 
   /** Σ of EVERY held reservation — no time filter (fail-closed). */

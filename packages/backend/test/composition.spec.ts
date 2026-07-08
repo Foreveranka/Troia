@@ -4,7 +4,10 @@ import type { NetworkConfig } from '@troia/config';
 import { buildEngineConfig, createServer } from '../src/composition.js';
 import type { EngineExtras } from '../src/composition.js';
 import { InMemoryStore } from '../src/store/in-memory-store.js';
-import { FakeClock, FakePspPort, FakeStellarPort, makeConfig } from './fakes/harness.js';
+import { InMemoryPendingSettlementStore } from '../src/settlement/pending-settlement-store.js';
+import { TryDrivenRebalancePolicy } from '../src/settlement/rebalance-policy.js';
+import type { TopUpRequest } from '../src/settlement/rebalance-policy.js';
+import { FakeClock, FakePspPort, FakeStellarPort, FakeStore, makeConfig, makeCtx } from './fakes/harness.js';
 import { intentBody, quote, signV3, WEBHOOK_SECRET, webhookEvent } from './http/http-harness.js';
 
 const UNIT = 10_000_000n;
@@ -102,6 +105,11 @@ describe('createServer — app + poll worker over ONE shared order lock', () => 
     expect(await server.pollTick()).toEqual({ polled: 0, advanced: 0, escalated: 0, quarantined: 0 });
   });
 
+  it('a server built without a settlement bundle exposes no settleTick', () => {
+    const { server } = makeServer();
+    expect(server.settleTick).toBeUndefined();
+  });
+
   it('the SHARED order lock serializes concurrent poll ticks (the second blocks until the first releases)', async () => {
     const { server, stellar } = makeServer();
     // drive one order into the USDC durable wait
@@ -135,5 +143,70 @@ describe('createServer — app + poll worker over ONE shared order lock', () => 
     release();
     await Promise.all([t1, t2]);
     expect(observeCount).toBe(2); // both ran, strictly serialized
+  });
+});
+
+describe('createServer — settleTick wires the TRY-driven rebalance over the SAME shared lock', () => {
+  class FakeRebalance {
+    readonly minted: string[] = [];
+    async topUp(req: TopUpRequest): Promise<{ usdcStroops: bigint; txHash: string }> {
+      this.minted.push(req.ref);
+      return { usdcStroops: req.usdcStroops, txHash: `tx_${req.ref}` };
+    }
+  }
+  class FakeRate {
+    async liveRateStroops(): Promise<bigint> {
+      return 340_000_000n; // 34.0 TRY/USDC
+    }
+  }
+  class FakeBook {
+    readonly booked: { ref: string; usdcStroops: bigint; valueKurus: bigint }[] = [];
+    recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): void {
+      this.booked.push(input);
+    }
+  }
+
+  function makeServerWithSettlement() {
+    const clock = new FakeClock(1_000);
+    const store = new InMemoryStore({ balanceStroops: 100n * UNIT, baseSeq: 1000n });
+    const rebalance = new FakeRebalance();
+    const ledger = new FakeBook();
+    const server = createServer({
+      network,
+      extras: extras(),
+      ports: { stellar: new FakeStellarPort([]), psp: new FakePspPort([]), store, clock },
+      quote,
+      webhookSigningSecret: WEBHOOK_SECRET,
+      settlement: {
+        pending: new InMemoryPendingSettlementStore(),
+        policy: new TryDrivenRebalancePolicy(),
+        rebalance,
+        ledger,
+        rate: new FakeRate(),
+        demoValorSecs: 45,
+      },
+    });
+    return { server, store, rebalance, ledger, clock };
+  }
+
+  it('arms a UsdcConfirmed order, then refills the pool once after the demo valör (gate rises)', async () => {
+    const { server, store, rebalance, ledger, clock } = makeServerWithSettlement();
+    server.registry.put(makeCtx(new FakeStore([]), { orderId: 'ord-x' }), 'UsdcConfirmed');
+    const before = store.availableStroops();
+
+    const armReport = await server.settleTick!(); // arm at 1000 -> settlesAt 1045
+    expect(armReport).toMatchObject({ armed: 1, settled: 0 });
+    expect(rebalance.minted).toEqual([]); // arming mints nothing
+
+    clock.now = 1_045; // valör reached
+    const settleReport = await server.settleTick!();
+    expect(settleReport).toMatchObject({ settled: 1 });
+    expect(rebalance.minted).toEqual(['topup:ord-x']); // exactly one mint, deterministic ref
+    expect(ledger.booked).toHaveLength(1);
+    expect(store.availableStroops()).toBeGreaterThan(before); // creditPool lifted the /intent gate
+
+    // a re-tick is a no-op (exactly-once)
+    await server.settleTick!();
+    expect(rebalance.minted).toEqual(['topup:ord-x']);
   });
 });

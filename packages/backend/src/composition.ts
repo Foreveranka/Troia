@@ -18,6 +18,10 @@ import type { Clock, PspPort, StellarPort, Store } from './ports.js';
 import { KeyedMutex } from './store/mutex.js';
 import { pollInFlight } from './worker/poll-worker.js';
 import type { PollReport } from './worker/poll-worker.js';
+import { settleAndRebalance } from './settlement/settlement-worker.js';
+import type { SettleReport, TopUpExecution } from './settlement/settlement-worker.js';
+import type { PendingSettlementStore } from './settlement/pending-settlement-store.js';
+import type { RebalancePolicy, TopUpRequest } from './settlement/rebalance-policy.js';
 
 /** Deploy + merchant parameters that are NOT network constants (so they live outside NetworkConfig). */
 export interface EngineExtras {
@@ -56,6 +60,19 @@ export interface ServerPorts {
   readonly clock: Clock;
 }
 
+/** The TRY-driven rebalance collaborators, wired at the composition root. OPTIONAL — the offline suite and any
+ *  deployment without a rebalance bot still build a server (settleTick is then absent). The registry, the shared
+ *  per-order lock, the clock, and the pool-credit store come from createServer/ports; only the rebalance-specific
+ *  pieces (the mint provider, the decision policy, the ledger, the live-rate reader) live here. */
+export interface SettlementBundle {
+  readonly pending: PendingSettlementStore;
+  readonly policy: RebalancePolicy;
+  readonly rebalance: { topUp(req: TopUpRequest): Promise<TopUpExecution> };
+  readonly ledger: { recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): unknown };
+  readonly rate: { liveRateStroops(): Promise<bigint> };
+  readonly demoValorSecs: number;
+}
+
 export interface ServerDeps {
   readonly network: NetworkConfig;
   readonly extras: EngineExtras;
@@ -65,6 +82,8 @@ export interface ServerDeps {
   readonly quote: QuoteFn;
   /** iyzico account secret (env). NEVER from NetworkConfig. */
   readonly webhookSigningSecret: string;
+  /** the TRY-driven rebalance bot's collaborators; omit to build a server with no rebalance (no settleTick). */
+  readonly settlement?: SettlementBundle;
 }
 
 export interface Server {
@@ -72,14 +91,35 @@ export interface Server {
   readonly registry: OrderRegistry;
   /** run one poll/recovery pass over the in-flight USDC orders; the deployment schedules this on an interval. */
   readonly pollTick: () => Promise<PollReport>;
+  /** run one settlement-sim pass (arm money-good orders, refill the pool for due ones); present only when a
+   *  settlement bundle was injected. The deployment schedules this on its own (slower) interval. */
+  readonly settleTick?: () => Promise<SettleReport>;
 }
 
 export function createServer(d: ServerDeps): Server {
   const config = buildEngineConfig(d.network, d.extras);
   const engine: EngineDeps = { stellar: d.ports.stellar, psp: d.ports.psp, store: d.ports.store, clock: d.ports.clock, config };
-  const orderLocks = new KeyedMutex(); // ONE lock shared by the app AND the worker (load-bearing per SPIKE-2)
+  const orderLocks = new KeyedMutex(); // ONE lock shared by the app AND the worker(s) (load-bearing per SPIKE-2)
   const registry = new InMemoryOrderRegistry();
   const app = createApp({ engine, registry, quote: d.quote, webhookSigningSecret: d.webhookSigningSecret, orderLocks });
   const pollTick = (): Promise<PollReport> => pollInFlight(registry, orderLocks, engine);
-  return { app, registry, pollTick };
+
+  const settlement = d.settlement;
+  if (settlement === undefined) return { app, registry, pollTick };
+  // The settlement worker shares the SAME registry + per-order lock + clock + pool-credit store as the app/poll
+  // worker, so a rebalance top-up serializes with /intent, /webhook, and poll ticks for any given order.
+  const settleTick = (): Promise<SettleReport> =>
+    settleAndRebalance({
+      registry,
+      orderLocks,
+      clock: d.ports.clock,
+      pending: settlement.pending,
+      policy: settlement.policy,
+      rebalance: settlement.rebalance,
+      store: d.ports.store,
+      ledger: settlement.ledger,
+      rate: settlement.rate,
+      demoValorSecs: settlement.demoValorSecs,
+    });
+  return { app, registry, pollTick, settleTick };
 }

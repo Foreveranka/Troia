@@ -272,6 +272,23 @@ export default function App() {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  // A plain card checkout (no extension, no on-chain settlement) still records a normal store order, so My
+  // Orders stays consistent with the paid cart instead of silently dropping it. It carries no tx hash and no
+  // TRY charge — only the extension's Troy-card path settles in USDC — and the confirmation / detail views
+  // adapt their copy when those fields are absent.
+  const placeCardOrder = (total: number, id: string): void => {
+    const lines: OrderLine[] = Object.values(cartRef.current).map((l) => ({
+      name: l.product.name, size: l.size, qty: l.qty, price: priceOf(l.product).now,
+    }));
+    if (lines.length === 0) return;
+    const order: Order = { id, date: new Date().toISOString(), total, status: 'Paid', method: 'Credit card', lines };
+    setOrders((os) => [order, ...os]);
+    setCart({});
+    setCartOpen(false);
+    setView({ name: 'confirmed', orderId: order.id });
+    window.scrollTo(0, 0);
+  };
+
   return (
     <>
       <div className="ticker">Free shipping over $150 · New drop live · Limited runs only</div>
@@ -302,7 +319,7 @@ export default function App() {
         <ListView section={view.section} category={category} onCategory={setCategory} onSelect={goProduct} onAdd={add} />
       )}
       {view.name === 'product' && <ProductView id={view.id} onAdd={add} onBack={() => goSection('shop')} />}
-      {view.name === 'checkout' && <Checkout items={items} subtotal={subtotal} onBack={() => goSection('shop')} />}
+      {view.name === 'checkout' && <Checkout items={items} subtotal={subtotal} onBack={() => goSection('shop')} onCardPaid={placeCardOrder} />}
       {view.name === 'orders' && (
         <OrdersView orders={orders} onBack={() => goSection('shop')} onOpen={(id) => setView({ name: 'order', orderId: id })} />
       )}
@@ -430,10 +447,15 @@ function Confirmed({ order, onOrders, onShop }: { order: Order | undefined; onOr
       <div className="placed">
         <div className="placed__mark">✓</div>
         <h2>Payment complete</h2>
-        <p>
-          Paid with your Troy card{order ? ` — ${usd(order.total)}` : ''}. No crypto needed. Settled in USDC to the
-          merchant on Stellar.
-        </p>
+        {(order?.txHash || order?.paidPriceTry) ? (
+          <p>
+            Paid with your Troy card — {usd(order!.total)}. No crypto needed. Settled in USDC to the merchant on Stellar.
+          </p>
+        ) : (
+          <p>
+            Your order is confirmed{order ? ` — ${usd(order.total)}` : ''}. A confirmation is on its way to your inbox.
+          </p>
+        )}
         {order?.txHash && (
           <p style={{ margin: '0 0 18px' }}>
             <a href={explorerTx(order.txHash)} target="_blank" rel="noreferrer">View the settlement transaction on Stellar ↗</a>
@@ -515,13 +537,19 @@ function OrderDetail({ order, onBack }: { order: Order | undefined; onBack: () =
           <h3>Payment</h3>
           <div className="co-line"><span>Method</span><b>{order.method}</b></div>
           {order.paidPriceTry && <div className="co-line"><span>Charged</span><b>₺{order.paidPriceTry}</b></div>}
-          <div className="co-line"><span>Merchant received</span><b>{order.total.toLocaleString('en-US')} USDC</b></div>
-          {order.txHash ? (
-            <a className="btn btn--block" style={{ marginTop: 14 }} href={explorerTx(order.txHash)} target="_blank" rel="noreferrer">
-              View settlement tx on Stellar ↗
-            </a>
+          {(order.txHash || order.paidPriceTry) ? (
+            <>
+              <div className="co-line"><span>Merchant received</span><b>{order.total.toLocaleString('en-US')} USDC</b></div>
+              {order.txHash ? (
+                <a className="btn btn--block" style={{ marginTop: 14 }} href={explorerTx(order.txHash)} target="_blank" rel="noreferrer">
+                  View settlement tx on Stellar ↗
+                </a>
+              ) : (
+                <p className="hint" style={{ marginTop: 14 }}>Settlement confirming on-chain…</p>
+              )}
+            </>
           ) : (
-            <p className="hint" style={{ marginTop: 14 }}>Settlement confirming on-chain…</p>
+            <p className="hint" style={{ marginTop: 14 }}>Paid by card — no on-chain settlement for this order.</p>
           )}
         </div>
       </div>
@@ -622,12 +650,11 @@ const SHIP: Record<string, { label: string; note: string; price: (sub: number) =
 };
 const emptyAddr = { email: '', first: '', last: '', address: '', city: '', postal: '', country: '' };
 
-function Checkout({ items, subtotal, onBack }: { items: { key: string; product: Product; size: Size; qty: number }[]; subtotal: number; onBack: () => void }) {
+function Checkout({ items, subtotal, onBack, onCardPaid }: { items: { key: string; product: Product; size: Size; qty: number }[]; subtotal: number; onBack: () => void; onCardPaid: (total: number, id: string) => void }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [addr, setAddr] = useState({ ...emptyAddr });
   const [shipKey, setShipKey] = useState('standard');
   const [pay, setPay] = useState<'card' | 'crypto' | null>(null);
-  const [placed, setPlaced] = useState(false);
   // A stable order reference for this checkout, used as the payment memo whether the shopper pays via the
   // extension (Troy card) or the crypto gateway — so both settle the SAME order.
   const orderMemo = useState(() => orderRef())[0];
@@ -637,19 +664,6 @@ function Checkout({ items, subtotal, onBack }: { items: { key: string; product: 
 
   const shipping = SHIP[shipKey]!.price(subtotal);
   const total = subtotal + shipping;
-
-  if (placed) {
-    return (
-      <main className="checkout container">
-        <div className="placed">
-          <div className="placed__mark">✓</div>
-          <h2>Order placed</h2>
-          <p>Thanks, {addr.first || 'friend'}. A confirmation is on its way to {addr.email || 'your inbox'}.</p>
-          <button className="btn" onClick={onBack}>Continue shopping</button>
-        </div>
-      </main>
-    );
-  }
 
   return (
     <main className="checkout container">
@@ -741,7 +755,7 @@ function Checkout({ items, subtotal, onBack }: { items: { key: string; product: 
                     <div><label>Expiry</label><input placeholder="MM / YY" /></div>
                     <div><label>CVC</label><input placeholder="123" /></div>
                   </div>
-                  <button className="btn btn--block" onClick={() => setPlaced(true)}>Pay {usd(total)}</button>
+                  <button className="btn btn--block" onClick={() => onCardPaid(total, orderMemo)}>Pay {usd(total)}</button>
                 </div>
               )}
 

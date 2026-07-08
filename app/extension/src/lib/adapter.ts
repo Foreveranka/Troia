@@ -5,6 +5,7 @@
 
 import { parseSep7, type Sep7Pay } from './sep7';
 import { isValidStellarPublicKey } from './strkey';
+import { toStroops } from './amount';
 import { USDC_ASSET_CODE, USDC_ISSUER_ALLOWLIST, DEMO_MERCHANT } from './config';
 
 export interface DetectionCheck {
@@ -33,7 +34,6 @@ export function evaluate(uri: string): Detection | null {
   const sep7 = parseSep7(uri);
   if (sep7 === null) return null;
 
-  const amountNum = Number(sep7.amount);
   const checks: readonly DetectionCheck[] = [
     { id: 'op', label: 'SEP-7 pay operation', pass: sep7.operation === 'pay', required: true },
     { id: 'asset', label: 'Asset is USDC', pass: sep7.assetCode === USDC_ASSET_CODE, required: true },
@@ -49,7 +49,7 @@ export function evaluate(uri: string): Detection | null {
       pass: isValidStellarPublicKey(sep7.destination),
       required: true,
     },
-    { id: 'amount', label: 'Amount is positive', pass: Number.isFinite(amountNum) && amountNum > 0, required: true },
+    { id: 'amount', label: 'Amount is a valid USDC amount', pass: toStroops(sep7.amount) !== null, required: true },
     { id: 'memo', label: 'Payment reference present', pass: sep7.memo !== null && sep7.memo.length > 0, required: true },
     { id: 'merchant', label: 'Known merchant', pass: sep7.destination === DEMO_MERCHANT, required: false },
   ];

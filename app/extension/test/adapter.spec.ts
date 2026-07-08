@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { evaluate, findSep7Uri } from '../src/lib/adapter';
+import { toStroops } from '../src/lib/amount';
 
 const MERCHANT = 'GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX';
 const ISSUER = 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W';
@@ -38,10 +39,23 @@ describe('evaluate', () => {
     expect(d.checks.find((c) => c.id === 'asset')!.pass).toBe(false);
   });
 
-  it('rejects a zero, negative, or non-numeric amount', () => {
-    expect(evaluate(sep7({ amount: '0' }))!.payable).toBe(false);
-    expect(evaluate(sep7({ amount: '-5' }))!.payable).toBe(false);
-    expect(evaluate(sep7({ amount: 'abc' }))!.payable).toBe(false);
+  it('rejects a zero, negative, non-numeric, or over-precise amount', () => {
+    // '1e3', '1.', and '62.123456789' used to pass the lenient Number() gate but fail toStroops on click.
+    for (const bad of ['0', '-5', 'abc', '1e3', '1.', '62.123456789']) {
+      expect(evaluate(sep7({ amount: bad }))!.payable).toBe(false);
+    }
+  });
+
+  it('accepts a clean positive amount up to USDC 7-decimal precision', () => {
+    for (const good of ['62.00', '62', '62.5', '62.1234567', '0.0000001']) {
+      expect(evaluate(sep7({ amount: good }))!.payable).toBe(true);
+    }
+  });
+
+  it('the amount gate agrees exactly with toStroops (no payable banner that dead-ends on click)', () => {
+    for (const a of ['62.00', '62.1234567', '0.0000001', '0', '-5', 'abc', '1e3', '1.', '62.123456789', '7']) {
+      expect(evaluate(sep7({ amount: a }))!.payable).toBe(toStroops(a) !== null);
+    }
   });
 
   it('rejects a missing memo', () => {

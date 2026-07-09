@@ -21,7 +21,12 @@ import type { PollReport } from './worker/poll-worker.js';
 import { settleAndRebalance } from './settlement/settlement-worker.js';
 import { checkDrift } from './settlement/drift-worker.js';
 import type { DriftTickReport } from './settlement/drift-worker.js';
+import { tailOutflows } from './settlement/outflow-worker.js';
+import { advance } from './engine/driver.js';
+import { reconcileOrders } from './settlement/reconcile-worker.js';
+import type { ReconcileDeps, ReconcileReport } from './settlement/reconcile-worker.js';
 import type { ConfirmedOrder } from './settlement/settlement-worker.js';
+import type { OutflowTailDeps, OutflowTickReport } from './settlement/outflow-worker.js';
 import type { SettleReport, TopUpExecution } from './settlement/settlement-worker.js';
 import type { PendingSettlementStore } from './settlement/pending-settlement-store.js';
 import type { RebalancePolicy, TopUpRequest } from './settlement/rebalance-policy.js';
@@ -118,6 +123,10 @@ export interface ServerDeps {
   readonly confirmed: ConfirmedOrders;
   /** the TRY-driven rebalance bot's collaborators; omit to build a server with no rebalance (no settleTick). */
   readonly settlement?: SettlementBundle;
+  /** the rogue-payout tail's collaborators; omit to build a server with no tail (no outflowTick). */
+  readonly outflow?: OutflowTailDeps;
+  /** the live reconciler's collaborators, minus `advance` — createServer supplies that. */
+  readonly reconcile?: Omit<ReconcileDeps, 'advance'>;
 }
 
 export interface Server {
@@ -131,6 +140,11 @@ export interface Server {
   /** The solvency tripwire: the live pool balance weighed against the ledger's expectation. Present with the
    *  settlement bundle (it needs the ledger). The deployment schedules it on its own, slower interval. */
   readonly reconTick?: () => Promise<DriftTickReport>;
+  /** The payout tail: which transaction took USDC out of the pool, and was it one of ours. Present only when an
+   *  outflow bundle was injected (it needs an RPC event tail and durable cursor/suspect stores). */
+  readonly outflowTick?: () => Promise<OutflowTickReport>;
+  /** The live audit: does the chain agree with our books, order by order? Drives UsdcConfirmed -> Reconciled. */
+  readonly reconcileTick?: () => Promise<ReconcileReport>;
 }
 
 export function createServer(d: ServerDeps): Server {
@@ -153,8 +167,42 @@ export function createServer(d: ServerDeps): Server {
   });
   const pollTick = (): Promise<PollReport> => pollInFlight(registry, orderLocks, engine);
 
+  // The payout tail takes no order lock: it reads the chain and two append-only stores, and accuses nobody the
+  // write-ahead journal has vouched for. It is independent of the settlement bundle.
+  const outflow = d.outflow;
+  const outflowTick =
+    outflow === undefined ? undefined : (): Promise<OutflowTickReport> => tailOutflows(outflow);
+
+  // The audit advances an order to Reconciled only when the chain agrees, and only for an order THIS process
+  // still knows: a pre-crash order is audited and reported, but its state machine died with the registry, so
+  // there is nothing left to advance. The audit itself runs either way — that is the point of it being durable.
+  const reconcile = d.reconcile;
+  const reconcileTick =
+    reconcile === undefined
+      ? undefined
+      : (): Promise<ReconcileReport> =>
+          reconcileOrders({
+            ...reconcile,
+            advance: async (orderId: string): Promise<void> => {
+              await orderLocks.run(orderId, async () => {
+                const rec = registry.getByOrderId(orderId);
+                if (rec === undefined || rec.state !== 'UsdcConfirmed') return;
+                const r = await advance(rec.ctx, rec.state, { type: 'reconciled' }, engine);
+                registry.put(r.ctx, r.state);
+              });
+            },
+          });
+
   const settlement = d.settlement;
-  if (settlement === undefined) return { app, registry, pollTick };
+  if (settlement === undefined) {
+    return {
+      app,
+      registry,
+      pollTick,
+      ...(outflowTick && { outflowTick }),
+      ...(reconcileTick && { reconcileTick }),
+    };
+  }
   // The solvency tripwire. It takes no lock: it only READS the chain and the ledger, and a stale-by-one-payout
   // observation cannot manufacture a false alarm that matters — the drift it would report is one order wide and
   // resolves on the next tick, while a real leak keeps growing.
@@ -176,5 +224,13 @@ export function createServer(d: ServerDeps): Server {
       rate: settlement.rate,
       demoValorSecs: settlement.demoValorSecs,
     });
-  return { app, registry, pollTick, settleTick, reconTick };
+  return {
+    app,
+    registry,
+    pollTick,
+    settleTick,
+    reconTick,
+    ...(outflowTick && { outflowTick }),
+    ...(reconcileTick && { reconcileTick }),
+  };
 }

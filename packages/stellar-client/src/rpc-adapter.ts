@@ -25,6 +25,15 @@ import { SimulationError, SubmitError } from './errors.js';
 import { withTimeout } from './net-timeout.js';
 import { firstContractErrorCodeFromContract, scValI128ToBigInt } from './soroban-reads.js';
 import type { DiagnosticScVals } from './soroban-reads.js';
+import { cursorLedger } from './outflow-types.js';
+import type {
+  OutflowEvent,
+  PoolActivityPage,
+  PoolFetch,
+  PoolUpgrade,
+  SettlementObservation,
+  TxLiveness,
+} from './outflow-types.js';
 
 /** Per-call RPC deadline: high enough to never trip on normal latency (<2s), low enough that a genuinely hung
  *  socket can't wedge the poll loop indefinitely (see net-timeout.ts). Overridable via opts.timeoutMs. */
@@ -211,6 +220,242 @@ export class SorobanRpcAdapter implements RpcPort {
       classifiedCode: firstContractErrorCodeFromContract(events, contractId),
     };
   }
+
+  /**
+   * Everything the chain did to the pool since `req`, in one scan of two contracts.
+   *
+   * The filter is contractId-ONLY, and the classification happens here. That is a defensive choice, not laziness:
+   * a topics filter whose arity does not match the emitted event returns an EMPTY page with NO error — measured.
+   * A classic-asset SAC emits four topics today (`transfer`, from, to, the asset name) and a protocol change
+   * could drop the fourth. A silent empty page while the pool drains is the worst outcome an alarm can have, so
+   * we accept receiving the inbound mints too and discard them here.
+   *
+   * A `payment_made` observation is emitted ONLY when it is complete. Its `source_account` is not in the event, so
+   * it is read from the enclosing transaction's envelope; if that read fails, the whole page is reported as
+   * unreachable rather than yielding a half-decoded observation. A half-decoded one would compare unequal against
+   * our own signed transaction and manufacture a divergence alarm on a perfectly good payout.
+   */
+  async fetchPoolActivity(
+    sacContractId: string,
+    poolContractId: string,
+    req: PoolFetch,
+    limit = 200,
+  ): Promise<PoolActivityPage> {
+    const filters = [{ type: 'contract' as const, contractIds: [sacContractId, poolContractId] }];
+    let res: rpc.Api.GetEventsResponse;
+    try {
+      res = await withTimeout(
+        this.server.getEvents({ ...req, filters, limit }),
+        this.timeoutMs,
+        'rpc.getEvents',
+      );
+    } catch (e) {
+      return this.classifyEventsFailure(e, req, sacContractId);
+    }
+
+    const outflows: OutflowEvent[] = [];
+    const settlements: SettlementObservation[] = [];
+    const upgrades: PoolUpgrade[] = [];
+    const sourceCache = new Map<string, string>();
+
+    for (const ev of res.events) {
+      // A transfer or an announcement inside a failed contract call moved nothing and settled nothing: the whole
+      // invocation was rolled back.
+      if (ev.inSuccessfulContractCall !== true) continue;
+      const name = ev.topic[0];
+      if (name === undefined || name.switch().name !== 'scvSymbol') continue;
+      const symbol = name.sym().toString();
+      const closeUnix = Math.floor(new Date(ev.ledgerClosedAt).getTime() / 1000);
+
+      if (String(ev.contractId) === sacContractId && symbol === 'transfer') {
+        const outflow = toOutflowEvent(ev, poolContractId, closeUnix);
+        if (outflow !== null) outflows.push(outflow);
+        continue;
+      }
+      if (String(ev.contractId) !== poolContractId) continue;
+
+      if (symbol === 'upgraded') {
+        upgrades.push({ txHash: ev.txHash, ledger: ev.ledger, ledgerCloseUnix: closeUnix });
+        continue;
+      }
+      if (symbol !== 'payment_made') continue;
+
+      let source = sourceCache.get(ev.txHash);
+      if (source === undefined) {
+        const read = await this.readTxSourceAccount(ev.txHash);
+        if (read === null) {
+          // We cannot complete this observation. Never emit a partial one; re-read the whole page next tick.
+          return { kind: 'RPC_UNAVAILABLE', reason: `cannot read the envelope of ${ev.txHash}` };
+        }
+        source = read;
+        sourceCache.set(ev.txHash, read);
+      }
+      const observed = toSettlementObservation(ev, source, closeUnix);
+      if (observed !== null) settlements.push(observed);
+    }
+
+    return {
+      kind: 'PAGE',
+      outflows,
+      settlements,
+      upgrades,
+      cursor: res.cursor,
+      latestLedger: res.latestLedger,
+      latestLedgerCloseUnix: Number(res.latestLedgerCloseTime),
+      oldestLedger: res.oldestLedger,
+    };
+  }
+
+  /** The source account of a landed transaction, from its envelope. Null when the node cannot answer. */
+  private async readTxSourceAccount(hashHex: string): Promise<string | null> {
+    try {
+      const res = await withTimeout(
+        this.server.getTransaction(hashHex),
+        this.timeoutMs,
+        'rpc.getTransaction.source',
+      );
+      if (res.status !== rpc.Api.GetTransactionStatus.SUCCESS) return null;
+      const env = res.envelopeXdr;
+      if (env === undefined) return null;
+      // A fee-bump wraps the real transaction; the reconciler compares against the INNER source, and a muxed
+      // source would canonicalize to nothing. Read what our own decoder reads, or nothing at all.
+      const inner =
+        env.switch().name === 'envelopeTypeTxFeeBump'
+          ? env.feeBump().tx().innerTx().v1().tx()
+          : env.v1().tx();
+      const account = inner.sourceAccount();
+      if (account.switch().name !== 'keyTypeEd25519') return null;
+      return StrKey.encodeEd25519PublicKey(account.ed25519());
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Is this transaction still on chain, successful, and at which ledger? A durable local observation outlives the
+   * chain it describes: after a testnet reset the settlement it records simply is not there any more, and
+   * reconciling MATCHED off that stale cache would assert "the chain agrees" about something the chain has never
+   * heard of. ABSENT means the chain says no; UNKNOWN means we could not ask, which is not the same thing.
+   */
+  async checkTxLiveness(hashHex: string): Promise<TxLiveness> {
+    try {
+      const res = await withTimeout(
+        this.server.getTransaction(hashHex),
+        this.timeoutMs,
+        'rpc.getTransaction.liveness',
+      );
+      if (res.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+        return { kind: 'SUCCESS', ledger: res.ledger };
+      }
+      if (res.status === rpc.Api.GetTransactionStatus.NOT_FOUND) return { kind: 'ABSENT' };
+      return { kind: 'UNKNOWN', reason: String(res.status) };
+    } catch (e) {
+      return { kind: 'UNKNOWN', reason: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /**
+   * `-32600` comes back BOTH when the requested position is below the retention floor and when it is ahead of the
+   * node's head — measured; the code alone cannot tell them apart, and the message is free text nobody should be
+   * parsing. So ask the node for its range structurally, and compare.
+   *
+   * Below the floor is a PERMANENT blind spot: those events are gone from this endpoint forever. Ahead of the
+   * head is a node that is behind US (a rollback, or a load balancer serving a lagging replica) — the events
+   * still exist, we simply cannot see them from here, so it is an availability stall and never an accusation.
+   */
+  private async classifyEventsFailure(
+    e: unknown,
+    req: PoolFetch,
+    sacContractId: string,
+  ): Promise<PoolActivityPage> {
+    const reason = e instanceof Error ? e.message : String(e);
+    if ((e as { code?: unknown }).code !== -32600) return { kind: 'RPC_UNAVAILABLE', reason };
+
+    let oldestLedger: number;
+    let latestLedger: number;
+    try {
+      const head = await withTimeout(
+        this.server.getLatestLedger(),
+        this.timeoutMs,
+        'rpc.getEvents.rangeProbe',
+      );
+      const probe = await withTimeout(
+        this.server.getEvents({
+          startLedger: head.sequence - 1,
+          filters: [{ type: 'contract' as const, contractIds: [sacContractId] }],
+          limit: 1,
+        }),
+        this.timeoutMs,
+        'rpc.getEvents.rangeProbe',
+      );
+      oldestLedger = probe.oldestLedger;
+      latestLedger = probe.latestLedger;
+    } catch {
+      // We could not even establish the node's range, so we cannot claim a blind spot. Stall, never accuse.
+      return { kind: 'RPC_UNAVAILABLE', reason };
+    }
+
+    const at = 'cursor' in req ? cursorLedger(req.cursor) : req.startLedger;
+    if (at < oldestLedger) {
+      return { kind: 'CURSOR_BELOW_RETENTION', cursorLedger: at, oldestLedger, latestLedger };
+    }
+    return { kind: 'RPC_UNAVAILABLE', reason };
+  }
+}
+
+/** A SAC `transfer` whose `from` is the pool, or null. */
+function toOutflowEvent(
+  ev: rpc.Api.EventResponse,
+  poolAddress: string,
+  ledgerCloseUnix: number,
+): OutflowEvent | null {
+  // [transfer, from, to] plus, on a classic-asset SAC, the asset name. Tolerate either arity.
+  const from = ev.topic[1];
+  const to = ev.topic[2];
+  if (from === undefined || to === undefined) return null;
+  if (Address.fromScVal(from).toString() !== poolAddress) return null; // an inflow, or someone else's transfer
+  return {
+    txHash: ev.txHash,
+    ledger: ev.ledger,
+    ledgerCloseUnix,
+    to: Address.fromScVal(to).toString(),
+    amountStroops: scValI128ToBigInt(ev.value),
+  };
+}
+
+/** The pool's `payment_made`: topics [symbol, tx_id], data a name-keyed map. Complete, or null. */
+function toSettlementObservation(
+  ev: rpc.Api.EventResponse,
+  sourceAccount: string,
+  ledgerCloseUnix: number,
+): SettlementObservation | null {
+  const txIdScVal = ev.topic[1];
+  if (txIdScVal === undefined || txIdScVal.switch().name !== 'scvBytes') return null;
+  if (ev.value.switch().name !== 'scvMap') return null;
+  const fields = new Map<string, xdr.ScVal>();
+  for (const entry of ev.value.map() ?? []) {
+    if (entry.key().switch().name !== 'scvSymbol') return null;
+    fields.set(entry.key().sym().toString(), entry.val());
+  }
+  const amount = fields.get('amount');
+  const appliedRate = fields.get('applied_rate');
+  const merchant = fields.get('merchant');
+  const memo = fields.get('memo');
+  if (amount === undefined || appliedRate === undefined) return null;
+  if (merchant === undefined || memo === undefined) return null;
+  if (memo.switch().name !== 'scvBytes') return null;
+  return {
+    txIdHex: txIdScVal.bytes().toString('hex'),
+    txHash: ev.txHash,
+    ledger: ev.ledger,
+    ledgerCloseUnix,
+    contractId: String(ev.contractId),
+    sourceAccount,
+    merchant: Address.fromScVal(merchant).toString(),
+    amountStroops: scValI128ToBigInt(amount),
+    appliedRateStroops: scValI128ToBigInt(appliedRate),
+    memoHex: memo.bytes().toString('hex'),
+  };
 }
 
 /** Reduce a reverted tx's diagnostic events (top-level list AND, as a fallback, the ones nested in the soroban

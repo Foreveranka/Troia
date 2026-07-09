@@ -105,3 +105,38 @@ export type {
   DriftMonitorState,
   DriftObservation,
 } from './settlement/drift-worker.js';
+
+export {
+  judgeOutflows,
+  tailOutflows,
+  toidAtLedger,
+  observeTailHealth,
+  INITIAL_TAIL_HEALTH,
+  DEFAULT_TAIL_STALL_AFTER,
+} from './settlement/outflow-worker.js';
+export type {
+  Suspect,
+  OutflowVerdict,
+  OutflowTickReport,
+  OutflowTailDeps,
+  CursorStore,
+  SuspectStore,
+  TailHealthState,
+  TailHealthObservation,
+} from './settlement/outflow-worker.js';
+
+export { reconcileOrders } from './settlement/reconcile-worker.js';
+export type {
+  ReconcileDeps,
+  ReconcileReport,
+  ReconciledStore,
+  OrderAudit,
+  Verdict,
+  GroundTruth,
+  ResolveGroundTruth,
+  BusinessIntent,
+  LedgerEvidence,
+  ChainEvidence,
+  ChainSnapshot,
+} from './settlement/reconcile-worker.js';
+export type { ChainObservationStore } from './settlement/outflow-worker.js';

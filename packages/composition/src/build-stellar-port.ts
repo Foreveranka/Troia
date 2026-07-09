@@ -7,6 +7,7 @@
 import type { StellarPort } from '@troia/backend';
 import type { NetworkConfig } from '@troia/config';
 import { createStellarClient, InMemoryJournal, SystemClock } from '@troia/stellar-client';
+import type { WriteAheadJournal } from '@troia/stellar-client';
 import { HorizonAdapter, LocalKeySigner, SorobanRpcAdapter } from '@troia/stellar-client/adapters';
 import { wrapStellarPort } from './stellar-port.js';
 
@@ -22,11 +23,16 @@ export function buildStellarPort(
   network: NetworkConfig,
   operatorSecret: string,
   opts?: BuildStellarPortOptions,
+  /** The write-ahead journal. Inject the durable one so a pay() hash reaches stable storage BEFORE the
+   *  transaction is broadcast; without it the record dies with the process and a restart can no longer tell a
+   *  legitimate payout from a rogue one. Defaults to in-memory for the offline suite. */
+  injectedJournal?: WriteAheadJournal,
 ): StellarPort {
   const rpc = new SorobanRpcAdapter(network.rpcUrl, network.passphrase, opts);
   const horizon = new HorizonAdapter(network.horizonUrl, opts);
   const signer = new LocalKeySigner(operatorSecret);
-  const journal = new InMemoryJournal(); // SHARED: the client writes it, readRevertErrorCode reads it
+  // SHARED: the client writes it, readRevertErrorCode reads it, the payout tail asks it who was authorized.
+  const journal = injectedJournal ?? new InMemoryJournal();
   const client = createStellarClient({ rpc, horizon, signer, journal, clock: new SystemClock() });
   return wrapStellarPort(client, rpc, journal, {
     sacContractId: network.usdc.sacContractId,

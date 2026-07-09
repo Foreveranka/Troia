@@ -8,7 +8,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from '@troia/backend';
-import { INITIAL_DRIFT_STATE, isDurableLogFailure, observeDrift } from '@troia/backend';
+import {
+  INITIAL_DRIFT_STATE,
+  INITIAL_TAIL_HEALTH,
+  isDurableLogFailure,
+  observeDrift,
+  observeTailHealth,
+} from '@troia/backend';
 import { LiveCexOracle, YahooUsdTryHistory } from '@troia/oracle';
 import { intEnv, parseDeployment, requireEnv } from './env.js';
 import { buildTestnetServerDeps } from './testnet-deps.js';
@@ -56,6 +62,12 @@ async function main(): Promise<void> {
   // Solvency-drift cadence. It must exceed the settlement tick: a payout lands on chain before the settlement
   // worker books it, and reading inside that window reports a drift that is only bookkeeping in flight.
   const reconTickMs = intEnv(env, 'RECON_INTERVAL_MS', 30_000, settlementTickMs + 1000);
+  // How often the payout tail asks the chain what left the pool. Slower than the money path on purpose: it is a
+  // read-only observer, and its RPC pressure must never compete with the requests that move money.
+  const outflowTickMs = intEnv(env, 'OUTFLOW_INTERVAL_MS', 20_000, 5_000);
+  // The live audit. Slower than the tail that feeds it: an order cannot be reconciled before its settlement has
+  // been observed, so running faster only re-asks a question the chain has not answered yet.
+  const reconcileTickMs = intEnv(env, 'RECONCILE_INTERVAL_MS', 30_000, outflowTickMs + 1000);
   // the COMPRESSED settlement valör for the demo (real iyzico valör is ~21 days). Default 30s.
   const demoValorSecs = intEnv(env, 'DEMO_VALOR_SECS', 30, 1);
 
@@ -154,6 +166,127 @@ async function main(): Promise<void> {
         });
     }, reconTickMs);
     console.log(`troia solvency tripwire armed — tick ${reconTickMs}ms`);
+  }
+
+  // The payout tail. It names the transaction, the destination and the amount — attribution the balance-drift
+  // tripwire can never give — and pays for it with a window: events older than the RPC's retention are gone for
+  // everyone. So it says three different things, and never confuses them: what it saw, what it could not see,
+  // and what it could not reach.
+  const outflowTick = server.outflowTick;
+  if (outflowTick !== undefined) {
+    let health = INITIAL_TAIL_HEALTH;
+    let tailing = false;
+    setInterval(() => {
+      if (tailing) return;
+      tailing = true;
+      void outflowTick()
+        .then((r) => {
+          if (r.kind === 'stalled') {
+            const o = observeTailHealth(health, true);
+            health = o.state;
+            if (o.alarm) {
+              console.error(
+                `TAIL STALLED: the payout tail has not reached its RPC for ${o.state.consecutiveStalls} ` +
+                  `consecutive checks (${r.reason}). It is not scanning; the solvency drift tripwire is the ` +
+                  `only cover until it recovers.`,
+              );
+            } else {
+              console.warn(`[payout-tail] stalled — ${r.reason}`);
+            }
+            return;
+          }
+          const o = observeTailHealth(health, false);
+          health = o.state;
+          if (o.recovered) console.log('[payout-tail] reached its RPC again, scanning resumed');
+
+          if (r.kind === 'blindSpot') {
+            // Latched, and never auto-cleared. Those ledgers are unreadable now — by us and by anyone else.
+            console.error(
+              `TAIL BLIND SPOT: the checkpoint at ledger ${r.fromLedger} fell below the RPC's retention floor ` +
+                `(${r.toLedger}). Outflows in [${r.fromLedger}, ${r.toLedger}) can never be fetched again and ` +
+                `were never attributed. Re-anchored at head (${r.latestLedger}). The solvency drift tripwire is ` +
+                `the only cover for that interval.`,
+            );
+            return;
+          }
+
+          if (r.coldStartFromLedger !== null) {
+            console.log(
+              `[payout-tail] cold start at ledger ${r.coldStartFromLedger} — nothing before it was examined; ` +
+                `the solvency drift tripwire covers earlier history`,
+            );
+          }
+          for (const s of r.rogue) {
+            console.error(
+              `ROGUE PAYOUT: ${s.amountStroops} stroops of USDC left the pool to ${s.to} in transaction ` +
+                `${s.txHash} (ledger ${s.ledger}), which this operator never authorized — its hash was never ` +
+                `written to the pre-broadcast journal. Nothing was reversed; a human must look.`,
+            );
+          }
+          if (r.newSuspects > 0 || r.pending > 0) {
+            console.warn(
+              `[payout-tail] ${r.newSuspects} new unexplained outflow(s), ${r.pending} still within grace`,
+            );
+          }
+        })
+        .catch((err: unknown) => tickFailed('outflowTick', err))
+        .finally(() => {
+          tailing = false;
+        });
+    }, outflowTickMs);
+    console.log(`troia payout tail armed — tick ${outflowTickMs}ms`);
+  }
+
+  // The live audit. It reads three things — our local order row, the transaction we signed, and the settlement the
+  // pool announced on chain under the order's own identifier — and asks whether they tell the same story. Only
+  // when they do is an order advanced to Reconciled, which is terminal and means "the chain agrees".
+  const reconcileTick = server.reconcileTick;
+  if (reconcileTick !== undefined) {
+    let upgradeAlarmed = false;
+    let auditing = false;
+    setInterval(() => {
+      if (auditing) return;
+      auditing = true;
+      void reconcileTick()
+        .then((r) => {
+          if (r.upgrades.length > 0 && !upgradeAlarmed) {
+            upgradeAlarmed = true; // latched: this never becomes true again on its own
+            console.error(
+              `POOL CODE REPLACED: the TroyPool contract was upgraded at ledger ${r.upgrades[0]?.ledger ?? 0} ` +
+                `(tx ${r.upgrades[0]?.txHash ?? '?'}). Everything it announces about its own settlements from now ` +
+                `on is a claim, not a proof. No order will be reconciled against it. A human must look.`,
+            );
+          }
+          for (const orderId of r.reconciled) {
+            console.log(`[reconcile] ${orderId}: the chain agrees — reconciled`);
+          }
+          for (const p of r.problems) {
+            if (p.kind === 'diverged') {
+              console.error(
+                `RECONCILIATION FAILED for ${p.orderId}: ${p.verdict} — ${p.detail}` +
+                  (p.fieldDiff.length > 0
+                    ? ` (${p.fieldDiff.map((d) => `${d.field}: local ${d.local_value} != chain ${d.chain_value}`).join('; ')})`
+                    : ''),
+              );
+            } else if (p.kind === 'unobservable') {
+              console.error(
+                `SETTLEMENT UNOBSERVABLE for ${p.orderId}: its pay() was witnessed ${p.ageSecs}s ago and the pool ` +
+                  `has still announced no settlement for it on chain. It may have settled inside a retention blind ` +
+                  `spot, or not at all. The solvency drift tripwire is the only remaining cover.`,
+              );
+            } else if (p.kind === 'unreachable') {
+              console.warn(`[reconcile] ${p.orderId}: could not reach the chain (${p.reason})`);
+            }
+          }
+          if (r.waiting > 0)
+            console.log(`[reconcile] ${r.waiting} payout(s) awaiting their settlement on chain`);
+        })
+        .catch((err: unknown) => tickFailed('reconcileTick', err))
+        .finally(() => {
+          auditing = false;
+        });
+    }, reconcileTickMs);
+    console.log(`troia live reconciler armed — tick ${reconcileTickMs}ms`);
   }
 }
 

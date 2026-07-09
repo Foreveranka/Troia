@@ -37,3 +37,8 @@ export {
   DurableLogCorruption,
 } from './file-append-log.js';
 export type { ReplayResult } from './file-append-log.js';
+
+export { buildOutflowTail } from './outflow-port.js';
+export type { OutflowTail } from './outflow-port.js';
+export { FileCursorStore, FileSuspectStore, OutflowCodecError } from './outflow-stores.js';
+export { FileWriteAheadJournal } from './file-journal.js';

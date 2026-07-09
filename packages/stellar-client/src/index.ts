@@ -62,3 +62,14 @@ export type { SacMintPort, SacMintClientPorts, SacMintClientConfig } from './min
 export { InMemoryJournal, SystemClock } from './in-memory-journal.js';
 
 export { BuildError, SimulationError, SubmitError, DeadnessIndeterminate } from './errors.js';
+
+export { cursorLedger } from './outflow-types.js';
+export type {
+  OutflowEvent,
+  PoolFetch,
+  PoolActivityPage,
+  PoolTailPort,
+  PoolUpgrade,
+  SettlementObservation,
+  TxLiveness,
+} from './outflow-types.js';

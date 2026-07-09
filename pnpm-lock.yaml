@@ -63,6 +63,9 @@ importers:
       '@troia/config':
         specifier: workspace:*
         version: link:../config
+      '@troia/core':
+        specifier: workspace:*
+        version: link:../core
       '@troia/ledger':
         specifier: workspace:*
         version: link:../ledger
@@ -78,6 +81,9 @@ importers:
       '@troia/rebalance':
         specifier: workspace:*
         version: link:../rebalance
+      '@troia/reconciler':
+        specifier: workspace:*
+        version: link:../reconciler
       '@troia/stellar-client':
         specifier: workspace:*
         version: link:../stellar-client

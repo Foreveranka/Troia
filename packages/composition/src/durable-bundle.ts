@@ -20,11 +20,25 @@ import { Ledger, decodeJournalEntry } from '@troia/ledger';
 import { dedupeEvidence, decodeEvidenceRow } from '@troia/backend';
 import type { DurableLog, EvidenceRow } from '@troia/backend';
 import { FileAppendLog, assertWritableDir } from './file-append-log.js';
+import { FileWriteAheadJournal } from './file-journal.js';
+import { FileCursorStore, FileSuspectStore } from './outflow-stores.js';
+import { FileChainObservationStore, FileReconciledStore } from './chain-observations.js';
 
 const JOURNAL_FILE = 'ledger-journal.log';
 const EVIDENCE_FILE = 'evidence.log';
 
 export interface DurableBundle {
+  /** Every pay() hash this operator ever put on the wire, written BEFORE the transaction is broadcast. It is
+   *  what makes "this outflow was never authorized" a provable statement rather than a timing guess. */
+  readonly authorizedJournal: FileWriteAheadJournal;
+  /** The payout tail's checkpoint, and the open cases it is still watching. Both durable, because a suspect
+   *  that lives only in memory is a theft a restart forgets — and the cursor has already moved past it. */
+  readonly cursorStore: FileCursorStore;
+  readonly suspectStore: FileSuspectStore;
+  /** What the chain said about the pool, kept because Soroban RPC forgets its events after about a week. */
+  readonly observationStore: FileChainObservationStore;
+  /** Which orders the audit has closed. Durable, so a restart neither re-audits nor re-advances one. */
+  readonly reconciledStore: FileReconciledStore;
   /** Hydrated from the journal and wired to write through it on every future post(). */
   readonly ledger: Ledger;
   /** Injected into the Store so appendEvidence writes through it. */
@@ -59,10 +73,27 @@ export function buildDurableBundle(dataDir: string): DurableBundle {
     );
   }
 
+  const authorizedJournal = new FileWriteAheadJournal(dataDir);
+  warnings.push(...authorizedJournal.warnings);
+
+  const cursorStore = new FileCursorStore(dataDir);
+  warnings.push(...cursorStore.warnings);
+  const suspectStore = new FileSuspectStore(dataDir);
+  warnings.push(...suspectStore.warnings);
+  const observationStore = new FileChainObservationStore(dataDir);
+  warnings.push(...observationStore.warnings);
+  const reconciledStore = new FileReconciledStore(dataDir);
+  warnings.push(...reconciledStore.warnings);
+
   const ledger = new Ledger(journalFile);
   ledger.hydrate(journal.payloads.map(decodeJournalEntry));
 
   return {
+    authorizedJournal,
+    cursorStore,
+    suspectStore,
+    observationStore,
+    reconciledStore,
     ledger,
     evidenceLog: evidenceFile,
     seedEvidence: dedupeEvidence(evidence.payloads.map(decodeEvidenceRow)),

@@ -29,6 +29,19 @@ import type { OracleProvider, RateHistoryProvider } from '@troia/oracle';
 import { SimulatedRebalance } from '@troia/rebalance';
 import { Ledger } from '@troia/ledger';
 import { buildDurableBundle } from './durable-bundle.js';
+import { buildOutflowTail } from './outflow-port.js';
+import { deriveIds } from '@troia/core';
+import { resolveGroundTruth } from '@troia/reconciler';
+import type { EvidenceRow, ReconcileDeps } from '@troia/backend';
+
+/** Chain-time margin before an unexplained outflow is called a theft. The write-ahead journal already makes a
+ *  legitimate payout impossible to accuse, so this is defence in depth, not the correctness mechanism. */
+const DEFAULT_OUTFLOW_GRACE_SECS = 60;
+/** How far back a cold start looks. Small on purpose: everything earlier is an acknowledged, logged blind spot,
+ *  and the windowless drift tripwire — not this tail — is what covers history. */
+const DEFAULT_COLD_START_MARGIN_LEDGERS = 60;
+/** How long a witnessed payout may go unobserved on chain before that silence becomes an alarm (default 10 min). */
+const DEFAULT_UNSETTLED_GRACE_SECS = 600;
 
 /** stroops × (rate × 1e7) -> kuruş: divide by 1e7 (stroops) × 1e7 (rate scale) / 100 (kuruş) = 1e12. */
 const GENESIS_KURUS_DIVISOR = 1_000_000_000_000n;
@@ -74,6 +87,12 @@ export interface TestnetServerConfig {
    * before. Nothing here seeds the pool or the reservation ledger — the chain read stays the solvency truth.
    */
   readonly dataDir?: string;
+  /** chain-time grace before an unexplained pool outflow is called rogue (default 60s). */
+  readonly outflowGraceSecs?: number;
+  /** how many ledgers back a cold-started payout tail anchors (default 60 ≈ 5 minutes). */
+  readonly outflowColdStartMarginLedgers?: number;
+  /** how long a witnessed payout may go unobserved before the audit alarms (default 600s). */
+  readonly unsettledGraceSecs?: number;
   readonly merchant?: MerchantTemplate; // override the KYC-stub buyer/addresses/basket
   readonly opts?: BuildStellarPortOptions;
 }
@@ -223,7 +242,12 @@ export async function buildTestnetServerDeps(
   const durable = cfg.dataDir === undefined ? null : buildDurableBundle(cfg.dataDir);
   for (const w of durable?.warnings ?? []) console.warn(`[durable-log] ${w}`);
 
-  const stellar = buildStellarPort(network, cfg.secrets.operatorSecret, cfg.opts);
+  const stellar = buildStellarPort(
+    network,
+    cfg.secrets.operatorSecret,
+    cfg.opts,
+    durable?.authorizedJournal,
+  );
   const psp = createPaymentProvider(network.psp, {
     apiKey: cfg.secrets.iyzicoApiKey,
     secretKey: cfg.secrets.iyzicoSecretKey,
@@ -289,6 +313,42 @@ export async function buildTestnetServerDeps(
 
   // The payout tail. It needs the durable stores AND the durable write-ahead journal, so it exists only when a
   // data dir does: without a journal that predates every broadcast there is no honest way to accuse anyone.
+  const outflowTail = durable === null ? null : buildOutflowTail(network, cfg.opts);
+  const outflow =
+    durable === null || outflowTail === null
+      ? undefined
+      : {
+          tail: outflowTail,
+          cursor: durable.cursorStore,
+          suspects: durable.suspectStore,
+          observations: durable.observationStore,
+          // A LIVE view of the journal's hash set, not a snapshot: a hash added after this line still belongs to
+          // a transaction that has not landed, so the tail can never race ahead of an authorization.
+          authorized: durable.authorizedJournal.authorizedTxHashes(),
+          graceSecs: cfg.outflowGraceSecs ?? DEFAULT_OUTFLOW_GRACE_SECS,
+          coldStartMarginLedgers:
+            cfg.outflowColdStartMarginLedgers ?? DEFAULT_COLD_START_MARGIN_LEDGERS,
+        };
+
+  // The live audit. It finds each order's settlement by the identifier the CONTRACT indexes, not by the
+  // transaction hash we recorded — which is the only way a different transaction settling our order is visible.
+  const reconcile =
+    durable === null || outflowTail === null
+      ? undefined
+      : {
+          evidence: { rows: () => store.evidenceRecords() },
+          observations: durable.observationStore,
+          reconciled: durable.reconciledStore,
+          liveness: { checkTxLiveness: (h: string) => outflowTail.checkTxLiveness(h) },
+          resolve: resolveGroundTruth as ReconcileDeps['resolve'],
+          deriveTxIdHex: (row: EvidenceRow): string =>
+            deriveIds(row.orderId, row.order.destination, row.order.amountStroops).txIdHex,
+          operatorPublic: network.operatorPublic,
+          passphrase: network.passphrase,
+          unsettledGraceSecs: cfg.unsettledGraceSecs ?? DEFAULT_UNSETTLED_GRACE_SECS,
+          nowUnix: () => Math.floor(Date.now() / 1000),
+        };
+
   const merchant = cfg.merchant ?? DEFAULT_TESTNET_MERCHANT;
   return {
     network,
@@ -308,5 +368,7 @@ export async function buildTestnetServerDeps(
     quote,
     webhookSigningSecret: cfg.secrets.webhookSigningSecret,
     settlement,
+    ...(outflow === undefined ? {} : { outflow }),
+    ...(reconcile === undefined ? {} : { reconcile }),
   };
 }

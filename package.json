@@ -2,6 +2,7 @@
   "name": "troia",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "packageManager": "pnpm@11.1.2",
   "type": "module",
   "engines": {

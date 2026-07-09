@@ -1,0 +1,137 @@
+# The honest gate. Every suite this repo owns runs here — nothing is skipped, so a green badge means green.
+#
+# `just test` alone would be a FALSE green: vitest runs under esbuild (which strips types, so it never
+# typechecks) and its include covers packages/** only, silently missing the extension's 105 tests, the
+# storefront, and the Soroban contract. The steps below mirror `just ci` one-for-one; keep them in sync.
+#
+# Third-party actions are deliberately avoided: pnpm comes from corepack (pinned by the root package.json
+# "packageManager" field) and Rust from the runner's preinstalled rustup, so the only actions here are
+# GitHub's own. Nothing in this workflow needs a secret, a key, or the network beyond the package registries
+# — every money-safety proof in it is offline by construction.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22.18.0
+  RUST_VERSION: 1.95.0
+  # The Soroban contract's deploy target. `cargo test` builds native only, so it alone never proves the
+  # deployable artifact compiles; the wasm build below does.
+  WASM_TARGET: wasm32v1-none
+  # corepack would otherwise stop to ask before fetching the pinned pnpm.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # The store path is platform- and version-dependent, so resolve it rather than hardcoding one that
+      # would silently cache nothing.
+      - name: Activate pnpm from packageManager
+        run: |
+          corepack enable
+          pnpm --version
+          echo "PNPM_STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PNPM_STORE }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tsc -p per package. This — not vitest — is the typecheck.
+      - name: Typecheck and build packages
+        run: pnpm -r run build
+
+      - name: Packages test suite
+        run: pnpm vitest run
+
+      # The suite regenerates the committed acceptance report from buildAcceptanceReport(). If the file on disk
+      # now differs, the committed report was hand-edited or the generator drifted — either way a reviewer's
+      # `just verify` would be proving something other than what the code produces.
+      - name: Assert the committed recon report is exactly what the code regenerates
+        run: git diff --exit-code -- packages/reconciler/test/fixtures/recon-report.json
+
+      - name: Lint
+        run: pnpm eslint .
+
+      - name: Format check
+        run: pnpm prettier --check .
+
+      # The extension is a standalone npm project outside the pnpm workspace, so it needs its own install.
+      - name: Extension test suite
+        working-directory: app/extension
+        run: |
+          npm ci
+          npm test
+
+      - name: Storefront build and lint
+        working-directory: app/storefront
+        run: |
+          npm ci
+          npm run build
+          npm run lint
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$WASM_TARGET"
+          rustup default "$RUST_VERSION"
+          rustc --version
+
+      - name: Contract test suite
+        run: cargo test --locked
+
+      - name: Contract builds to its deploy target
+        run: cargo build --release --target "$WASM_TARGET" --locked
+
+      # The reviewer-facing proofs. verify.mjs runs under block-net.mjs, which patches net/tls/dns/http/fetch to
+      # throw-and-count and arms a startup canary — so `networkAttempts: 0` is positively proven, not merely absent.
+      - name: Offline proof — the honest report re-derives
+        run: >
+          node --import ./packages/reconciler/bin/block-net.mjs
+          ./packages/reconciler/bin/verify.mjs
+          ./packages/reconciler/test/fixtures/recon-report.json
+
+      - name: Offline proof — the report from a REAL testnet payout re-derives
+        run: >
+          node --import ./packages/reconciler/bin/block-net.mjs
+          ./packages/reconciler/bin/verify.mjs
+          ./packages/reconciler/test/fixtures/recon-report.live.json
+
+      # The negative half: a forged report must be caught by re-derivation (verify exit 1), not by an unreadable
+      # file (verify exit 2). tamper-check pins the distinction, so this step cannot pass while testing nothing.
+      - name: Offline proof — a forged report is caught
+        run: node scripts/tamper-check.mjs

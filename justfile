@@ -8,9 +8,26 @@ default:
 build:
     pnpm -r run build
 
-# Run the test suite.
+# NOTE: vitest runs under esbuild, which STRIPS types, so this does NOT typecheck; its include is packages/**
+# only, so it silently skips the extension and the contract. `just ci` is the honest gate.
+# Run the packages test suite only (581 tests).
 test:
     pnpm vitest run
+
+# Mirrors .github/workflows/ci.yml one-for-one; keep them in sync. Clean installs (npm ci), so it reproduces
+# CI rather than trusting whatever is in node_modules — needs the package registries.
+# The full gate: every suite the repo owns, nothing skipped.
+ci:
+    pnpm -r run build
+    pnpm vitest run
+    pnpm eslint .
+    pnpm prettier --check .
+    (cd app/extension && npm ci && npm test)
+    (cd app/storefront && npm ci && npm run build && npm run lint)
+    cargo test --locked
+    just verify
+    just verify-live
+    just verify-tampered
 
 # Lint the workspace.
 lint:

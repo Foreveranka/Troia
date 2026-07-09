@@ -51,11 +51,14 @@ describe('engine happy path — full settlement drive', () => {
     expect(r.ctx.hashHex).toBe('hash_order-001');
     expect(r.ctx.signedXdr).toBe('xdr_order-001');
     expect(h.store.evidence).toHaveLength(1);
-    expect(h.store.evidence[0]?.record).toEqual({
+    expect(h.store.evidence[0]?.record).toMatchObject({
       txHash: 'hash_order-001',
       signedXdr: 'xdr_order-001',
       seq: r.ctx.activeSeq,
     });
+    // the row also carries the ORDER, so a restarted process can finish its accounting without the registry
+    expect(h.store.evidence[0]?.order.amountStroops).toBe(r.ctx.amountStroops);
+    expect(h.store.evidence[0]?.record.witnessedAtUnix).toBeTypeOf('number');
     expect(h.store.losses).toHaveLength(0);
 
     // money-law ordering: reserve BEFORE the checkout/charge form; the charge (sale form) BEFORE the IRREVERSIBLE

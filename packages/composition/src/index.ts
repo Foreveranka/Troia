@@ -28,3 +28,12 @@ export type {
   PreflightWiring,
   PreflightIyzicoSecrets,
 } from './preflight.js';
+export { buildDurableBundle } from './durable-bundle.js';
+export type { DurableBundle } from './durable-bundle.js';
+export {
+  FileAppendLog,
+  assertWritableDir,
+  DurableLogError,
+  DurableLogCorruption,
+} from './file-append-log.js';
+export type { ReplayResult } from './file-append-log.js';

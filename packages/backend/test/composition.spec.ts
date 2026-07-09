@@ -7,14 +7,7 @@ import { InMemoryStore } from '../src/store/in-memory-store.js';
 import { InMemoryPendingSettlementStore } from '../src/settlement/pending-settlement-store.js';
 import { TryDrivenRebalancePolicy } from '../src/settlement/rebalance-policy.js';
 import type { TopUpRequest } from '../src/settlement/rebalance-policy.js';
-import {
-  FakeClock,
-  FakePspPort,
-  FakeStellarPort,
-  FakeStore,
-  makeConfig,
-  makeCtx,
-} from './fakes/harness.js';
+import { FakeClock, FakePspPort, FakeStellarPort, makeConfig } from './fakes/harness.js';
 import { intentBody, quote, signV3, WEBHOOK_SECRET, webhookEvent } from './http/http-harness.js';
 
 const UNIT = 10_000_000n;
@@ -73,6 +66,7 @@ describe('createServer — app + poll worker over ONE shared order lock', () => 
       network,
       extras: extras(),
       ports: { stellar, psp, store, clock },
+      confirmed: { all: () => store.confirmedOrders(), get: (id) => store.confirmedOrder(id) },
       quote,
       webhookSigningSecret: WEBHOOK_SECRET,
     });
@@ -119,6 +113,7 @@ describe('createServer — app + poll worker over ONE shared order lock', () => 
       advanced: 0,
       escalated: 0,
       quarantined: 0,
+      failed: 0,
     });
   });
 
@@ -178,8 +173,37 @@ describe('createServer — settleTick wires the TRY-driven rebalance over the SA
   }
   class FakeBook {
     readonly booked: { ref: string; usdcStroops: bigint; valueKurus: bigint }[] = [];
+    readonly settlements: { orderId: string; usdcStroops: bigint }[] = [];
+    hasRef(ref: string): boolean {
+      return (
+        this.booked.some((b) => b.ref === ref) || this.settlements.some((s) => s.orderId === ref)
+      );
+    }
     recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): void {
       this.booked.push(input);
+    }
+    recordSettlement(input: { orderId: string; usdcStroops: bigint }): void {
+      if (this.settlements.some((s) => s.orderId === input.orderId)) {
+        throw Object.assign(new Error('dup'), { code: 'DuplicateRef' });
+      }
+      this.settlements.push(input);
+    }
+    /** expected pool = Σ top-ups − Σ settlements, exactly as the real ledger's nativeBalance('USDC_POOL'). */
+    detectDrift(observedPoolStroops: bigint): {
+      expectedPoolStroops: bigint;
+      observedPoolStroops: bigint;
+      driftStroops: bigint;
+      inSync: boolean;
+    } {
+      const expected =
+        this.booked.reduce((s, b) => s + b.usdcStroops, 0n) -
+        this.settlements.reduce((s, x) => s + x.usdcStroops, 0n);
+      return {
+        expectedPoolStroops: expected,
+        observedPoolStroops,
+        driftStroops: observedPoolStroops - expected,
+        inSync: observedPoolStroops === expected,
+      };
     }
   }
 
@@ -192,6 +216,7 @@ describe('createServer — settleTick wires the TRY-driven rebalance over the SA
       network,
       extras: extras(),
       ports: { stellar: new FakeStellarPort([]), psp: new FakePspPort([]), store, clock },
+      confirmed: { all: () => store.confirmedOrders(), get: (id) => store.confirmedOrder(id) },
       quote,
       webhookSigningSecret: WEBHOOK_SECRET,
       settlement: {
@@ -208,7 +233,20 @@ describe('createServer — settleTick wires the TRY-driven rebalance over the SA
 
   it('arms a UsdcConfirmed order, then refills the pool once after the demo valör (gate rises)', async () => {
     const { server, store, rebalance, ledger, clock } = makeServerWithSettlement();
-    server.registry.put(makeCtx(new FakeStore([]), { orderId: 'ord-x' }), 'UsdcConfirmed');
+    // A money-good payout is a durable evidence row, not a registry entry: that is what a restart can still see.
+    await store.appendEvidence(
+      'ord-x',
+      { txHash: 'h', signedXdr: 'x', seq: '1001', witnessedAtUnix: 1_700_000_000 },
+      {
+        destination: 'GDESTINATIONACCOUNTPLACEHOLDER0000000000000000',
+        amountStroops: 1_000_000_000n,
+        memoHex: 'ab'.repeat(32),
+        appliedRateStroops: 340_000_000n,
+        paidPriceTry: '3400.00',
+        spreadKurus: 5_000n,
+        feeKurus: 2_000n,
+      },
+    );
     const before = store.availableStroops();
 
     const armReport = await server.settleTick!(); // arm at 1000 -> settlesAt 1045

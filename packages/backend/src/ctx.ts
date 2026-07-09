@@ -21,6 +21,13 @@ export interface OrderCtx {
    *  duplicate/retried /intent (alreadyStarted) can re-present the SAME hosted form instead of dead-ending. */
   readonly paymentPageUrl: string | null;
   readonly paidPriceTry: string; // TRY amount charged at the direct sale (money-first: taken up front)
+  /** The accounting split of that charge, in kuruş, FROZEN at quote time exactly like the price itself
+   *  (invariant ⑤). `feeKurus` is the PSP cost, expensed; `spreadKurus` is everything the customer paid above
+   *  the mid-rate value of the USDC — i.e. the PSP cost plus the FX-risk margin. The settlement worker books
+   *  them verbatim, because recomputing a margin from a stored rate rounds differently than the price the
+   *  customer was charged, and a ledger that disagrees with the cash by a kuruş is a ledger that lies. */
+  readonly spreadKurus: bigint;
+  readonly feeKurus: bigint;
   readonly currency: string;
   readonly ip: string;
   /** the order's currently-allocated sequence (decimal string), if any. */

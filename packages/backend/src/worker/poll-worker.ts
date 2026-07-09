@@ -23,6 +23,7 @@ import { advance, applyEscalate } from '../engine/driver.js';
 import type { EngineDeps } from '../engine/events.js';
 import type { OrderRegistry } from '../http/order-registry.js';
 import type { KeyedMutex } from '../store/mutex.js';
+import { isDurableLogFailure } from '../ports.js';
 
 /** The recoverable waits the worker resumes. The ChargeReversing (sale-void) re-poll needs a psp retrieve-status
  *  method that arrives with live iyzico in Phase 4.5, so a crash mid-reversal stays parked (fail-SAFE) until
@@ -34,6 +35,8 @@ export interface PollReport {
   readonly advanced: number;
   readonly escalated: number;
   readonly quarantined: number;
+  /** orders whose drive threw. They keep their state and are retried on the next tick. */
+  readonly failed: number;
 }
 
 type Outcome = 'skip' | 'polled' | 'advanced' | 'escalated' | 'quarantined';
@@ -44,75 +47,86 @@ export async function pollInFlight(
   deps: EngineDeps,
 ): Promise<PollReport> {
   const snapshot = registry.ordersInStates(RECOVERY_STATES); // materialized copy — safe against mid-poll puts
-  const report = { polled: 0, advanced: 0, escalated: 0, quarantined: 0 };
+  const report = { polled: 0, advanced: 0, escalated: 0, quarantined: 0, failed: 0 };
 
   for (const snap of snapshot) {
     const orderId = snap.ctx.orderId;
-    const outcome: Outcome = await orderLocks.run(orderId, async () => {
-      // RE-READ inside the lock: the order may have advanced (webhook / a prior tick) since the snapshot.
-      const rec = registry.getByOrderId(orderId);
-      if (rec === undefined) return 'skip';
-      const state = rec.state;
-      const ctx = rec.ctx; // bind from the RE-READ record, never the stale snapshot
+    let outcome: Outcome;
+    try {
+      outcome = await orderLocks.run(orderId, async () => {
+        // RE-READ inside the lock: the order may have advanced (webhook / a prior tick) since the snapshot.
+        const rec = registry.getByOrderId(orderId);
+        if (rec === undefined) return 'skip';
+        const state = rec.state;
+        const ctx = rec.ctx; // bind from the RE-READ record, never the stale snapshot
 
-      // (A) Stuck-charge recovery: re-retrieve the direct-sale result and re-drive chargeEvent.
-      if (state === 'SolvencyReserved') {
-        if (ctx.token === null) return 'skip'; // no form issued yet (should not happen in SolvencyReserved)
-        const retrieved = await deps.psp.retrieveCheckoutFormResult({
-          conversationId: ctx.conversationId,
-          token: ctx.token,
-        });
-        const proj = projectCheckoutFormResult(retrieved);
-        if (proj.kind === 'ok' && proj.conversationId !== ctx.conversationId) return 'polled'; // integrity: stay
-        const patched = proj.kind === 'ok' ? { ...ctx, paymentId: proj.paymentId } : ctx;
-        // Only chargeOk (which advances to the irreversible USDC leg) when a durable paymentId was extracted; a
-        // malformed retrieve stays as chargeUnknown, never a chargeOk we could not later void.
-        const event =
-          proj.kind === 'ok' ? chargeEvent(retrieved) : { type: 'chargeUnknown' as const };
-        const r = await advance(patched, state, event, deps);
-        registry.put(r.ctx, r.state);
-        return r.state !== state ? 'advanced' : 'polled';
-      }
-
-      if (state !== 'UsdcSubmitted' && state !== 'UsdcPending') return 'skip';
-
-      // (B) Never-sent pay recovery: witness-null + charge done + seq active ⇒ the pay() was never submitted ⇒
-      // same-seq replacement (money-safe under the sequence shield). NOT an indeterminate loss.
-      if (ctx.hashHex === null) {
-        if (state === 'UsdcSubmitted' && ctx.paymentId !== null && ctx.activeSeq !== null) {
-          const r = await advance(ctx, state, { type: 'recoverResubmit' }, deps);
+        // (A) Stuck-charge recovery: re-retrieve the direct-sale result and re-drive chargeEvent.
+        if (state === 'SolvencyReserved') {
+          if (ctx.token === null) return 'skip'; // no form issued yet (should not happen in SolvencyReserved)
+          const retrieved = await deps.psp.retrieveCheckoutFormResult({
+            conversationId: ctx.conversationId,
+            token: ctx.token,
+          });
+          const proj = projectCheckoutFormResult(retrieved);
+          if (proj.kind === 'ok' && proj.conversationId !== ctx.conversationId) return 'polled'; // integrity: stay
+          const patched = proj.kind === 'ok' ? { ...ctx, paymentId: proj.paymentId } : ctx;
+          // Only chargeOk (which advances to the irreversible USDC leg) when a durable paymentId was extracted; a
+          // malformed retrieve stays as chargeUnknown, never a chargeOk we could not later void.
+          const event =
+            proj.kind === 'ok' ? chargeEvent(retrieved) : { type: 'chargeUnknown' as const };
+          const r = await advance(patched, state, event, deps);
           registry.put(r.ctx, r.state);
           return r.state !== state ? 'advanced' : 'polled';
         }
-        // No witness AND we cannot prove the pay was never sent → quarantine for the reconciler (money-safe:
-        // flagLoss moves nothing, the seq is left active).
-        await applyEscalate(ctx, deps);
-        return 'quarantined';
-      }
 
-      // (B2) A tx was submitted (hashHex) but the observe input cannot be rebuilt → quarantine.
-      if (ctx.activeSeq === null || ctx.payMaxTimeUnix === null) {
-        await applyEscalate(ctx, deps);
-        return 'quarantined';
-      }
+        if (state !== 'UsdcSubmitted' && state !== 'UsdcPending') return 'skip';
 
-      // (C) Normal: observe the known tx on-chain (READ, never a submit) and let the core decide.
-      const reducerState: ReducerState = {
-        phase: 'polling',
-        hashHex: ctx.hashHex,
-        ourSeq: BigInt(ctx.activeSeq),
-        maxTime: ctx.payMaxTimeUnix,
-      };
-      const obs = await deps.stellar.observe(reducerState);
-      const mapping = verdictToCore(obs.verdict ?? 'STILL_PENDING', state);
-      if (mapping.kind === 'escalate') {
-        await applyEscalate(ctx, deps);
-        return 'escalated';
-      }
-      const r = await advance(ctx, state, mapping.event, deps);
-      registry.put(r.ctx, r.state);
-      return r.state !== state ? 'advanced' : 'polled';
-    });
+        // (B) Never-sent pay recovery: witness-null + charge done + seq active ⇒ the pay() was never submitted ⇒
+        // same-seq replacement (money-safe under the sequence shield). NOT an indeterminate loss.
+        if (ctx.hashHex === null) {
+          if (state === 'UsdcSubmitted' && ctx.paymentId !== null && ctx.activeSeq !== null) {
+            const r = await advance(ctx, state, { type: 'recoverResubmit' }, deps);
+            registry.put(r.ctx, r.state);
+            return r.state !== state ? 'advanced' : 'polled';
+          }
+          // No witness AND we cannot prove the pay was never sent → quarantine for the reconciler (money-safe:
+          // flagLoss moves nothing, the seq is left active).
+          await applyEscalate(ctx, deps);
+          return 'quarantined';
+        }
+
+        // (B2) A tx was submitted (hashHex) but the observe input cannot be rebuilt → quarantine.
+        if (ctx.activeSeq === null || ctx.payMaxTimeUnix === null) {
+          await applyEscalate(ctx, deps);
+          return 'quarantined';
+        }
+
+        // (C) Normal: observe the known tx on-chain (READ, never a submit) and let the core decide.
+        const reducerState: ReducerState = {
+          phase: 'polling',
+          hashHex: ctx.hashHex,
+          ourSeq: BigInt(ctx.activeSeq),
+          maxTime: ctx.payMaxTimeUnix,
+        };
+        const obs = await deps.stellar.observe(reducerState);
+        const mapping = verdictToCore(obs.verdict ?? 'STILL_PENDING', state);
+        if (mapping.kind === 'escalate') {
+          await applyEscalate(ctx, deps);
+          return 'escalated';
+        }
+        const r = await advance(ctx, state, mapping.event, deps);
+        registry.put(r.ctx, r.state);
+        return r.state !== state ? 'advanced' : 'polled';
+      });
+    } catch (e) {
+      // A poisoned durable log means nothing can be recorded any more; retrying would spin forever and would
+      // re-run whatever the failing write followed. Let it escape and take the process down with it.
+      if (isDurableLogFailure(e)) throw e;
+      // Anything else is this ORDER's problem. Isolate it: leave its state alone (it is retried next tick) and
+      // keep polling the rest, so one wedged order can never starve every other in-flight payout.
+      report.failed += 1;
+      continue;
+    }
 
     report.polled += 1;
     if (outcome === 'advanced') report.advanced += 1;

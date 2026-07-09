@@ -29,6 +29,10 @@ export interface Quote {
   readonly appliedRateStroops: bigint; // applied TRY/USDC rate × 1e7 (recorded on-chain in pay())
   readonly oracleMidE7: bigint;
   readonly spreadBps: number; // the commission, in basis points
+  /** The FX-risk margin in kuruş. Frozen with the price so the ledger books the margin actually charged. */
+  readonly spreadRevenueKurus: bigint;
+  /** The PSP cost baked into the price, in kuruş — a separate legible line (ADR-4), booked as an expense. */
+  readonly pspCostKurus: bigint;
 }
 export type QuoteFn = (usdcStroops: bigint) => Promise<Quote>;
 
@@ -189,6 +193,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
       token: null,
       paymentPageUrl: null,
       paidPriceTry: quote.paidPriceTry,
+      // The customer paid (USDC valued at mid) + FX margin + PSP cost. Freeze that split alongside the price,
+      // so the ledger books exactly what was charged rather than a later, differently-rounded re-derivation.
+      spreadKurus: quote.spreadRevenueKurus + quote.pspCostKurus,
+      feeKurus: quote.pspCostKurus,
       currency: engine.config.psp.currency, // server-fixed (TRY), never the client's
       ip,
       activeSeq: null,

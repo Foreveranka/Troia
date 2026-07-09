@@ -72,6 +72,9 @@ export interface Quote {
   readonly appliedRateStroops: bigint; // applied TRY/USDC rate × 1e7 (recorded on-chain in pay())
   readonly userTryKurus: bigint; // what the user pays, in kuruş
   readonly paidPriceTry: string; // the same amount as a canonical "N.MM" TRY string (hosted-sale price)
+  /** The FX-risk margin in kuruş (ADR-4's transparent line). Surfaced, not derived later: recomputing it from
+   *  the applied rate would round differently than the price the customer was actually charged. */
+  readonly spreadRevenueKurus: bigint;
 }
 
 /** Format kuruş (TRY minor units) as a canonical "N.MM" decimal string (2 dp) — the hosted-sale price field. */
@@ -101,6 +104,7 @@ export function quoteUsdc(
     appliedRateStroops: pb.appliedRateTryPerUsdc,
     userTryKurus: pb.userTryKurus,
     paidPriceTry: kurusToTryString(pb.userTryKurus),
+    spreadRevenueKurus: pb.spreadRevenueKurus,
   };
 }
 

@@ -66,6 +66,63 @@ export interface EvidenceRecord {
   readonly txHash: string;
   readonly signedXdr: string;
   readonly seq: string;
+  /** When we witnessed the pay() land. Wall clock — used ONLY to age an unobservable settlement into an alarm,
+   *  never to decide whether a transaction is live (that is ledger-close time, always). */
+  readonly witnessedAtUnix: number;
+}
+
+/**
+ * The order's own frozen facts, carried into the durable evidence row so that a restarted process can finish the
+ * order's accounting without the in-memory registry that died with it.
+ *
+ * Without this, a crash between "the payout confirmed" and "the settlement worker's next tick" left the outflow
+ * unbooked FOREVER: the worker's work-list came from memory, so nothing rediscovered the order. The double-entry
+ * ledger then permanently disagreed with the chain, and the solvency alarm — correctly, and uselessly — rang for
+ * a discrepancy nobody could ever close. The pool's refill was lost the same way, silently.
+ */
+export interface OrderFacts {
+  readonly destination: string;
+  readonly amountStroops: bigint;
+  readonly memoHex: string;
+  readonly appliedRateStroops: bigint;
+  /** The TRY actually charged, as the canonical "N.MM" string the customer saw. */
+  readonly paidPriceTry: string;
+  /** The accounting split of that charge, frozen at quote time (invariant ⑤). */
+  readonly spreadKurus: bigint;
+  readonly feeKurus: bigint;
+}
+
+/** One durable settlement witness: which order authorized which landed pay(), and what that order was. */
+export interface EvidenceRow {
+  readonly orderId: string;
+  readonly record: EvidenceRecord;
+  readonly order: OrderFacts;
+}
+
+/**
+ * A synchronous append-only durable sink. The backend never learns where the bytes go — the composition root
+ * injects the file-backed implementation, so this package keeps its no-`node:fs` property. Synchronous on
+ * purpose: an await here would split the store's read-modify-write and force a lock it must not take.
+ * Throws on I/O failure, and a throw must leave nothing recorded in memory.
+ */
+export interface DurableLog {
+  append(payload: string): void;
+}
+
+/**
+ * Recognise a durable-log write failure structurally, without importing the composition root's fs module.
+ *
+ * A log that refuses a write is poisoned for the life of the process — that is deliberate, because it confines a
+ * partially-written record to the physical tail where replay can safely drop it. The consequence for callers is
+ * that NOTHING can be booked any more. A worker that swallows this into "retry next tick" would spin forever,
+ * re-running the effects that precede the write (in the settlement worker, that means minting) while never
+ * recording their result. So every caller must let it escape and fail fast; a restart re-runs the boot-time write
+ * probe, which either finds a healed disk or refuses to start.
+ */
+export function isDurableLogFailure(e: unknown): boolean {
+  return (
+    typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'DurableLogFailure'
+  );
 }
 
 /** Persistence + SPIKE-3 solvency. Every mutating method runs under the caller's withOrderLock (4.3b). */
@@ -84,7 +141,7 @@ export interface Store {
   releaseReservation(orderId: string, reason: ReleaseReason): Promise<void>;
   flagLoss(orderId: string, bucket: LossBucket, usdcTxHash: string | null): Promise<void>;
   markWebhookSeen(eventId: string, orderId: string, nowMs: number): Promise<'first' | 'duplicate'>;
-  appendEvidence(orderId: string, record: EvidenceRecord): Promise<void>;
+  appendEvidence(orderId: string, record: EvidenceRecord, order: OrderFacts): Promise<void>;
   /** Persisted deterministic retry counters; return the NEW (post-increment) value from 0. retriesRemaining
    *  is `newCount <= policy.max*Retries`, so recovery/replay re-reads the same counter and picks the same
    *  branch (never a timer). Atomic under withOrderLock. */

@@ -293,11 +293,28 @@ export async function perform(
           `order ${ctx.orderId}: cannot append evidence — pay() witness missing`,
         );
       }
-      await deps.store.appendEvidence(ctx.orderId, {
-        txHash: ctx.hashHex,
-        signedXdr: ctx.signedXdr,
-        seq: ctx.activeSeq,
-      });
+      // The row carries the ORDER as well as the witness. It is the only durable memory of this payout: the
+      // registry that holds ctx lives in memory, and a crash a second from now would take it with it. Without
+      // these facts the settlement worker could never rediscover the order, so its outflow would go unbooked and
+      // its pool refill would be lost — both silently, while the solvency alarm rang about it forever.
+      await deps.store.appendEvidence(
+        ctx.orderId,
+        {
+          txHash: ctx.hashHex,
+          signedXdr: ctx.signedXdr,
+          seq: ctx.activeSeq,
+          witnessedAtUnix: deps.clock.nowUnix(),
+        },
+        {
+          destination: ctx.destination,
+          amountStroops: ctx.amountStroops,
+          memoHex: ctx.memoHex,
+          appliedRateStroops: ctx.appliedRateStroops,
+          paidPriceTry: ctx.paidPriceTry,
+          spreadKurus: ctx.spreadKurus,
+          feeKurus: ctx.feeKurus,
+        },
+      );
       return NO_EVENT;
     }
 

@@ -75,14 +75,18 @@ export function makeQuoteFn(sources: QuoteSources): QuoteFn {
       sources.policy.commission,
       sources.policy.psp,
     );
-    // Map the pricing SettlementQuote down to the backend's Quote seam (drop the pricing-internal net/pspCost
-    // lines; the on-chain applied_rate stays the FX rate, the PSP cost is already baked into userTryKurus).
+    // Map the pricing SettlementQuote down to the backend's Quote seam. netTryKurus stays internal (it is
+    // userTryKurus - pspCostKurus), but the two MARGIN lines cross the seam: the double-entry ledger books the
+    // PSP cost as an expense and the rest as revenue, and re-deriving either later would round differently
+    // than the price the customer was actually charged. The on-chain applied_rate stays the FX rate.
     return {
       userTryKurus: sq.userTryKurus,
       paidPriceTry: sq.paidPriceTry,
       appliedRateStroops: sq.appliedRateStroops,
       oracleMidE7: sq.oracleMidE7,
       spreadBps: sq.spreadBps,
+      spreadRevenueKurus: sq.spreadRevenueKurus,
+      pspCostKurus: sq.pspCostKurus,
     };
   };
 }

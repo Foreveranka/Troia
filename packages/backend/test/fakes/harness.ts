@@ -21,6 +21,7 @@ import type { EngineDeps } from '../../src/engine/events.js';
 import type {
   Clock,
   EvidenceRecord,
+  OrderFacts,
   InFlightPatch,
   LossBucket,
   PspPort,
@@ -51,7 +52,7 @@ export class FakeStore implements Store {
   readonly persisted: { orderId: string; state: State; patch: InFlightPatch }[] = [];
   readonly releases: { orderId: string; reason: ReleaseReason }[] = [];
   readonly losses: { orderId: string; bucket: LossBucket; usdcTxHash: string | null }[] = [];
-  readonly evidence: { orderId: string; record: EvidenceRecord }[] = [];
+  readonly evidence: { orderId: string; record: EvidenceRecord; order: OrderFacts }[] = [];
   readonly deadRetries = new Map<string, number>();
   readonly reversalRetries = new Map<string, number>();
   reserveResult: ReserveOutcome = { kind: 'reserved', reservationId: 'res-1' };
@@ -89,9 +90,9 @@ export class FakeStore implements Store {
   async markWebhookSeen(): Promise<'first' | 'duplicate'> {
     return 'first';
   }
-  async appendEvidence(orderId: string, record: EvidenceRecord): Promise<void> {
+  async appendEvidence(orderId: string, record: EvidenceRecord, order: OrderFacts): Promise<void> {
     this.trace.push('store.appendEvidence');
-    this.evidence.push({ orderId, record });
+    this.evidence.push({ orderId, record, order });
   }
   async bumpDeadRetries(orderId: string): Promise<number> {
     const n = (this.deadRetries.get(orderId) ?? 0) + 1;
@@ -271,6 +272,17 @@ const DESTINATION = 'GDESTINATIONACCOUNTPLACEHOLDER0000000000000000';
 const AMOUNT = 1_000_000_000n; // 100.0 USDC @ 7 decimals
 const RATE = 340_000_000n; // 34.0 TRY/USDC @ 7 decimals
 
+/** The order's frozen facts, exactly as the durable evidence row carries them. Mirrors makeCtx. */
+export const ORDER_FACTS: OrderFacts = {
+  destination: DESTINATION,
+  amountStroops: AMOUNT,
+  memoHex: 'ab'.repeat(32),
+  appliedRateStroops: RATE,
+  paidPriceTry: '3400.00',
+  spreadKurus: 5_000n,
+  feeKurus: 2_000n,
+};
+
 /** A PRE-charge OrderCtx exactly as POST /intent builds it under late allocation (Approach B): activeSeq is
  *  NULL — the operator seq is handed out later, on chargeOk. Allocates NOTHING in the store. Use for
  *  Reserved / SolvencyReserved rows and every no-leak / late-allocation assertion. */
@@ -288,6 +300,8 @@ export function makePreChargeCtx(_store: FakeStore, overrides: Partial<OrderCtx>
     token: null,
     paymentPageUrl: null,
     paidPriceTry: '3400.00',
+    spreadKurus: 5_000n, // 50.00 TRY of margin (FX + PSP) inside the 3400.00 charged
+    feeKurus: 2_000n, // 20.00 TRY of that is the PSP cost
     currency: 'TRY',
     ip: '1.2.3.4',
     activeSeq: null,

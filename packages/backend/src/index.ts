@@ -37,7 +37,18 @@ export type {
   LossBucket,
   InFlightPatch,
   EvidenceRecord,
+  EvidenceRow,
+  DurableLog,
 } from './ports.js';
+
+export { isDurableLogFailure } from './ports.js';
+
+export {
+  encodeEvidenceRow,
+  decodeEvidenceRow,
+  dedupeEvidence,
+  EvidenceCodecError,
+} from './store/evidence-codec.js';
 
 export { Mutex, KeyedMutex } from './store/mutex.js';
 export type { Lock } from './store/mutex.js';
@@ -82,3 +93,15 @@ export type {
   Server,
   SettlementBundle,
 } from './composition.js';
+
+export {
+  checkDrift,
+  observeDrift,
+  INITIAL_DRIFT_STATE,
+  DEFAULT_DRIFT_ALARM_AFTER,
+} from './settlement/drift-worker.js';
+export type {
+  DriftTickReport,
+  DriftMonitorState,
+  DriftObservation,
+} from './settlement/drift-worker.js';

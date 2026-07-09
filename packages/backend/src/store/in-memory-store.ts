@@ -13,13 +13,17 @@
 import { InMemorySequenceStore, SequenceAllocator } from '@troia/core';
 import type { SequenceProvider, State } from '@troia/core';
 import type {
+  DurableLog,
   EvidenceRecord,
+  EvidenceRow,
+  OrderFacts,
   InFlightPatch,
   LossBucket,
   ReleaseReason,
   ReserveOutcome,
   Store,
 } from '../ports.js';
+import { encodeEvidenceRow } from './evidence-codec.js';
 import { Mutex } from './mutex.js';
 import type { Lock } from './mutex.js';
 import { ReservationLedger } from './reservation-ledger.js';
@@ -38,15 +42,20 @@ interface LossRow {
   readonly usdcTxHash: string | null;
   readonly atMs: number;
 }
-interface EvidenceRow {
-  readonly orderId: string;
-  readonly record: EvidenceRecord;
-}
 
 export interface InMemoryStoreOptions {
   readonly balanceStroops: bigint;
   /** operator account seq at bootstrap; the SequenceAllocator hands out baseSeq+1 first. */
   readonly baseSeq: bigint;
+  /**
+   * Durable sink for settlement evidence. Absent offline (pure in-memory, exactly as before); the composition
+   * root injects a file-backed log. appendEvidence writes THROUGH it before touching memory, so a restart can
+   * still answer "which USDC payouts did I authorize?" — the local half of the rogue-payout check.
+   * Deliberately NOT wired to reserve()/the pool: the on-chain balance stays the solvency source of truth.
+   */
+  readonly evidenceLog?: DurableLog;
+  /** Rows replayed from that log at boot. Seeded by copy — never re-appended. */
+  readonly seedEvidence?: readonly EvidenceRow[];
   /**
    * The interleaving seam between reserve()'s CHECK and COMMIT. In a durable Store this is the real
    * await-ing durable write; offline it defaults to none (atomic). The SPIKE-3 proof injects a microtask
@@ -71,11 +80,17 @@ export class InMemoryStore implements Store {
   private readonly deadRetries = new Map<string, number>();
   private readonly reversalRetries = new Map<string, number>();
 
+  private readonly evidenceLog: DurableLog | undefined;
+
   constructor(opts: InMemoryStoreOptions) {
     this.ledger = new ReservationLedger(opts.balanceStroops);
     this.sequences = new SequenceAllocator(new InMemorySequenceStore(), opts.baseSeq);
     this.poolMutex = opts.poolMutex ?? new Mutex();
     this.beforeReserveCommit = opts.beforeReserveCommit;
+    this.evidenceLog = opts.evidenceLog;
+    // Hydration is a plain copy: replayed rows are already durable, so re-appending them would grow the log
+    // without bound and, worse, make every restart look like a fresh batch of payouts.
+    if (opts.seedEvidence !== undefined) this.evidence.push(...opts.seedEvidence);
   }
 
   // --- SPIKE-3 solvency (the money-critical path) ---
@@ -155,8 +170,14 @@ export class InMemoryStore implements Store {
     return 'first';
   }
 
-  async appendEvidence(orderId: string, record: EvidenceRecord): Promise<void> {
-    this.evidence.push({ orderId, record });
+  /** DURABLE FIRST, memory second. A log throw leaves the row unrecorded, so the caller's effect retries whole.
+   *  Still a strictly-synchronous read-modify-write (the sink's write is sync), so it stays atomic on the event
+   *  loop and must NOT self-take the caller's per-order lock. At-least-once by design: a crash between the
+   *  append and the push replays the row on the next drive, and replay dedupes it. */
+  async appendEvidence(orderId: string, record: EvidenceRecord, order: OrderFacts): Promise<void> {
+    const row: EvidenceRow = { orderId, record, order };
+    this.evidenceLog?.append(encodeEvidenceRow(row));
+    this.evidence.push(row);
   }
 
   async bumpDeadRetries(orderId: string): Promise<number> {
@@ -185,7 +206,31 @@ export class InMemoryStore implements Store {
   lossRecords(): readonly LossRow[] {
     return this.losses;
   }
+  /** A frozen snapshot copy — the append-only log can never be spliced through this accessor. */
   evidenceRecords(): readonly EvidenceRow[] {
-    return this.evidence;
+    return Object.freeze([...this.evidence]);
+  }
+
+  /**
+   * The durable roll of money-good payouts, which is exactly the evidence log read as a work-list.
+   *
+   * A row is written the instant the pay() is witnessed on chain, and UsdcConfirmed is forward-only — so a row is
+   * the durable proof that this order settled and still owes its accounting. The settlement worker reads THIS,
+   * not the in-memory registry, so a crash a second after confirmation no longer strands the order's booking and
+   * its pool refill. Deduped, because the log is at-least-once: a crash between the durable append and the
+   * in-memory push replays the row on the next drive.
+   */
+  confirmedOrders(): readonly { orderId: string; order: OrderFacts }[] {
+    const byOrder = new Map<string, { orderId: string; order: OrderFacts }>();
+    for (const row of this.evidence) {
+      if (!byOrder.has(row.orderId))
+        byOrder.set(row.orderId, { orderId: row.orderId, order: row.order });
+    }
+    return [...byOrder.values()];
+  }
+
+  confirmedOrder(orderId: string): { orderId: string; order: OrderFacts } | undefined {
+    const row = this.evidence.find((r) => r.orderId === orderId);
+    return row === undefined ? undefined : { orderId: row.orderId, order: row.order };
   }
 }

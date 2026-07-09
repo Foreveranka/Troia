@@ -25,8 +25,12 @@ export const CHECKOUT_TOKEN = 'tok-1'; // the fake initializeCheckoutForm issues
 export const MID_E7 = 405_000_000n; // 40.50 TRY/USDC
 const STATS = { muDaily: 0.00055, sigmaDaily: 0.003 };
 const COMMISSION = { valorDays: 15, z: 1, marginBps: 30 };
-export const quote: QuoteFn = async (usdcStroops) =>
-  quoteUsdc(usdcStroops, MID_E7, STATS, COMMISSION);
+/** The backend's Quote seam also carries the accounting split the ledger books. These fixtures price without a
+ *  PSP pass-through (pspCostKurus 0), so the whole margin is FX-risk revenue and the charged price is unchanged. */
+export const quote: QuoteFn = async (usdcStroops) => ({
+  ...quoteUsdc(usdcStroops, MID_E7, STATS, COMMISSION),
+  pspCostKurus: 0n,
+});
 
 export interface HttpHarness {
   readonly app: FastifyInstance;

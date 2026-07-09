@@ -66,7 +66,8 @@ export type LedgerErrorCode =
   | 'ValuationMismatch'
   | 'Unbalanced'
   | 'DuplicateRef'
-  | 'InvalidSettlement';
+  | 'InvalidSettlement'
+  | 'CorruptJournal';
 
 export class LedgerError extends Error {
   readonly code: LedgerErrorCode;
@@ -98,9 +99,94 @@ export interface PostInput {
   readonly credits: readonly Leg[];
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// Durability seam. The ledger stays pure: it never imports `node:fs` and never learns where its journal lives.
+// The composition root injects a JournalSink; `post()` writes THROUGH it before mutating memory, so in-memory
+// state is always a subset of what is durable ("book-or-neither"). On boot the root replays the journal into a
+// fresh ledger with `hydrate()`, which reconstructs the same seq numbering and the same duplicate-ref set — so
+// `nativeBalance('USDC_POOL')`, the baseline `detectDrift` compares against the chain, survives a restart
+// instead of silently resetting to zero and hiding whatever moved while the process was down.
+// ---------------------------------------------------------------------------------------------------------
+
+/** A synchronous durable sink for journal entries. Throws on I/O failure; a throw must leave nothing booked. */
+export interface JournalSink {
+  append(payload: string): void;
+}
+
+const NOOP_SINK: JournalSink = { append() {} };
+
+const RECORD_VERSION = 1;
+/** Canonical non-negative decimal, no sign, no exponent, no leading zeros, no whitespace. `BigInt()` alone is
+ *  far too permissive: it accepts '', ' 1 ', '-1' and '0x10', and it THROWS on '1e+21' — the exact string a
+ *  stray `Number()` hop would have produced. Pin the grammar instead of trusting the parser. */
+const DECIMAL = /^(0|[1-9][0-9]*)$/;
+
+function corrupt(what: string): never {
+  throw new LedgerError('CorruptJournal', `journal record is not decodable: ${what}`);
+}
+
+function encodeLeg(l: Leg): Record<string, string> {
+  return { account: l.account, native: String(l.native), kurus: String(l.kurus) };
+}
+
+/** JSON.stringify THROWS on a raw bigint, and a JSON number silently rounds past 2^53 — so every amount is a
+ *  base-10 string. Key order is fixed so a record's bytes are a pure function of its value. */
+export function encodeJournalEntry(e: JournalEntry): string {
+  return JSON.stringify({
+    v: RECORD_VERSION,
+    seq: e.seq,
+    ref: e.ref,
+    kind: e.kind,
+    debits: e.debits.map(encodeLeg),
+    credits: e.credits.map(encodeLeg),
+  });
+}
+
+function decodeLegs(raw: unknown, side: string): Leg[] {
+  if (!Array.isArray(raw) || raw.length === 0) corrupt(`${side} must be a non-empty array`);
+  return raw.map((l): Leg => {
+    if (typeof l !== 'object' || l === null) corrupt(`${side} leg is not an object`);
+    const { account, native, kurus } = l as Record<string, unknown>;
+    if (typeof account !== 'string' || !(account in ACCOUNT_CURRENCY)) corrupt(`unknown account`);
+    if (typeof native !== 'string' || !DECIMAL.test(native)) corrupt(`non-canonical native amount`);
+    if (typeof kurus !== 'string' || !DECIMAL.test(kurus)) corrupt(`non-canonical kurus amount`);
+    return { account: account as Account, native: BigInt(native), kurus: BigInt(kurus) };
+  });
+}
+
+/** Fail-CLOSED: a record whose bytes are intact but whose shape, version or amounts are wrong means format
+ *  drift or tampering, never something to skip. Skipping one record would renumber every later seq. */
+export function decodeJournalEntry(payload: string): JournalEntry {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(payload);
+  } catch {
+    corrupt('not JSON');
+  }
+  if (typeof raw !== 'object' || raw === null) corrupt('not an object');
+  const { v, seq, ref, kind, debits, credits } = raw as Record<string, unknown>;
+  if (v !== RECORD_VERSION) corrupt(`unsupported version ${String(v)}`);
+  if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0) corrupt('bad seq');
+  if (typeof ref !== 'string' || ref.length === 0) corrupt('bad ref');
+  if (kind !== 'SETTLEMENT' && kind !== 'TOPUP') corrupt(`bad kind ${String(kind)}`);
+  return Object.freeze({
+    seq,
+    ref,
+    kind,
+    debits: frozenLegs(decodeLegs(debits, 'debits')),
+    credits: frozenLegs(decodeLegs(credits, 'credits')),
+  });
+}
+
 export class Ledger {
   private readonly entries: JournalEntry[] = [];
   private readonly refs = new Set<string>();
+  private readonly sink: JournalSink;
+
+  /** Pure by default. Pass a sink to make every posted entry durable BEFORE it is visible in memory. */
+  constructor(sink: JournalSink = NOOP_SINK) {
+    this.sink = sink;
+  }
 
   /**
    * Validate and append a balanced entry (fail-closed). Rejects: an empty side, any non-positive leg, a
@@ -109,6 +195,28 @@ export class Ledger {
    */
   post(input: PostInput): JournalEntry {
     const { ref, kind, debits, credits } = input;
+    this.validateBalanced(debits, credits);
+    if (this.refs.has(ref)) {
+      throw new LedgerError('DuplicateRef', `entry ref already recorded: ${ref}`);
+    }
+    const entry: JournalEntry = Object.freeze({
+      seq: this.entries.length,
+      ref,
+      kind,
+      debits: frozenLegs(debits),
+      credits: frozenLegs(credits),
+    });
+    // DURABLE FIRST. A sink throw leaves seq unconsumed and `refs` untouched, so nothing is booked and a retry
+    // recomputes the identical entry. There is no await between here and the push, so on Node's single thread
+    // the pair is atomic — two posts can never interleave and emit a duplicate seq or a duplicate ref line.
+    this.sink.append(encodeJournalEntry(entry));
+    this.entries.push(entry);
+    this.refs.add(ref);
+    return entry;
+  }
+
+  /** The immutable double-entry laws, applied identically to a live post and to a replayed record. */
+  private validateBalanced(debits: readonly Leg[], credits: readonly Leg[]): void {
     if (debits.length === 0 || credits.length === 0) {
       throw new LedgerError('EmptyEntry', 'an entry needs at least one debit and one credit');
     }
@@ -134,19 +242,45 @@ export class Ledger {
         `debits ${sumKurus(debits)} != credits ${sumKurus(credits)} (kuruş)`,
       );
     }
-    if (this.refs.has(ref)) {
-      throw new LedgerError('DuplicateRef', `entry ref already recorded: ${ref}`);
+  }
+
+  /**
+   * Replay a journal into a FRESH ledger, in file order. Re-applies the structural double-entry laws (a corrupt
+   * record fails closed) and rebuilds the duplicate-ref set, then continues numbering where the file left off.
+   *
+   * It deliberately does NOT re-run recordSettlement/recordTopUp's business rules (spread < userTry, fee <=
+   * userTry): those are write-time gates on an INPUT, and a later tightening of them must never retroactively
+   * reject a record that was valid when it was booked. It replays the posted legs verbatim; history is history.
+   *
+   * A seq gap, a reorder, or a duplicate ref is fatal — a synchronous single writer cannot produce one, so their
+   * presence means corruption or tampering, and skipping would renumber every later entry into a different ledger.
+   */
+  hydrate(entries: readonly JournalEntry[]): void {
+    if (this.entries.length > 0) {
+      throw new LedgerError('CorruptJournal', 'hydrate() requires a fresh ledger');
     }
-    const entry: JournalEntry = Object.freeze({
-      seq: this.entries.length,
-      ref,
-      kind,
-      debits: frozenLegs(debits),
-      credits: frozenLegs(credits),
-    });
-    this.entries.push(entry);
-    this.refs.add(ref);
-    return entry;
+    for (const e of entries) {
+      this.validateBalanced(e.debits, e.credits);
+      if (e.seq !== this.entries.length) {
+        throw new LedgerError(
+          'CorruptJournal',
+          `journal seq gap: expected ${this.entries.length}, got ${e.seq}`,
+        );
+      }
+      if (this.refs.has(e.ref)) {
+        throw new LedgerError('DuplicateRef', `journal replays a duplicate ref: ${e.ref}`);
+      }
+      this.entries.push(
+        Object.freeze({
+          seq: e.seq,
+          ref: e.ref,
+          kind: e.kind,
+          debits: frozenLegs(e.debits),
+          credits: frozenLegs(e.credits),
+        }),
+      );
+      this.refs.add(e.ref);
+    }
   }
 
   /**
@@ -203,6 +337,15 @@ export class Ledger {
   /** A snapshot copy — the internal journal is never handed out, so callers can't splice it. */
   all(): readonly JournalEntry[] {
     return [...this.entries];
+  }
+
+  /**
+   * Has this ref already been booked? Because the journal is durable and replayed at boot, this answers "did a
+   * PREVIOUS life already do this?" — which is the only way a worker can avoid repeating a side effect that
+   * happened before a crash. Asking the ledger AFTER the effect is too late; the effect already ran twice.
+   */
+  hasRef(ref: string): boolean {
+    return this.refs.has(ref);
   }
 
   /** Functional-currency balance: Σ debit.kurus − Σ credit.kurus. Assets positive, income/equity negative. */

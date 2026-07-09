@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryStore } from '../../src/store/in-memory-store.js';
 
+const FACTS: OrderFacts = {
+  destination: 'GDESTINATIONACCOUNTPLACEHOLDER0000000000000000',
+  amountStroops: 1_000_000_000n,
+  memoHex: 'ab'.repeat(32),
+  appliedRateStroops: 340_000_000n,
+  paidPriceTry: '3400.00',
+  spreadKurus: 5_000n,
+  feeKurus: 2_000n,
+};
+
 const UNIT = 10_000_000n;
 const mk = (): InMemoryStore => new InMemoryStore({ balanceStroops: 100n * UNIT, baseSeq: 1000n });
 
@@ -29,10 +39,18 @@ describe('InMemoryStore — Store interface conformance', () => {
 
   it('appendEvidence and flagLoss record durably', async () => {
     const s = mk();
-    await s.appendEvidence('o1', { txHash: 'h', signedXdr: 'x', seq: '1001' });
+    await s.appendEvidence(
+      'o1',
+      { txHash: 'h', signedXdr: 'x', seq: '1001', witnessedAtUnix: 1_700_000_000 },
+      FACTS,
+    );
     await s.flagLoss('o1', 'reversalExhausted', 'h');
     expect(s.evidenceRecords()).toEqual([
-      { orderId: 'o1', record: { txHash: 'h', signedXdr: 'x', seq: '1001' } },
+      {
+        orderId: 'o1',
+        record: { txHash: 'h', signedXdr: 'x', seq: '1001', witnessedAtUnix: 1_700_000_000 },
+        order: FACTS,
+      },
     ]);
     expect(s.lossRecords()[0]).toMatchObject({
       orderId: 'o1',

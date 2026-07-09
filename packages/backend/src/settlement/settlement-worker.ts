@@ -1,4 +1,10 @@
-// The settlement-sim worker (the heart of the TRY-driven rebalance). It mirrors the poll worker: it takes the
+// The settlement-sim worker (the heart of the TRY-driven rebalance).
+//
+// ITS WORK-LIST IS DURABLE. It used to scan the in-memory order registry, which meant a crash between "the payout
+// confirmed" and "the next tick" lost the order forever: its outflow was never booked, so the double-entry ledger
+// stayed permanently above the chain and the solvency alarm rang for a discrepancy nobody could close; and its
+// pool refill simply never happened, silently. Now it scans the durable evidence log, one row per money-good
+// payout, written the moment the pay() was witnessed. A restart rediscovers every unfinished order. It mirrors the poll worker: it takes the
 // registry + the SHARED per-order lock + injected collaborators, and drives a money-safe step under that lock
 // so a tick and a concurrent webhook/poll for one order serialize. It touches the pure money-first core NOT AT
 // ALL — it works by DISCOVERY (a state scan), never a new reducer effect.
@@ -14,19 +20,14 @@
 //      nothing booked/credited and returns the record to pending for a later retry (a clean throw minted nothing;
 //      the deterministic ref makes a within-process re-mint a cache hit). Fail-closed on an unreadable rate.
 
-import type { State } from '@troia/core';
-import type { Clock } from '../ports.js';
-import type { OrderRegistry } from '../http/order-registry.js';
+import type { Clock, OrderFacts } from '../ports.js';
 import type { KeyedMutex } from '../store/mutex.js';
 import type { PendingSettlementStore } from './pending-settlement-store.js';
 import type { RebalancePolicy, TopUpRequest } from './rebalance-policy.js';
+import { isDurableLogFailure } from '../ports.js';
 
-/** The states where the pool is proven drained AND the charge is irreversible — the only refill anchor. */
-const SETTLEMENT_STATES: readonly State[] = ['UsdcConfirmed', 'Reconciled'];
-
-function isMoneyGood(state: State): boolean {
-  return state === 'UsdcConfirmed' || state === 'Reconciled';
-}
+// Money-good is no longer a STATE the worker reads from memory. It is a durable evidence row: written the instant
+// a pay() is witnessed on chain, never removed, and UsdcConfirmed is forward-only. A row IS the proof.
 
 /** Parse a server-computed "N" / "N.M" / "N.MM" TRY price into kuruş (× 100). Throws on anything else so a
  *  malformed price fails closed (the order is skipped/retried, never minted on a bogus basis). */
@@ -49,8 +50,18 @@ export interface TopUpExecution {
 }
 
 /** Narrow injected collaborators (interface-typed; concretes wired at the composition root, like ports.ts). */
+/** One money-good payout, as remembered on disk. Everything the worker needs; nothing it does not. */
+export interface ConfirmedOrder {
+  readonly orderId: string;
+  readonly order: OrderFacts;
+}
+
 export interface SettlementDeps {
-  readonly registry: OrderRegistry;
+  /** The durable roll of money-good payouts. Backed by the evidence log, so it survives a restart. */
+  readonly confirmed: {
+    all(): readonly ConfirmedOrder[];
+    get(orderId: string): ConfirmedOrder | undefined;
+  };
   readonly orderLocks: KeyedMutex;
   readonly clock: Clock;
   readonly pending: PendingSettlementStore;
@@ -58,6 +69,17 @@ export interface SettlementDeps {
   readonly rebalance: { topUp(req: TopUpRequest): Promise<TopUpExecution> };
   readonly store: { creditPool(stroops: bigint): Promise<void> };
   readonly ledger: {
+    /** Has this ref already been booked, in this life or a previous one? The durable answer to "did we already
+     *  do this?" — asked BEFORE a side effect, because asking after it is too late. */
+    hasRef(ref: string): boolean;
+    /** Books the USDC that LEFT the pool for one order (idempotent per orderId; DuplicateRef on a repeat). */
+    recordSettlement(input: {
+      orderId: string;
+      usdcStroops: bigint;
+      userTryKurus: bigint;
+      spreadKurus: bigint;
+      feeKurus?: bigint;
+    }): unknown;
     recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): unknown;
   };
   /** the LIVE rate (TRY per USDC, 7-decimal stroops) read at settle time — the oracle. Throws => fail-closed. */
@@ -71,30 +93,59 @@ export interface SettleReport {
   readonly voided: number;
   readonly failed: number;
   readonly skipped: number;
+  /** orders whose USDC outflow was booked into the double-entry ledger for the first time. */
+  readonly booked: number;
 }
 
 export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleReport> {
-  const { registry, orderLocks, clock, pending } = deps;
-  const report = { armed: 0, settled: 0, voided: 0, failed: 0, skipped: 0 };
+  const { confirmed, orderLocks, clock, pending } = deps;
+  const report = { armed: 0, settled: 0, voided: 0, failed: 0, skipped: 0, booked: 0 };
 
-  // Phase A — ARM (discovery): one pending settlement per money-good order, due at now + demo valör.
-  for (const snap of registry.ordersInStates(SETTLEMENT_STATES)) {
-    await orderLocks.run(snap.ctx.orderId, async () => {
-      const rec = registry.getByOrderId(snap.ctx.orderId);
-      if (rec === undefined || !isMoneyGood(rec.state)) return;
+  // Phase A — ARM (discovery): one pending settlement per money-good payout, due at now + demo valör. A row in
+  // the evidence log means the pay() was witnessed on chain, and UsdcConfirmed is forward-only — so a row IS the
+  // proof that this order is money-good, durably, whether or not this process ever saw the order.
+  for (const c of confirmed.all()) {
+    await orderLocks.run(c.orderId, async () => {
+      const rec = confirmed.get(c.orderId);
+      if (rec === undefined) return;
       let tryKurus: bigint;
       try {
-        tryKurus = tryToKurus(rec.ctx.paidPriceTry);
+        tryKurus = tryToKurus(rec.order.paidPriceTry);
       } catch {
         return; // malformed price -> skip arming (fail-closed; retried next tick if it becomes parseable)
       }
       if (tryKurus <= 0n) return;
+
+      // Book the USDC that LEFT the pool. This is the outflow half of the double entry, and without it the
+      // ledger only ever rises: `nativeBalance('USDC_POOL')` would drift above the chain by the sum of every
+      // payout, and the solvency alarm that compares the two would cry wolf on every tick.
+      //
+      // It happens BEFORE arming, and durably. If the journal write fails, nothing is armed and the order is
+      // rediscovered next tick — so a booking can be lost only together with the arming that follows it.
+      // DuplicateRef means a previous life already booked it: the journal survived, the in-memory arming did not.
+      try {
+        deps.ledger.recordSettlement({
+          orderId: rec.orderId,
+          usdcStroops: rec.order.amountStroops,
+          userTryKurus: tryKurus,
+          spreadKurus: rec.order.spreadKurus,
+          feeKurus: rec.order.feeKurus,
+        });
+        report.booked += 1;
+      } catch (e) {
+        if (isDurableLogFailure(e)) throw e; // nothing can be recorded any more — fail fast
+        if (!isDuplicateRef(e)) {
+          report.skipped += 1; // an unbookable order (a price the ledger rejects); the drift alarm will surface it
+          return;
+        }
+      }
+
       const now = clock.nowUnix();
       const outcome = pending.recordIfAbsent({
-        orderId: rec.ctx.orderId,
+        orderId: rec.orderId,
         tryKurus,
-        usdcPaidOutStroops: rec.ctx.amountStroops,
-        appliedRateStroops: rec.ctx.appliedRateStroops,
+        usdcPaidOutStroops: rec.order.amountStroops,
+        appliedRateStroops: rec.order.appliedRateStroops,
         confirmedAtUnix: now,
         settlesAtUnix: now + deps.demoValorSecs,
       });
@@ -105,10 +156,9 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
   // Phase B — SETTLE: refill the pool exactly once per due record.
   for (const dueRec of pending.due(clock.nowUnix())) {
     await orderLocks.run(dueRec.orderId, async () => {
-      // RE-READ inside the lock — a record whose order is no longer money-good (defensive: UsdcConfirmed is
-      // forward-only in practice) is VOIDED, never minted.
-      const rec = registry.getByOrderId(dueRec.orderId);
-      if (rec === undefined || !isMoneyGood(rec.state)) {
+      // RE-READ inside the lock — a record with no durable evidence is not a money-good payout and is VOIDED,
+      // never minted.
+      if (confirmed.get(dueRec.orderId) === undefined) {
         pending.markVoided(dueRec.orderId);
         report.voided += 1;
         return;
@@ -120,7 +170,17 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
       try {
         const liveRate = await deps.rate.liveRateStroops(); // live CEX rate; throws -> fail-closed (no mint)
         const req = deps.policy.plan(dueRec, liveRate);
-        const result = await deps.rebalance.topUp(req); // mint (idempotent per ref)
+        // ASK THE DURABLE LEDGER BEFORE MINTING. The pending-settlement store lives in memory, so a restart
+        // re-arms an order that was already refilled in a previous life; the mint's own idempotency cache is
+        // in-memory too, so it would mint a SECOND time on chain. The journal is durable and knows better.
+        // The pool base was re-seeded from the chain at boot and already includes that mint, so nothing is
+        // credited here either — only the bookkeeping is closed.
+        if (deps.ledger.hasRef(req.ref)) {
+          pending.markSettled(dueRec.orderId);
+          report.skipped += 1;
+          return;
+        }
+        const result = await deps.rebalance.topUp(req); // mint (idempotent per ref, within this process)
         try {
           deps.ledger.recordTopUp({
             ref: req.ref,
@@ -135,7 +195,12 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
         await deps.store.creditPool(result.usdcStroops);
         pending.markSettled(dueRec.orderId);
         report.settled += 1;
-      } catch {
+      } catch (e) {
+        // A poisoned durable log is NOT a transient failure. Swallowing it into markFailed would retry every
+        // tick — re-running the mint that precedes the booking — while creditPool is never reached and the
+        // /intent solvency gate never rises. Nothing can be booked again in this process, so fail fast and let
+        // a restart re-run the boot-time write probe.
+        if (isDurableLogFailure(e)) throw e;
         pending.markFailed(dueRec.orderId); // a clean throw minted nothing -> retry next tick
         report.failed += 1;
       }

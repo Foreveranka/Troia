@@ -51,7 +51,7 @@ function fixedClock(): { now: () => number; set: (t: number) => void } {
 }
 
 describe('makeQuoteFn — maps a SettlementQuote onto the backend Quote seam', () => {
-  it('produces exactly quoteUsdcWithPsp(mid, computed-stats, policy) mapped to the 5 Quote fields', async () => {
+  it('produces exactly quoteUsdcWithPsp(mid, computed-stats, policy) mapped onto the Quote seam', async () => {
     const oracle = new FakeOracle(MID_E7);
     const history = new FakeHistory(CLOSES);
     const quote = makeQuoteFn({ spotOracle: oracle, history, policy: POLICY });
@@ -66,7 +66,14 @@ describe('makeQuoteFn — maps a SettlementQuote onto the backend Quote seam', (
       appliedRateStroops: sq.appliedRateStroops,
       oracleMidE7: sq.oracleMidE7,
       spreadBps: sq.spreadBps,
+      // the two margin lines the double-entry ledger books: the PSP cost as an expense, the rest as revenue
+      spreadRevenueKurus: sq.spreadRevenueKurus,
+      pspCostKurus: sq.pspCostKurus,
     });
+    // and they reconcile with the price actually charged: (USDC valued at mid) + FX margin + PSP cost
+    expect(got.userTryKurus).toBe(
+      (UNIT * MID_E7) / 1_000_000_000_000n + got.spreadRevenueKurus + got.pspCostKurus,
+    );
     // sanity: canonical "N.MM" TRY string, mid passed through verbatim, and the PSP gross-up strictly raised the
     // charged amount above the pre-PSP net (429 bps + 25 kr recovered on top of the FX-risk price).
     expect(got.paidPriceTry).toBe(kurusToTryString(sq.userTryKurus));

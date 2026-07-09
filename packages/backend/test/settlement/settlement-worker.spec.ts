@@ -4,10 +4,10 @@ import type { SettlementDeps } from '../../src/settlement/settlement-worker.js';
 import { InMemoryPendingSettlementStore } from '../../src/settlement/pending-settlement-store.js';
 import { TryDrivenRebalancePolicy } from '../../src/settlement/rebalance-policy.js';
 import type { TopUpRequest } from '../../src/settlement/rebalance-policy.js';
-import { InMemoryOrderRegistry } from '../../src/http/order-registry.js';
 import { KeyedMutex } from '../../src/store/mutex.js';
 import type { State } from '@troia/core';
-import { FakeClock, FakeStore, makeCtx } from '../fakes/harness.js';
+import type { OrderFacts } from '../../src/ports.js';
+import { FakeClock, ORDER_FACTS } from '../fakes/harness.js';
 
 const DEMO_VALOR = 45;
 const RATE = 340_000_000n; // 34.0 TRY/USDC
@@ -54,20 +54,72 @@ class FakeCreditStore {
   }
 }
 
+function duplicateRef(): Error & { code: string } {
+  const e = new Error('dup') as Error & { code: string };
+  e.code = 'DuplicateRef';
+  return e;
+}
+
+/** The durable roll of money-good payouts, as the evidence log would hand it over after a restart. */
+class FakeConfirmed {
+  private readonly rows = new Map<string, { orderId: string; order: OrderFacts }>();
+  add(orderId: string, over: Partial<OrderFacts> = {}): void {
+    this.rows.set(orderId, { orderId, order: { ...ORDER_FACTS, ...over } });
+  }
+  drop(orderId: string): void {
+    this.rows.delete(orderId);
+  }
+  all(): readonly { orderId: string; order: OrderFacts }[] {
+    return [...this.rows.values()];
+  }
+  get(orderId: string): { orderId: string; order: OrderFacts } | undefined {
+    return this.rows.get(orderId);
+  }
+}
+
 class FakeBook {
   readonly booked: { ref: string; usdcStroops: bigint; valueKurus: bigint }[] = [];
+  readonly settlements: { orderId: string; usdcStroops: bigint; userTryKurus: bigint }[] = [];
+  hasRef(ref: string): boolean {
+    return (
+      this.booked.some((b) => b.ref === ref) || this.settlements.some((s) => s.orderId === ref)
+    );
+  }
   recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): void {
-    if (this.booked.some((b) => b.ref === input.ref)) {
-      const e = new Error('dup') as Error & { code?: string };
-      e.code = 'DuplicateRef';
-      throw e;
-    }
+    if (this.booked.some((b) => b.ref === input.ref)) throw duplicateRef();
     this.booked.push(input);
+  }
+  recordSettlement(input: {
+    orderId: string;
+    usdcStroops: bigint;
+    userTryKurus: bigint;
+    spreadKurus: bigint;
+    feeKurus?: bigint;
+  }): void {
+    if (this.settlements.some((s) => s.orderId === input.orderId)) throw duplicateRef();
+    this.settlements.push(input);
+  }
+  /** expected pool = Σ top-ups − Σ settlements, exactly as the real ledger's nativeBalance('USDC_POOL'). */
+  detectDrift(observedPoolStroops: bigint): {
+    expectedPoolStroops: bigint;
+    observedPoolStroops: bigint;
+    driftStroops: bigint;
+    inSync: boolean;
+  } {
+    const expected =
+      this.booked.reduce((s, b) => s + b.usdcStroops, 0n) -
+      this.settlements.reduce((s, x) => s + x.usdcStroops, 0n);
+    return {
+      expectedPoolStroops: expected,
+      observedPoolStroops,
+      driftStroops: observedPoolStroops - expected,
+      inSync: observedPoolStroops === expected,
+    };
   }
 }
 
 interface Rig extends SettlementDeps {
-  registry: InMemoryOrderRegistry;
+  confirmed: FakeConfirmed;
   clock: FakeClock;
   pending: InMemoryPendingSettlementStore;
   rebalance: FakeRebalance;
@@ -77,7 +129,7 @@ interface Rig extends SettlementDeps {
 }
 
 function rig(): Rig {
-  const registry = new InMemoryOrderRegistry();
+  const confirmed = new FakeConfirmed();
   const clock = new FakeClock(1_000);
   const pending = new InMemoryPendingSettlementStore();
   const rebalance = new FakeRebalance();
@@ -85,7 +137,7 @@ function rig(): Rig {
   const store = new FakeCreditStore();
   const ledger = new FakeBook();
   return {
-    registry,
+    confirmed,
     orderLocks: new KeyedMutex(),
     clock,
     pending,
@@ -98,9 +150,9 @@ function rig(): Rig {
   };
 }
 
+/** A money-good payout has a durable evidence row; a money-bad one never gets one, so it is simply absent. */
 function putOrder(r: Rig, orderId: string, state: State): void {
-  const ctx = makeCtx(new FakeStore([]), { orderId });
-  r.registry.put(ctx, state);
+  if (state === 'UsdcConfirmed' || state === 'Reconciled') r.confirmed.add(orderId);
 }
 
 describe('settleAndRebalance — the TRY-driven settlement-sim worker', () => {
@@ -181,9 +233,8 @@ describe('settleAndRebalance — the TRY-driven settlement-sim worker', () => {
     const r = rig();
     putOrder(r, 'good', 'UsdcConfirmed');
     await settleAndRebalance(r); // arm while money-good
-    // the order is later proven money-bad (defensive fence; UsdcConfirmed is forward-only in practice)
-    const ctx = makeCtx(new FakeStore([]), { orderId: 'good' });
-    r.registry.put(ctx, 'ChargeReversed');
+    // its durable evidence vanishes (a defensive fence; an evidence row is append-only and never removed)
+    r.confirmed.drop('good');
     r.clock.now = 1_045;
     const rep = await settleAndRebalance(r);
 

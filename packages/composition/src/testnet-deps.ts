@@ -28,6 +28,10 @@ import { createPaymentProvider } from '@troia/psp';
 import type { OracleProvider, RateHistoryProvider } from '@troia/oracle';
 import { SimulatedRebalance } from '@troia/rebalance';
 import { Ledger } from '@troia/ledger';
+import { buildDurableBundle } from './durable-bundle.js';
+
+/** stroops × (rate × 1e7) -> kuruş: divide by 1e7 (stroops) × 1e7 (rate scale) / 100 (kuruş) = 1e12. */
+const GENESIS_KURUS_DIVISOR = 1_000_000_000_000n;
 import { SystemClock, createSacMintClient } from '@troia/stellar-client';
 import { LocalKeySigner, SorobanRpcAdapter } from '@troia/stellar-client/adapters';
 import { buildStellarPort } from './build-stellar-port.js';
@@ -63,6 +67,13 @@ export interface TestnetServerConfig {
   readonly timeboundsSecs?: number; // default 45
   /** the compressed settlement valör for the TRY-driven rebalance demo — real is ~21 days; default 30s. */
   readonly demoValorSecs?: number;
+  /**
+   * Where the append-only journal and evidence logs live. When set, the accounting journal and the settlement
+   * witnesses are durable and replayed at boot, so the drift baseline survives a restart instead of silently
+   * resetting to zero. When omitted (every offline test), the ledger and store are pure in-memory, exactly as
+   * before. Nothing here seeds the pool or the reservation ledger — the chain read stays the solvency truth.
+   */
+  readonly dataDir?: string;
   readonly merchant?: MerchantTemplate; // override the KYC-stub buyer/addresses/basket
   readonly opts?: BuildStellarPortOptions;
 }
@@ -139,6 +150,7 @@ function buildSettlementBundle(
   demoValorSecs: number,
   feeStroops: string,
   timeboundsSecs: number,
+  ledger: Ledger,
   opts?: BuildStellarPortOptions,
 ): SettlementBundle {
   assertIssuerKeyMatches(issuerSecret, network.usdc.issuer); // fail-closed BEFORE any wiring
@@ -163,7 +175,7 @@ function buildSettlementBundle(
     pending: new InMemoryPendingSettlementStore(),
     policy: new TryDrivenRebalancePolicy(),
     rebalance: new SimulatedRebalance(mintPort),
-    ledger: new Ledger(),
+    ledger,
     rate: {
       async liveRateStroops(): Promise<bigint> {
         const r = await spotOracle.getRate();
@@ -204,6 +216,13 @@ export async function buildTestnetServerDeps(
   const network = testnetConfig(cfg.deployment);
   assertOperatorKeyMatches(cfg.secrets.operatorSecret, network.operatorPublic); // fail-closed BEFORE any wiring
 
+  // Durable-first, and BEFORE the Stellar port: the port's write-ahead journal must be the durable one, so a
+  // pay() hash reaches stable storage before the transaction is broadcast. A corrupt journal or an unusable data
+  // dir aborts the boot HERE, not inside the effect that runs after the USDC has already left the pool. No
+  // dataDir => the pure in-memory ledger/journal/store the offline suite expects.
+  const durable = cfg.dataDir === undefined ? null : buildDurableBundle(cfg.dataDir);
+  for (const w of durable?.warnings ?? []) console.warn(`[durable-log] ${w}`);
+
   const stellar = buildStellarPort(network, cfg.secrets.operatorSecret, cfg.opts);
   const psp = createPaymentProvider(network.psp, {
     apiKey: cfg.secrets.iyzicoApiKey,
@@ -222,7 +241,37 @@ export async function buildTestnetServerDeps(
     reads.operatorSeqNum(),
     reads.poolBalanceStroops(),
   ]);
-  const store = new InMemoryStore({ balanceStroops, baseSeq });
+  // GENESIS. The ledger starts at zero; the pool does not. Its opening balance was minted by our own issuer,
+  // outside the TRY book, so nothing in the journal explains it — and the drift alarm, which weighs the ledger
+  // against the chain, would read that unexplained balance as a permanent discrepancy the size of the whole pool.
+  //
+  // Book it once, as the opening top-up it is: EXTERNAL_FUNDING is precisely the counter-account for USDC that
+  // entered the pool without a customer paying for it. Its kuruş valuation is a mark-to-market at first sight
+  // (the seed cost no lira), which is why it is read from the live mid; nothing consumes that valuation, while
+  // the STROOP side is what the alarm actually measures. Only ever on the first boot with an empty journal — a
+  // restart replays it, and a fresh pool gets a fresh journal because the data dir is scoped per deployment.
+  if (durable !== null && durable.ledger.all().length === 0 && balanceStroops > 0n) {
+    const rate = await cfg.spotOracle.getRate();
+    if (!rate.ok) throw rate.error; // fail-closed: never guess the opening valuation
+    const valueKurus = (balanceStroops * rate.quote.midTryPerUsdc) / GENESIS_KURUS_DIVISOR;
+    if (valueKurus <= 0n)
+      throw new Error('genesis pool balance values to zero kuruş — refusing to book it');
+    durable.ledger.recordTopUp({ ref: 'genesis', usdcStroops: balanceStroops, valueKurus });
+    console.log(
+      `[ledger] genesis: booked the opening pool of ${balanceStroops} stroops at mid ${rate.quote.midTryPerUsdc}`,
+    );
+  }
+
+  const store = new InMemoryStore(
+    durable === null
+      ? { balanceStroops, baseSeq }
+      : {
+          balanceStroops,
+          baseSeq,
+          evidenceLog: durable.evidenceLog,
+          seedEvidence: durable.seedEvidence,
+        },
+  );
 
   const clock = new SystemClock(); // shared: the app/worker clock AND the mint client's timebounds source
   const settlement = buildSettlementBundle(
@@ -234,9 +283,12 @@ export async function buildTestnetServerDeps(
     cfg.demoValorSecs ?? 30,
     cfg.feeStroops ?? '100',
     cfg.timeboundsSecs ?? 45,
+    durable?.ledger ?? new Ledger(),
     cfg.opts,
   );
 
+  // The payout tail. It needs the durable stores AND the durable write-ahead journal, so it exists only when a
+  // data dir does: without a journal that predates every broadcast there is no honest way to accuse anyone.
   const merchant = cfg.merchant ?? DEFAULT_TESTNET_MERCHANT;
   return {
     network,
@@ -247,6 +299,12 @@ export async function buildTestnetServerDeps(
       policy: cfg.policy ?? OFFLINE_DEFAULT_POLICY,
     },
     ports: { stellar, psp, store, clock },
+    // The settlement worker's work-list. The evidence log IS the durable roll of money-good payouts, so a crash
+    // between a payout confirming and the worker's next tick no longer loses its booking or its pool refill.
+    confirmed: {
+      all: () => store.confirmedOrders(),
+      get: (orderId) => store.confirmedOrder(orderId),
+    },
     quote,
     webhookSigningSecret: cfg.secrets.webhookSigningSecret,
     settlement,

@@ -28,10 +28,17 @@ describe('engine decision states', () => {
     h.psp.cancelResult = body({ status: 'failure', conversationId: 'cid' }); // void keeps FAILING
     const ctx = makeCtx(h.store, { hashHex: 'usdc-hash', signedXdr: 'x' });
     h.store.reversalRetries.set(ctx.orderId, h.config.policy.maxReversalRetries); // next bump -> maxReversal+1 -> false
-    const r = await advance(ctx, 'ChargeReversing', { type: 'reversalNotDone', retriesRemaining: true }, h.deps);
+    const r = await advance(
+      ctx,
+      'ChargeReversing',
+      { type: 'reversalNotDone', retriesRemaining: true },
+      h.deps,
+    );
     expect(r.state).toBe('LossReview'); // fireCancel(FAILURE) -> reversalNotDone(false) -> LossReview['flagLoss']
     expect(r.quiescence).toBe('waiting'); // manual sink (not an absolute terminal)
-    expect(h.store.losses).toEqual([{ orderId: ctx.orderId, bucket: 'reversalExhausted', usdcTxHash: 'usdc-hash' }]);
+    expect(h.store.losses).toEqual([
+      { orderId: ctx.orderId, bucket: 'reversalExhausted', usdcTxHash: 'usdc-hash' },
+    ]);
     expect(h.trace).toContain('psp.cancel');
     expect(h.trace).toContain('store.flagLoss:reversalExhausted');
     expect(h.stellar.submitReqs).toHaveLength(0); // no money-moving submit on the reversal leg

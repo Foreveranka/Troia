@@ -14,7 +14,13 @@ import { deriveIds } from '@troia/core';
 import type { Effect, Event, State } from '@troia/core';
 import type { PayRequest, ReducerState } from '@troia/stellar-client';
 import { verdictToCore } from '@troia/stellar-client';
-import type { Address, BasketItem, Buyer, CancelParams, InitializeCheckoutFormParams } from '@troia/psp';
+import type {
+  Address,
+  BasketItem,
+  Buyer,
+  CancelParams,
+  InitializeCheckoutFormParams,
+} from '@troia/psp';
 import { classifyIyzicoResult, projectCheckoutFormInit } from '@troia/psp';
 import type { OrderCtx } from '../ctx.js';
 import type { InFlightPatch } from '../ports.js';
@@ -26,11 +32,13 @@ import type { EngineDeps, PerformResult } from './events.js';
 const NO_EVENT: PerformResult = { event: null };
 
 function requireSeq(ctx: OrderCtx): string {
-  if (ctx.activeSeq === null) throw new EngineError(`order ${ctx.orderId}: no active sequence for pay()`);
+  if (ctx.activeSeq === null)
+    throw new EngineError(`order ${ctx.orderId}: no active sequence for pay()`);
   return ctx.activeSeq;
 }
 function requirePaymentId(ctx: OrderCtx): string {
-  if (ctx.paymentId === null) throw new EngineError(`order ${ctx.orderId}: no paymentId for psp call`);
+  if (ctx.paymentId === null)
+    throw new EngineError(`order ${ctx.orderId}: no paymentId for psp call`);
   return ctx.paymentId;
 }
 
@@ -48,7 +56,9 @@ function inFlightPatch(ctx: OrderCtx): InFlightPatch {
 function checkoutFormParams(ctx: OrderCtx, deps: EngineDeps): InitializeCheckoutFormParams {
   const { psp } = deps.config;
   const buyer: Buyer = { ...psp.buyer, ip: ctx.ip };
-  const basketItems: readonly BasketItem[] = [{ ...psp.basketItemTemplate, price: ctx.paidPriceTry }];
+  const basketItems: readonly BasketItem[] = [
+    { ...psp.basketItemTemplate, price: ctx.paidPriceTry },
+  ];
   return {
     locale: psp.locale,
     conversationId: ctx.conversationId,
@@ -74,7 +84,10 @@ function cancelParams(ctx: OrderCtx, deps: EngineDeps): CancelParams {
   };
 }
 
-function payRequest(ctx: OrderCtx, deps: EngineDeps): { req: PayRequest; ourSeq: bigint; maxTime: number } {
+function payRequest(
+  ctx: OrderCtx,
+  deps: EngineDeps,
+): { req: PayRequest; ourSeq: bigint; maxTime: number } {
   const activeSeq = requireSeq(ctx);
   const ids = deriveIds(ctx.orderId, ctx.destination, ctx.amountStroops);
   const now = deps.clock.nowUnix();
@@ -109,7 +122,11 @@ function payRequest(ctx: OrderCtx, deps: EngineDeps): { req: PayRequest; ourSeq:
 /** submit -> observe ONCE -> verdictToCore. Shared by submitPay and (post reuseOnDead) submitReplacementSameSeq.
  *  The single observe yields the first verdict; STILL_PENDING routes to a durable wait (poll worker re-observes
  *  later). ctxPatch records the pay() witness so handToReconciler/flagLoss can cite it. */
-async function doSubmitAndObserve(ctx: OrderCtx, coreState: State, deps: EngineDeps): Promise<PerformResult> {
+async function doSubmitAndObserve(
+  ctx: OrderCtx,
+  coreState: State,
+  deps: EngineDeps,
+): Promise<PerformResult> {
   const { req, ourSeq, maxTime } = payRequest(ctx, deps);
   const submit = await deps.stellar.submitPay(req);
   // Durably record the pay() witness IMMEDIATELY — before observe / any quiescence — so a cross-process poll
@@ -125,8 +142,13 @@ async function doSubmitAndObserve(ctx: OrderCtx, coreState: State, deps: EngineD
   const obs = await deps.stellar.observe(state);
   const mapping = verdictToCore(obs.verdict ?? 'STILL_PENDING', coreState);
   // record the maxTime too so the poll/recovery worker can rebuild this exact observe input after a crash.
-  const ctxPatch: Partial<OrderCtx> = { hashHex: submit.hashHex, signedXdr: submit.signedXdr, payMaxTimeUnix: maxTime };
-  if (mapping.kind === 'escalate') return { event: null, ctxPatch, escalate: { reason: mapping.reason } };
+  const ctxPatch: Partial<OrderCtx> = {
+    hashHex: submit.hashHex,
+    signedXdr: submit.signedXdr,
+    payMaxTimeUnix: maxTime,
+  };
+  if (mapping.kind === 'escalate')
+    return { event: null, ctxPatch, escalate: { reason: mapping.reason } };
   return { event: mapping.event, ctxPatch };
 }
 
@@ -170,7 +192,11 @@ export async function perform(
         deps.clock.nowUnix() * 1000,
       );
       const type =
-        outcome.kind === 'reserved' ? 'solvencyOk' : outcome.kind === 'insufficient' ? 'solvencyFail' : 'solvencyUnknown';
+        outcome.kind === 'reserved'
+          ? 'solvencyOk'
+          : outcome.kind === 'insufficient'
+            ? 'solvencyFail'
+            : 'solvencyUnknown';
       return { event: { type } };
     }
 
@@ -242,14 +268,20 @@ export async function perform(
       const cls = classifyIyzicoResult(raw, 'void');
       if (cls === 'SUCCESS') return { event: { type: 'reversalConfirmed' } };
       const n = await deps.store.bumpReversalRetries(ctx.orderId);
-      return { event: { type: 'reversalNotDone', retriesRemaining: n <= deps.config.policy.maxReversalRetries } };
+      return {
+        event: {
+          type: 'reversalNotDone',
+          retriesRemaining: n <= deps.config.policy.maxReversalRetries,
+        },
+      };
     }
 
     case 'flagLoss':
       // A reversal budget was exhausted (a completed charge whose same-day void could not complete): record the
       // durable stuck-refund bucket with the on-chain witness, so it is observable for manual action. The bucket
       // is keyed off the entering event (reversalNotDone), which is always present on a flagLoss path.
-      if (enteringEvent === null) throw new EngineError(`order ${ctx.orderId}: flagLoss without an entering event`);
+      if (enteringEvent === null)
+        throw new EngineError(`order ${ctx.orderId}: flagLoss without an entering event`);
       await deps.store.flagLoss(ctx.orderId, flagLossBucket(enteringEvent), ctx.hashHex);
       return NO_EVENT;
 
@@ -257,7 +289,9 @@ export async function perform(
       // Append the landed witness ONLY — do NOT synthesize {reconciled}. The order quiesces in UsdcConfirmed
       // (a durable wait); the offline reconciler drives ->Reconciled only after verifyReport MATCHES.
       if (ctx.hashHex === null || ctx.signedXdr === null || ctx.activeSeq === null) {
-        throw new EngineError(`order ${ctx.orderId}: cannot append evidence — pay() witness missing`);
+        throw new EngineError(
+          `order ${ctx.orderId}: cannot append evidence — pay() witness missing`,
+        );
       }
       await deps.store.appendEvidence(ctx.orderId, {
         txHash: ctx.hashHex,

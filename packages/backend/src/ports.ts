@@ -75,7 +75,12 @@ export interface Store {
    *  /intent trigger or a crash-retry can never double-reserve the pool or open a second checkout session. */
   createIfAbsent(orderId: string): Promise<'created' | 'exists'>;
   persistState(orderId: string, next: State, patch: InFlightPatch): Promise<void>;
-  reserve(orderId: string, amountStroops: bigint, ttlMs: number, nowMs: number): Promise<ReserveOutcome>;
+  reserve(
+    orderId: string,
+    amountStroops: bigint,
+    ttlMs: number,
+    nowMs: number,
+  ): Promise<ReserveOutcome>;
   releaseReservation(orderId: string, reason: ReleaseReason): Promise<void>;
   flagLoss(orderId: string, bucket: LossBucket, usdcTxHash: string | null): Promise<void>;
   markWebhookSeen(eventId: string, orderId: string, nowMs: number): Promise<'first' | 'duplicate'>;

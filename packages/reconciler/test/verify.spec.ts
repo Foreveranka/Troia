@@ -32,7 +32,10 @@ describe('just verify — offline armed acceptance (3.4)', () => {
   beforeAll(() => {
     // Regenerate the committed acceptance report deterministically, then build the package for the runner.
     writeFileSync(reportPath, JSON.stringify(buildAcceptanceReport(), null, 2) + '\n');
-    execFileSync('pnpm', ['--filter', '@troia/reconciler', 'build'], { cwd: repoRoot, stdio: 'ignore' });
+    execFileSync('pnpm', ['--filter', '@troia/reconciler', 'build'], {
+      cwd: repoRoot,
+      stdio: 'ignore',
+    });
   }, 180_000);
 
   it('exits 0 with the network blocked; summary {total:3, matched:2, mismatch:1, unsettled:0}', () => {

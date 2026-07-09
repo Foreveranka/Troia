@@ -60,7 +60,12 @@ describe('ledger — recordSettlement (double-entry balances)', () => {
 
   it('the USDC leg carries native stroops but is valued in kuruş (multi-currency)', () => {
     const l = new Ledger();
-    const e = l.recordSettlement({ orderId: 'o', usdcStroops: ONE_USDC, userTryKurus: USER, spreadKurus: SPREAD });
+    const e = l.recordSettlement({
+      orderId: 'o',
+      usdcStroops: ONE_USDC,
+      userTryKurus: USER,
+      spreadKurus: SPREAD,
+    });
     const usdcLeg = e.credits.find((c) => c.account === 'USDC_POOL');
     expect(usdcLeg?.native).toBe(ONE_USDC); // stroops
     expect(usdcLeg?.kurus).toBe(BASE); // TRY value at mid
@@ -68,7 +73,12 @@ describe('ledger — recordSettlement (double-entry balances)', () => {
 
   it('spread 0 → no spread leg, still balances (fiat_in == crypto_out)', () => {
     const l = new Ledger();
-    const e = l.recordSettlement({ orderId: 'o', usdcStroops: ONE_USDC, userTryKurus: BASE, spreadKurus: 0n });
+    const e = l.recordSettlement({
+      orderId: 'o',
+      usdcStroops: ONE_USDC,
+      userTryKurus: BASE,
+      spreadKurus: 0n,
+    });
     expect(e.credits.some((c) => c.account === 'SPREAD_REVENUE')).toBe(false);
     expect(sumKurus(e.debits)).toBe(sumKurus(e.credits));
     expect(l.totalSpreadRevenueKurus()).toBe(0n);
@@ -107,7 +117,12 @@ describe('ledger — drift detection (on-chain is source of truth)', () => {
   const build = () => {
     const l = new Ledger();
     l.recordTopUp({ ref: 'topup-1', usdcStroops: STROOP * 100n, valueKurus: 405_000n });
-    l.recordSettlement({ orderId: 'ord-1', usdcStroops: ONE_USDC, userTryKurus: USER, spreadKurus: SPREAD });
+    l.recordSettlement({
+      orderId: 'ord-1',
+      usdcStroops: ONE_USDC,
+      userTryKurus: USER,
+      spreadKurus: SPREAD,
+    });
     return l; // expected pool = 100 - 1 = 99 USDC
   };
   const EXPECTED = STROOP * 99n;
@@ -137,15 +152,30 @@ describe('ledger — append-only & global trial balance', () => {
   it('assigns monotonic seq and preserves order', () => {
     const l = new Ledger();
     l.recordTopUp({ ref: 't1', usdcStroops: STROOP * 10n, valueKurus: 40_500n });
-    l.recordSettlement({ orderId: 'a', usdcStroops: ONE_USDC, userTryKurus: USER, spreadKurus: SPREAD });
-    l.recordSettlement({ orderId: 'b', usdcStroops: ONE_USDC, userTryKurus: USER, spreadKurus: SPREAD });
+    l.recordSettlement({
+      orderId: 'a',
+      usdcStroops: ONE_USDC,
+      userTryKurus: USER,
+      spreadKurus: SPREAD,
+    });
+    l.recordSettlement({
+      orderId: 'b',
+      usdcStroops: ONE_USDC,
+      userTryKurus: USER,
+      spreadKurus: SPREAD,
+    });
     expect(l.all().map((e) => e.seq)).toEqual([0, 1, 2]);
     expect(l.all().map((e) => e.ref)).toEqual(['t1', 'a', 'b']);
   });
 
   it('the returned journal is a snapshot — pushing to it does not grow the ledger', () => {
     const l = new Ledger();
-    l.recordSettlement({ orderId: 'a', usdcStroops: ONE_USDC, userTryKurus: USER, spreadKurus: SPREAD });
+    l.recordSettlement({
+      orderId: 'a',
+      usdcStroops: ONE_USDC,
+      userTryKurus: USER,
+      spreadKurus: SPREAD,
+    });
     const snapshot = l.all() as JournalEntry[];
     snapshot.push({ seq: 99, ref: 'evil', kind: 'SETTLEMENT', debits: [], credits: [] });
     expect(l.all()).toHaveLength(1); // internal journal untouched
@@ -228,15 +258,28 @@ describe('ledger — fail-closed guards', () => {
 
   it('post rejects an empty debit or credit side', () => {
     const l = new Ledger();
-    expectCode(() => l.post({ ref: 'x', kind: 'SETTLEMENT', debits: [], credits: [] }), 'EmptyEntry');
+    expectCode(
+      () => l.post({ ref: 'x', kind: 'SETTLEMENT', debits: [], credits: [] }),
+      'EmptyEntry',
+    );
   });
 
   it('a duplicate ref is rejected (append-only, no double-recording)', () => {
     const l = new Ledger();
-    l.recordSettlement({ orderId: 'dup', usdcStroops: ONE_USDC, userTryKurus: USER, spreadKurus: SPREAD });
+    l.recordSettlement({
+      orderId: 'dup',
+      usdcStroops: ONE_USDC,
+      userTryKurus: USER,
+      spreadKurus: SPREAD,
+    });
     expectCode(
       () =>
-        l.recordSettlement({ orderId: 'dup', usdcStroops: ONE_USDC, userTryKurus: USER, spreadKurus: SPREAD }),
+        l.recordSettlement({
+          orderId: 'dup',
+          usdcStroops: ONE_USDC,
+          userTryKurus: USER,
+          spreadKurus: SPREAD,
+        }),
       'DuplicateRef',
     );
   });
@@ -245,11 +288,21 @@ describe('ledger — fail-closed guards', () => {
     const l = new Ledger();
     // spread cannot exceed what the user paid (base would be <= 0)
     expect(() =>
-      l.recordSettlement({ orderId: 'a', usdcStroops: ONE_USDC, userTryKurus: 100n, spreadKurus: 100n }),
+      l.recordSettlement({
+        orderId: 'a',
+        usdcStroops: ONE_USDC,
+        userTryKurus: 100n,
+        spreadKurus: 100n,
+      }),
     ).toThrowError(LedgerError);
     // non-positive USDC out
     expect(() =>
-      l.recordSettlement({ orderId: 'b', usdcStroops: 0n, userTryKurus: USER, spreadKurus: SPREAD }),
+      l.recordSettlement({
+        orderId: 'b',
+        usdcStroops: 0n,
+        userTryKurus: USER,
+        spreadKurus: SPREAD,
+      }),
     ).toThrowError(LedgerError);
     // negative fee
     expect(() =>

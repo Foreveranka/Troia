@@ -38,7 +38,9 @@ export function formatPrice(price: number | string): string {
 /** The conversationId is the idempotency/correlation key — an empty one would silently break dedupe. */
 function requireConversationId(conversationId: string): void {
   if (typeof conversationId !== 'string' || conversationId.trim().length === 0) {
-    throw new PspBuildError('conversationId (the dedupe/correlation key) must be a non-empty string');
+    throw new PspBuildError(
+      'conversationId (the dedupe/correlation key) must be a non-empty string',
+    );
   }
 }
 

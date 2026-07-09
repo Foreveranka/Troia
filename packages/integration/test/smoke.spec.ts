@@ -31,7 +31,11 @@ const USDC_OUT = STROOP; // 1 USDC owed to the merchant
 
 const NOW = 1_000_000;
 const POLICY: OraclePolicy = { maxAgeMs: 5_000, deviationThresholdBps: 100, minQuorum: 3 };
-const q = (source: string, tryPerUsdc: bigint): SourceQuote => ({ source, tryPerUsdc, asOfMs: NOW });
+const q = (source: string, tryPerUsdc: bigint): SourceQuote => ({
+  source,
+  tryPerUsdc,
+  asOfMs: NOW,
+});
 
 // The happy path through the reducer (money-first): solvency reserved → TRY charged → USDC confirmed →
 // reconciled. Reserved → SolvencyReserved → UsdcSubmitted → UsdcConfirmed → Reconciled.
@@ -67,7 +71,13 @@ describe('integration — one order through the whole money core', () => {
       allowedIssuers: [ISSUER],
     };
     const built = PayoutIntent.build(
-      { orderId: ORDER_ID, destination: DESTINATION, amount: USDC_OUT, assetIssuer: ISSUER, memo: ids.memoHex },
+      {
+        orderId: ORDER_ID,
+        destination: DESTINATION,
+        amount: USDC_OUT,
+        assetIssuer: ISSUER,
+        memo: ids.memoHex,
+      },
       ctx,
     );
     expect(built.ok).toBe(true);
@@ -96,13 +106,19 @@ describe('integration — one order through the whole money core', () => {
     expect(run.state).toBe('Reconciled');
     expect(isAbsoluteTerminal(run.state)).toBe(true);
     expect(run.effects).toContain('submitPay');
-    expect(run.effects.indexOf('submitPay')).toBeGreaterThan(run.effects.indexOf('fireCheckoutForm'));
+    expect(run.effects.indexOf('submitPay')).toBeGreaterThan(
+      run.effects.indexOf('fireCheckoutForm'),
+    );
 
     // (5) ORACLE — deterministic mid from an agreeing trio (fail-closed otherwise). The trio is
     // ASYMMETRIC on purpose: median(403,405,408)=405.00 but mean=405.33, so pinning mid to 405.00
     // discriminates the actual (lower-median order statistic) contract from a mean — a symmetric trio
     // would let a mean-based oracle pass silently. All three are within 100 bps of the median.
-    const rate = aggregate([q('a', 403_000_000n), q('b', 405_000_000n), q('c', 408_000_000n)], POLICY, NOW);
+    const rate = aggregate(
+      [q('a', 403_000_000n), q('b', 405_000_000n), q('c', 408_000_000n)],
+      POLICY,
+      NOW,
+    );
     expect(rate.ok).toBe(true);
     if (!rate.ok) throw new Error(`oracle failed: ${rate.error.code}`);
     const mid = rate.quote.midTryPerUsdc;
@@ -145,7 +161,13 @@ describe('integration — one order through the whole money core', () => {
     };
     const wrongMemo = deriveMemo('a-different-order'); // valid shape (32 non-zero bytes), wrong value
     const built = PayoutIntent.build(
-      { orderId: ORDER_ID, destination: DESTINATION, amount: USDC_OUT, assetIssuer: ISSUER, memo: wrongMemo },
+      {
+        orderId: ORDER_ID,
+        destination: DESTINATION,
+        amount: USDC_OUT,
+        assetIssuer: ISSUER,
+        memo: wrongMemo,
+      },
       ctx,
     );
     expect(built.ok).toBe(false);

@@ -47,7 +47,12 @@ function isTimeout(e: unknown): boolean {
 
 /** Fetch with an abort-on-timeout race so a fetch that never settles rejects after `timeoutMs`. The race also
  *  covers a fetch impl that ignores the AbortSignal; the real fetch is aborted regardless. */
-async function fetchWithTimeout(doFetch: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(
+  doFetch: typeof fetch,
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -65,7 +70,10 @@ async function fetchWithTimeout(doFetch: typeof fetch, url: string, init: Reques
   }
 }
 
-export async function postIntent(body: IntentBody, opts: PostIntentOptions = {}): Promise<IntentOutcome> {
+export async function postIntent(
+  body: IntentBody,
+  opts: PostIntentOptions = {},
+): Promise<IntentOutcome> {
   const baseUrl = opts.baseUrl ?? BACKEND_BASE_URL;
   const doFetch = opts.fetchImpl ?? fetch;
 
@@ -90,7 +98,8 @@ export async function postIntent(body: IntentBody, opts: PostIntentOptions = {})
 
   if (!res.ok) {
     // Surface the backend's fail-closed reason (e.g. PoolInsufficient, MemoMismatch) when present.
-    const error = isRecord(json) && typeof json.error === 'string' ? json.error : `http_${res.status}`;
+    const error =
+      isRecord(json) && typeof json.error === 'string' ? json.error : `http_${res.status}`;
     return { ok: false, status: res.status, error };
   }
   if (!isRecord(json) || typeof json.token !== 'string' || typeof json.orderId !== 'string') {
@@ -101,20 +110,29 @@ export async function postIntent(body: IntentBody, opts: PostIntentOptions = {})
 
 /** Poll the coarse public status of an order (GET /status/:orderId). Never throws; a transient failure is a
  *  fail outcome the caller keeps polling through. */
-export async function getStatus(orderId: string, opts: GetStatusOptions = {}): Promise<StatusOutcome> {
+export async function getStatus(
+  orderId: string,
+  opts: GetStatusOptions = {},
+): Promise<StatusOutcome> {
   const baseUrl = opts.baseUrl ?? BACKEND_BASE_URL;
   const doFetch = opts.fetchImpl ?? fetch;
 
   let res: Response;
   try {
-    res = await fetchWithTimeout(doFetch, `${baseUrl}/status/${encodeURIComponent(orderId)}`, {}, opts.timeoutMs ?? POLL_TIMEOUT_MS);
+    res = await fetchWithTimeout(
+      doFetch,
+      `${baseUrl}/status/${encodeURIComponent(orderId)}`,
+      {},
+      opts.timeoutMs ?? POLL_TIMEOUT_MS,
+    );
   } catch (e) {
     return { ok: false, error: isTimeout(e) ? 'timeout' : 'network' };
   }
 
   const json: unknown = await res.json().catch(() => null);
   if (!res.ok || !isRecord(json) || typeof json.status !== 'string') {
-    const error = isRecord(json) && typeof json.error === 'string' ? json.error : `http_${res.status}`;
+    const error =
+      isRecord(json) && typeof json.error === 'string' ? json.error : `http_${res.status}`;
     return { ok: false, error };
   }
   return { ok: true, status: json.status as PublicStatus };
@@ -122,20 +140,29 @@ export async function getStatus(orderId: string, opts: GetStatusOptions = {}): P
 
 /** Fetch the settlement receipt (GET /receipt/:orderId): the on-chain pay() tx hash + the TRY charged, once
  *  known. Reviewer-facing proof; never throws. */
-export async function getReceipt(orderId: string, opts: GetStatusOptions = {}): Promise<ReceiptOutcome> {
+export async function getReceipt(
+  orderId: string,
+  opts: GetStatusOptions = {},
+): Promise<ReceiptOutcome> {
   const baseUrl = opts.baseUrl ?? BACKEND_BASE_URL;
   const doFetch = opts.fetchImpl ?? fetch;
 
   let res: Response;
   try {
-    res = await fetchWithTimeout(doFetch, `${baseUrl}/receipt/${encodeURIComponent(orderId)}`, {}, opts.timeoutMs ?? POLL_TIMEOUT_MS);
+    res = await fetchWithTimeout(
+      doFetch,
+      `${baseUrl}/receipt/${encodeURIComponent(orderId)}`,
+      {},
+      opts.timeoutMs ?? POLL_TIMEOUT_MS,
+    );
   } catch (e) {
     return { ok: false, error: isTimeout(e) ? 'timeout' : 'network' };
   }
 
   const json: unknown = await res.json().catch(() => null);
   if (!res.ok || !isRecord(json)) {
-    const error = isRecord(json) && typeof json.error === 'string' ? json.error : `http_${res.status}`;
+    const error =
+      isRecord(json) && typeof json.error === 'string' ? json.error : `http_${res.status}`;
     return { ok: false, error };
   }
   return {

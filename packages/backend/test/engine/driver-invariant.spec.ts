@@ -44,7 +44,10 @@ describe('driver invariant — at most one event-feeding effect per transition, 
         const feeders = r.effects.filter((e) => planEffect(e).feedsEventVia !== 'none');
         expect(feeders.length, `${state}/${event.type} feeders`).toBeLessThanOrEqual(1);
         if (feeders.length === 1) {
-          expect(r.effects[r.effects.length - 1], `${state}/${event.type} feeder must be last`).toBe(feeders[0]);
+          expect(
+            r.effects[r.effects.length - 1],
+            `${state}/${event.type} feeder must be last`,
+          ).toBe(feeders[0]);
         }
       }
     }

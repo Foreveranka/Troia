@@ -7,7 +7,9 @@ const ISSUER = 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W';
 const OTHER_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 const OTHER_MERCHANT = 'GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57';
 
-function sep7(opts: { dest?: string; amount?: string; memo?: string; issuer?: string } = {}): string {
+function sep7(
+  opts: { dest?: string; amount?: string; memo?: string; issuer?: string } = {},
+): string {
   const p = new URLSearchParams({
     destination: opts.dest ?? MERCHANT,
     amount: opts.amount ?? '62.00',
@@ -53,7 +55,18 @@ describe('evaluate', () => {
   });
 
   it('the amount gate agrees exactly with toStroops (no payable banner that dead-ends on click)', () => {
-    for (const a of ['62.00', '62.1234567', '0.0000001', '0', '-5', 'abc', '1e3', '1.', '62.123456789', '7']) {
+    for (const a of [
+      '62.00',
+      '62.1234567',
+      '0.0000001',
+      '0',
+      '-5',
+      'abc',
+      '1e3',
+      '1.',
+      '62.123456789',
+      '7',
+    ]) {
       expect(evaluate(sep7({ amount: a }))!.payable).toBe(toStroops(a) !== null);
     }
   });

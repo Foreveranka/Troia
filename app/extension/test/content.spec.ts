@@ -48,7 +48,12 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
 
   const OPEN_INTENT: IntentOutcome = {
     ok: true,
-    response: { orderId: 'ST-AB12CD', token: 'tok', paymentPageUrl: 'https://iyzico.test/form', paidPriceTry: '2000.00' },
+    response: {
+      orderId: 'ST-AB12CD',
+      token: 'tok',
+      paymentPageUrl: 'https://iyzico.test/form',
+      paidPriceTry: '2000.00',
+    },
   };
   const RECEIPT: ReceiptOutcome = { ok: true, txHash: 'abc123', paidPriceTry: '2000.00' };
 
@@ -59,7 +64,8 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
   const shadow = (): ShadowRoot => document.getElementById(HOST_ID)!.shadowRoot!;
   const statusText = (): string | null => shadow().querySelector('.status')?.textContent ?? null;
   const statusPolls = (): number =>
-    stub.sendMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'TROIA_STATUS').length;
+    stub.sendMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'TROIA_STATUS')
+      .length;
 
   const loadWithBanner = async (): Promise<void> => {
     document.body.innerHTML = `<a href="${PAYABLE}">Open in wallet</a>`;
@@ -90,7 +96,10 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await loadWithBanner();
     await clickPay();
 
-    expect(stub.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'TROIA_INTENT' }), expect.any(Function));
+    expect(stub.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'TROIA_INTENT' }),
+      expect.any(Function),
+    );
     expect(statusText()).toBe('Opening the secure card form…');
 
     await vi.advanceTimersByTimeAsync(3000); // pending
@@ -99,7 +108,14 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
 
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
-      { source: 'troia-extension', type: 'TROIA_PAID', orderId: 'ST-AB12CD', amount: '62.00', txHash: 'abc123', paidPriceTry: '2000.00' },
+      {
+        source: 'troia-extension',
+        type: 'TROIA_PAID',
+        orderId: 'ST-AB12CD',
+        amount: '62.00',
+        txHash: 'abc123',
+        paidPriceTry: '2000.00',
+      },
       location.origin,
     );
 
@@ -120,20 +136,37 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await vi.advanceTimersByTimeAsync(3000);
 
     expect(post).toHaveBeenCalledWith(
-      { source: 'troia-extension', type: 'TROIA_PAID', orderId: 'ST-AB12CD', amount: '62.00', txHash: null, paidPriceTry: null },
+      {
+        source: 'troia-extension',
+        type: 'TROIA_PAID',
+        orderId: 'ST-AB12CD',
+        amount: '62.00',
+        txHash: null,
+        paidPriceTry: null,
+      },
       location.origin,
     );
   });
 
   it('an already-in-progress duplicate (no form URL) shows the resume copy and still polls', async () => {
-    stub.script.intent = { ok: true, response: { orderId: 'ST-AB12CD', token: 'tok', paidPriceTry: '2000.00', alreadyStarted: true } };
+    stub.script.intent = {
+      ok: true,
+      response: {
+        orderId: 'ST-AB12CD',
+        token: 'tok',
+        paidPriceTry: '2000.00',
+        alreadyStarted: true,
+      },
+    };
     stub.script.defaultStatus = 'pending';
 
     await loadWithBanner();
     await clickPay();
 
     expect(stub.tabsCreate).not.toHaveBeenCalled(); // (tab opening is background's job; here just no claim of a new form)
-    expect(statusText()).toBe('This order is already in progress — continue in your card form tab.');
+    expect(statusText()).toBe(
+      'This order is already in progress — continue in your card form tab.',
+    );
     await vi.advanceTimersByTimeAsync(3000);
     expect(statusPolls()).toBe(1);
   });
@@ -187,7 +220,9 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await vi.advanceTimersByTimeAsync(3000 * 402);
 
     expect(statusPolls()).toBe(400); // PENDING_MAX_POLLS — not the old silent 200 cap
-    expect(statusText()).toBe('Payment session timed out — you were not charged. Refresh to try again.');
+    expect(statusText()).toBe(
+      'Payment session timed out — you were not charged. Refresh to try again.',
+    );
     const settled = statusPolls();
     await vi.advanceTimersByTimeAsync(3000 * 10);
     expect(statusPolls()).toBe(settled); // stopped
@@ -221,7 +256,9 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     (shadow().querySelector('.pay') as HTMLButtonElement).click(); // repeat click must be a no-op
     await flush();
 
-    const intents = stub.sendMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'TROIA_INTENT').length;
+    const intents = stub.sendMessage.mock.calls.filter(
+      (c) => (c[0] as { type?: string }).type === 'TROIA_INTENT',
+    ).length;
     expect(intents).toBe(1);
   });
 
@@ -232,7 +269,9 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await clickPay(); // first intent → rejected → banner re-enabled
     await clickPay(); // retry → second intent
 
-    const intents = stub.sendMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'TROIA_INTENT').length;
+    const intents = stub.sendMessage.mock.calls.filter(
+      (c) => (c[0] as { type?: string }).type === 'TROIA_INTENT',
+    ).length;
     expect(intents).toBe(2);
   });
 

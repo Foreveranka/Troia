@@ -23,7 +23,8 @@ describe('oracle — RATE_SCALE & deriveTryPerUsdc', () => {
     expect(deriveTryPerUsdc(400_000_000n, RATE_SCALE)).toBe(400_000_000n));
   it('a stronger USDC yields fewer TRY per USDC', () =>
     expect(deriveTryPerUsdc(405_000_000n, 10_002_000n)).toBeLessThan(405_000_000n));
-  it('rejects non-positive USDC/USDT', () => expect(() => deriveTryPerUsdc(1n, 0n)).toThrow(RangeError));
+  it('rejects non-positive USDC/USDT', () =>
+    expect(() => deriveTryPerUsdc(1n, 0n)).toThrow(RangeError));
 });
 
 describe('oracle — settles only on tight agreement', () => {
@@ -47,7 +48,11 @@ describe('oracle — settles only on tight agreement', () => {
 
   it('a band-edge trio that all agree within the threshold settles at the median', () => {
     const wide: OraclePolicy = { ...P, deviationThresholdBps: 300 };
-    const r = aggregate([q('a', 388_000_000n), q('b', 400_000_000n), q('c', 412_000_000n)], wide, NOW);
+    const r = aggregate(
+      [q('a', 388_000_000n), q('b', 400_000_000n), q('c', 412_000_000n)],
+      wide,
+      NOW,
+    );
     expect(r.ok && r.quote.midTryPerUsdc).toBe(400_000_000n);
   });
 });

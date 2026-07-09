@@ -36,7 +36,17 @@ safe(net, 'createConnection', 'net.createConnection');
 safe(net.Socket.prototype, 'connect', 'net.Socket.prototype.connect');
 safe(tls, 'connect', 'tls.connect');
 safe(dns, 'lookup', 'dns.lookup');
-for (const k of ['resolve', 'resolve4', 'resolve6', 'resolveAny', 'resolveCname', 'resolveMx', 'resolveTxt', 'resolveSrv', 'resolveNs']) {
+for (const k of [
+  'resolve',
+  'resolve4',
+  'resolve6',
+  'resolveAny',
+  'resolveCname',
+  'resolveMx',
+  'resolveTxt',
+  'resolveSrv',
+  'resolveNs',
+]) {
   if (typeof dns[k] === 'function') safe(dns, k, `dns.${k}`);
 }
 safe(dnsPromises, 'lookup', 'dns.promises.lookup');

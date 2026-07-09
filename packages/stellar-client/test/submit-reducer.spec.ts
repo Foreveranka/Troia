@@ -3,7 +3,12 @@ import { step } from '../src/submit-reducer.js';
 import type { ReducerAction, ReducerState } from '../src/submit-reducer.js';
 import type { PollOutcome } from '../src/outcomes.js';
 
-const base: ReducerState = { phase: 'submitting', hashHex: 'ab'.repeat(32), ourSeq: 101n, maxTime: 1000 };
+const base: ReducerState = {
+  phase: 'submitting',
+  hashHex: 'ab'.repeat(32),
+  ourSeq: 101n,
+  maxTime: 1000,
+};
 
 describe('submit-reducer step — the SPIKE-2 no-blind-resubmit table', () => {
   it('PENDING / DUPLICATE -> poll the known hash (never resend)', () => {
@@ -51,19 +56,25 @@ describe('submit-reducer step — the SPIKE-2 no-blind-resubmit table', () => {
   });
 
   it('NOT_FOUND with valid timebounds -> keep polling, verdict STILL_PENDING', () => {
-    const r = step({ ...base, phase: 'polling', maxTime: 1000 }, {
-      kind: 'NOT_FOUND',
-      latestLedgerCloseTimeUnix: 999,
-    });
+    const r = step(
+      { ...base, phase: 'polling', maxTime: 1000 },
+      {
+        kind: 'NOT_FOUND',
+        latestLedgerCloseTimeUnix: 999,
+      },
+    );
     expect(r.action).toBe('poll');
     expect(r.verdict).toBe('STILL_PENDING');
   });
 
   it('NOT_FOUND past the ledger close time -> resolveDeadness (expiry is ledger-sourced)', () => {
-    const r = step({ ...base, phase: 'polling', maxTime: 1000 }, {
-      kind: 'NOT_FOUND',
-      latestLedgerCloseTimeUnix: 1001,
-    });
+    const r = step(
+      { ...base, phase: 'polling', maxTime: 1000 },
+      {
+        kind: 'NOT_FOUND',
+        latestLedgerCloseTimeUnix: 1001,
+      },
+    );
     expect(r.action).toBe('resolveDeadness');
     expect(r.verdict).toBeUndefined();
   });
@@ -91,9 +102,13 @@ describe('submit-reducer step — the SPIKE-2 no-blind-resubmit table', () => {
           expect(o.kind).toBe('TRY_AGAIN'); // never any other outcome triggers a (re)send
         }
         // there is structurally no rebuild / re-simulate / new-seq action in the ADT.
-        expect(['none', 'poll', 'resendPersistedEnvelope', 'resolveDeadness', 'confirmBurnedSeq']).toContain(
-          r.action,
-        );
+        expect([
+          'none',
+          'poll',
+          'resendPersistedEnvelope',
+          'resolveDeadness',
+          'confirmBurnedSeq',
+        ]).toContain(r.action);
       }
     }
   });

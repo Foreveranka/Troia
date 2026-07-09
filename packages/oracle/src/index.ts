@@ -89,8 +89,14 @@ function allWithin(pricesAsc: readonly bigint[], center: bigint, thresholdBps: n
   return pricesAsc.every((p) => absBig(p - center) * 10_000n <= BigInt(thresholdBps) * center);
 }
 function ok(mid: bigint, used: readonly SourceQuote[]): OracleResult {
-  const asOf = used.reduce((min, q) => (q.asOfMs < min ? q.asOfMs : min), (used[0] as SourceQuote).asOfMs);
-  return { ok: true, quote: { midTryPerUsdc: mid, sources: used.map((q) => q.source), asOfMs: asOf } };
+  const asOf = used.reduce(
+    (min, q) => (q.asOfMs < min ? q.asOfMs : min),
+    (used[0] as SourceQuote).asOfMs,
+  );
+  return {
+    ok: true,
+    quote: { midTryPerUsdc: mid, sources: used.map((q) => q.source), asOfMs: asOf },
+  };
 }
 function fail(code: OracleErrorCode, message: string): OracleResult {
   return { ok: false, error: new OracleError(code, message) };
@@ -137,7 +143,10 @@ export function aggregate(
   for (const q of healthy) if (!bySource.has(q.source)) bySource.set(q.source, q);
   const distinct = [...bySource.values()];
   if (distinct.length < policy.minQuorum) {
-    return fail('InsufficientSources', `only ${distinct.length} distinct healthy source(s), need ${policy.minQuorum}`);
+    return fail(
+      'InsufficientSources',
+      `only ${distinct.length} distinct healthy source(s), need ${policy.minQuorum}`,
+    );
   }
   const sorted = [...distinct].sort((a, b) => cmp(a.tryPerUsdc, b.tryPerUsdc));
 

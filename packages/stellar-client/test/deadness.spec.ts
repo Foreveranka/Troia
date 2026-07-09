@@ -27,7 +27,9 @@ describe('resolveDeadness — the fail-closed seq-reuse oracle', () => {
   });
 
   it('DOMINANCE: burned AND expired is still LOSS_REVIEW (a burn may have moved money)', () => {
-    expect(resolveDeadness(inputs({ accountSeq: 101n, timeboundsExpired: true }))).toBe('LOSS_REVIEW');
+    expect(resolveDeadness(inputs({ accountSeq: 101n, timeboundsExpired: true }))).toBe(
+      'LOSS_REVIEW',
+    );
   });
 
   it('DOMINANCE: a proven SUCCESS overrides everything -> CONFIRMED', () => {

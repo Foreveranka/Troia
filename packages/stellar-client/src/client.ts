@@ -96,7 +96,8 @@ export function createStellarClient(ports: StellarClientPorts): StellarClient {
       // A live SUCCESS is concluded at the reducer (action 'none') and never reaches here, so in practice
       // this is always NOT_FOUND; the ternary is defensive. An aged-out success is caught fail-closed by
       // the seq-burned branch (accountSeq >= ourSeq -> LOSS_REVIEW), whose authority is the reconciler scan.
-      const hashLookup: 'SUCCESS' | 'NOT_FOUND' = outcome.kind === 'SUCCESS' ? 'SUCCESS' : 'NOT_FOUND';
+      const hashLookup: 'SUCCESS' | 'NOT_FOUND' =
+        outcome.kind === 'SUCCESS' ? 'SUCCESS' : 'NOT_FOUND';
       // An unresolvable operator-seq read fails CLOSED (seqKnown:false -> LOSS_REVIEW), never SAFE_TO_REPLACE.
       const deadness = resolveDeadness({
         accountSeq: seqRead.exists ? BigInt(seqRead.seq) : 0n,

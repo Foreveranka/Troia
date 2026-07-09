@@ -4,7 +4,13 @@
 // root (the backend, Phase 4.3). This is what keeps the money logic offline-unit-testable with fakes.
 
 import type { Transaction } from '@stellar/stellar-base';
-import type { AccountSeqRead, GetTxOutcome, LedgerHead, SendOutcome, SimResult } from './outcomes.js';
+import type {
+  AccountSeqRead,
+  GetTxOutcome,
+  LedgerHead,
+  SendOutcome,
+  SimResult,
+} from './outcomes.js';
 
 /** A built-but-not-yet-simulated pay() tx (inclusion fee only, no Soroban footprint). */
 export type UnpreparedTx = Transaction;

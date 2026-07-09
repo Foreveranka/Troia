@@ -15,7 +15,9 @@ const HORIZON = 'https://horizon-testnet.stellar.org';
 const PORT = process.env.PORT ?? '3000';
 const sh = (cmd) => execSync(cmd, { encoding: 'utf8' });
 
-const dep = JSON.parse(readFileSync(process.env.TROIA_DEPLOYMENT_PATH ?? 'deployment.testnet.json', 'utf8'));
+const dep = JSON.parse(
+  readFileSync(process.env.TROIA_DEPLOYMENT_PATH ?? 'deployment.testnet.json', 'utf8'),
+);
 const ISSUER = dep.usdcIssuer;
 
 function ensureMerchant() {
@@ -23,7 +25,9 @@ function ensureMerchant() {
     sh('stellar keys address troia-demo-merchant 2>/dev/null');
   } catch {
     sh(`stellar keys generate troia-demo-merchant --network ${NET} --fund`);
-    sh(`stellar tx new change-trust --source-account troia-demo-merchant --line USDC:${ISSUER} --network ${NET}`);
+    sh(
+      `stellar tx new change-trust --source-account troia-demo-merchant --line USDC:${ISSUER} --network ${NET}`,
+    );
   }
   return sh('stellar keys address troia-demo-merchant').trim();
 }
@@ -58,7 +62,9 @@ if (!res.ok) {
   console.error(`  /intent -> ${res.status} ${JSON.stringify(body)}`);
   process.exit(1);
 }
-console.log(`  priced ${body.paidPriceTry} kurus (spread ${body.spreadBps} bps)${body.poolLow ? ' [POOL LOW]' : ''}`);
+console.log(
+  `  priced ${body.paidPriceTry} kurus (spread ${body.spreadBps} bps)${body.poolLow ? ' [POOL LOW]' : ''}`,
+);
 console.log(`  token ${body.token}`);
 if (body.checkoutFormContent) {
   const html =
@@ -66,7 +72,9 @@ if (body.checkoutFormContent) {
     `<body><div id="iyzipay-checkout-form" class="responsive"></div>${body.checkoutFormContent}</body></html>`;
   mkdirSync('demo', { recursive: true });
   writeFileSync('demo/checkout.html', html);
-  console.log('  wrote demo/checkout.html — open it in a browser and pay with a Troy sandbox test card');
+  console.log(
+    '  wrote demo/checkout.html — open it in a browser and pay with a Troy sandbox test card',
+  );
 }
 console.log(`  watch: curl -s http://localhost:${PORT}/status/${encodeURIComponent(orderId)}`);
 process.exit(0);

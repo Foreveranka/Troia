@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { commission, commissionBps, computeReturnStats, kurusToTryString, quoteUsdc, STROOP } from '../src/index.js';
+import {
+  commission,
+  commissionBps,
+  computeReturnStats,
+  kurusToTryString,
+  quoteUsdc,
+  STROOP,
+} from '../src/index.js';
 import type { ReturnStats } from '../src/index.js';
 
 // Golden inputs from komisyon-modeli.docx §4: μ=0.055%/day, σ=0.30%/day, z=1, margin=0.30% (30 bps).
@@ -60,20 +67,34 @@ describe('commission — the FX-risk model (komisyon-modeli.docx §4)', () => {
     expect(z165).toBeGreaterThan(z1); // more protection appetite -> a bigger buffer
 
     // zero risk (σ=0, μ=0) -> the commission is exactly the margin (the fee floor)
-    expect(commissionBps({ muDaily: 0, sigmaDaily: 0 }, { valorDays: 10, z: 1, marginBps: 30 })).toBe(30);
+    expect(
+      commissionBps({ muDaily: 0, sigmaDaily: 0 }, { valorDays: 10, z: 1, marginBps: 30 }),
+    ).toBe(30);
   });
 
   it('clamps a degenerate negative total to 0 bps (never a negative spread)', () => {
     // TRY strongly APPRECIATING (μ<0) with no buffer/margin -> the raw model is negative -> clamp to 0
-    expect(commissionBps({ muDaily: -0.01, sigmaDaily: 0 }, { valorDays: 10, z: 0, marginBps: 0 })).toBe(0);
+    expect(
+      commissionBps({ muDaily: -0.01, sigmaDaily: 0 }, { valorDays: 10, z: 0, marginBps: 0 }),
+    ).toBe(0);
   });
 
   it('rejects a non-integer / < 1 valör, a negative z, or a negative / non-integer margin', () => {
-    expect(() => commissionBps(DOC_STATS, { valorDays: 0, z: 1, marginBps: 30 })).toThrow(RangeError);
-    expect(() => commissionBps(DOC_STATS, { valorDays: 1.5, z: 1, marginBps: 30 })).toThrow(RangeError);
-    expect(() => commissionBps(DOC_STATS, { valorDays: 10, z: -1, marginBps: 30 })).toThrow(RangeError);
-    expect(() => commissionBps(DOC_STATS, { valorDays: 10, z: 1, marginBps: -5 })).toThrow(RangeError);
-    expect(() => commissionBps(DOC_STATS, { valorDays: 10, z: 1, marginBps: 1.5 })).toThrow(RangeError);
+    expect(() => commissionBps(DOC_STATS, { valorDays: 0, z: 1, marginBps: 30 })).toThrow(
+      RangeError,
+    );
+    expect(() => commissionBps(DOC_STATS, { valorDays: 1.5, z: 1, marginBps: 30 })).toThrow(
+      RangeError,
+    );
+    expect(() => commissionBps(DOC_STATS, { valorDays: 10, z: -1, marginBps: 30 })).toThrow(
+      RangeError,
+    );
+    expect(() => commissionBps(DOC_STATS, { valorDays: 10, z: 1, marginBps: -5 })).toThrow(
+      RangeError,
+    );
+    expect(() => commissionBps(DOC_STATS, { valorDays: 10, z: 1, marginBps: 1.5 })).toThrow(
+      RangeError,
+    );
   });
 });
 
@@ -131,8 +152,18 @@ describe('quoteUsdc / kurusToTryString — server-side price (commission + sprea
   });
 
   it('quoteUsdc is data-driven: a more volatile market prices a higher paidPrice for the same USDC', () => {
-    const calm = quoteUsdc(STROOP, 405_000_000n, { muDaily: 0.00055, sigmaDaily: 0.0015 }, { valorDays: 15, z: 1, marginBps: 30 });
-    const tense = quoteUsdc(STROOP, 405_000_000n, { muDaily: 0.00055, sigmaDaily: 0.008 }, { valorDays: 15, z: 1, marginBps: 30 });
+    const calm = quoteUsdc(
+      STROOP,
+      405_000_000n,
+      { muDaily: 0.00055, sigmaDaily: 0.0015 },
+      { valorDays: 15, z: 1, marginBps: 30 },
+    );
+    const tense = quoteUsdc(
+      STROOP,
+      405_000_000n,
+      { muDaily: 0.00055, sigmaDaily: 0.008 },
+      { valorDays: 15, z: 1, marginBps: 30 },
+    );
     expect(tense.spreadBps).toBeGreaterThan(calm.spreadBps);
     expect(tense.userTryKurus).toBeGreaterThan(calm.userTryKurus);
   });

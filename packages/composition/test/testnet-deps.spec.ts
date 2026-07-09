@@ -11,7 +11,10 @@ import type { BootstrapReads, TestnetServerConfig } from '../src/testnet-deps.js
 
 const fakeOracle: OracleProvider = {
   getRate: () =>
-    Promise.resolve({ ok: true, quote: { midTryPerUsdc: 405_000_000n, sources: ['fake'], asOfMs: 0 } } as OracleResult),
+    Promise.resolve({
+      ok: true,
+      quote: { midTryPerUsdc: 405_000_000n, sources: ['fake'], asOfMs: 0 },
+    } as OracleResult),
 };
 const fakeHistory: RateHistoryProvider = {
   dailyCloses: () => Promise.resolve([40.0, 40.1, 40.2, 40.3, 40.4]),
@@ -82,7 +85,10 @@ describe('buildTestnetServerDeps', () => {
     expect(def.extras.timeboundsSecs).toBe(45);
     expect(def.extras.policy.maxDeadRetries).toBeGreaterThan(0);
 
-    const over = await buildTestnetServerDeps({ ...cfg, feeStroops: '250', timeboundsSecs: 60 }, bootstrap);
+    const over = await buildTestnetServerDeps(
+      { ...cfg, feeStroops: '250', timeboundsSecs: 60 },
+      bootstrap,
+    );
     expect(over.extras.feeStroops).toBe('250');
     expect(over.extras.timeboundsSecs).toBe(60);
   });

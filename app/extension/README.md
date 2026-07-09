@@ -27,13 +27,13 @@ The "Pay with Troy card" flow opens iyzico's **sandbox** hosted form in a new br
 
 **Troy cards (all succeed):**
 
-| Bank | Number | Type |
-| --- | --- | --- |
-| Akbank | `9792072000017956` | credit |
-| QNB | `9792023757123604` | debit |
-| QNB | `9792020000000001` | debit |
-| QNB | `9792030000000000` | credit |
-| Vakıfbank | `6500528865390837` | debit |
+| Bank      | Number             | Type   |
+| --------- | ------------------ | ------ |
+| Akbank    | `9792072000017956` | credit |
+| QNB       | `9792023757123604` | debit  |
+| QNB       | `9792020000000001` | debit  |
+| QNB       | `9792030000000000` | credit |
+| Vakıfbank | `6500528865390837` | debit  |
 | Vakıfbank | `6501700194147183` | credit |
 
 **Decline (to show the fail-closed path):** Visa `4111111111111129` (insufficient funds).

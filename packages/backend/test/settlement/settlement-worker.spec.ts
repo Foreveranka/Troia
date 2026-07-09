@@ -19,16 +19,23 @@ class FakeRebalance {
   readonly calls: TopUpRequest[] = [];
   private readonly minted = new Map<string, bigint>();
   throwOnce = false;
-  async topUp(req: TopUpRequest): Promise<{ usdcStroops: bigint; txHash: string; poolStroops: bigint }> {
+  async topUp(
+    req: TopUpRequest,
+  ): Promise<{ usdcStroops: bigint; txHash: string; poolStroops: bigint }> {
     this.calls.push(req);
-    if (this.throwOnce) { this.throwOnce = false; throw new Error('mint failed'); }
+    if (this.throwOnce) {
+      this.throwOnce = false;
+      throw new Error('mint failed');
+    }
     // idempotent per ref: a repeat returns the cached mint, never a second one
     const cached = this.minted.get(req.ref);
     const usdcStroops = cached ?? req.usdcStroops;
     if (cached === undefined) this.minted.set(req.ref, usdcStroops);
     return { usdcStroops, txHash: `tx_${req.ref}`, poolStroops: 0n };
   }
-  get mintCount(): number { return this.minted.size; }
+  get mintCount(): number {
+    return this.minted.size;
+  }
 }
 
 class FakeRate {
@@ -42,7 +49,9 @@ class FakeRate {
 
 class FakeCreditStore {
   readonly credits: bigint[] = [];
-  async creditPool(stroops: bigint): Promise<void> { this.credits.push(stroops); }
+  async creditPool(stroops: bigint): Promise<void> {
+    this.credits.push(stroops);
+  }
 }
 
 class FakeBook {
@@ -134,7 +143,11 @@ describe('settleAndRebalance — the TRY-driven settlement-sim worker', () => {
     expect(r.rebalance.calls[0]!.usdcStroops).toBe(EXPECTED_MINT);
     expect(r.store.credits).toEqual([EXPECTED_MINT]); // the /intent gate is raised by the minted amount
     expect(r.ledger.booked).toHaveLength(1);
-    expect(r.ledger.booked[0]).toMatchObject({ ref: 'topup:good', usdcStroops: EXPECTED_MINT, valueKurus: 340_000n });
+    expect(r.ledger.booked[0]).toMatchObject({
+      ref: 'topup:good',
+      usdcStroops: EXPECTED_MINT,
+      valueKurus: 340_000n,
+    });
     expect(r.pending.get('good')?.status).toBe('settled');
     expect(rep.settled).toBe(1);
   });

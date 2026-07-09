@@ -27,7 +27,11 @@ export const DEFAULT_NET_POLICY: NetPolicy = { timeoutMs: 4000, retries: 1 };
  * the caller (fetchCexQuote's try/catch, dailyCloses) sees a clean failure and drops the source — never a
  * fabricated success. Idempotent GETs only.
  */
-export async function fetchJsonWithRetry(url: string, fetch: FetchLike, policy: NetPolicy): Promise<unknown> {
+export async function fetchJsonWithRetry(
+  url: string,
+  fetch: FetchLike,
+  policy: NetPolicy,
+): Promise<unknown> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= policy.retries; attempt++) {
     try {

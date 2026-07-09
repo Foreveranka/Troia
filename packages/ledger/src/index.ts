@@ -114,7 +114,10 @@ export class Ledger {
     }
     for (const leg of [...debits, ...credits]) {
       if (leg.native <= 0n || leg.kurus <= 0n) {
-        throw new LedgerError('NonPositiveAmount', `leg amounts must be > 0 (account ${leg.account})`);
+        throw new LedgerError(
+          'NonPositiveAmount',
+          `leg amounts must be > 0 (account ${leg.account})`,
+        );
       }
       // For a TRY-native account the functional currency IS its native currency, so the two must agree.
       // (USDC legs deliberately differ: native is stroops, functional is the TRY-at-mid valuation.)
@@ -162,7 +165,10 @@ export class Ledger {
     if (spreadKurus < 0n) throw new LedgerError('InvalidSettlement', 'spreadKurus must be >= 0');
     if (feeKurus < 0n) throw new LedgerError('InvalidSettlement', 'feeKurus must be >= 0');
     if (spreadKurus >= userTryKurus) {
-      throw new LedgerError('InvalidSettlement', 'spreadKurus must be < userTryKurus (base would be <= 0)');
+      throw new LedgerError(
+        'InvalidSettlement',
+        'spreadKurus must be < userTryKurus (base would be <= 0)',
+      );
     }
     if (feeKurus > userTryKurus) {
       throw new LedgerError('InvalidSettlement', 'feeKurus must be <= userTryKurus');
@@ -175,7 +181,8 @@ export class Ledger {
     if (feeKurus > 0n) debits.push({ account: 'PSP_FEE', native: feeKurus, kurus: feeKurus });
 
     const credits: Leg[] = [{ account: 'USDC_POOL', native: usdcStroops, kurus: baseKurus }];
-    if (spreadKurus > 0n) credits.push({ account: 'SPREAD_REVENUE', native: spreadKurus, kurus: spreadKurus });
+    if (spreadKurus > 0n)
+      credits.push({ account: 'SPREAD_REVENUE', native: spreadKurus, kurus: spreadKurus });
 
     return this.post({ ref: orderId, kind: 'SETTLEMENT', debits, credits });
   }

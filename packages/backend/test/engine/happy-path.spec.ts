@@ -15,7 +15,12 @@ describe('engine happy path — full settlement drive', () => {
     expect(r0.state).toBe('SolvencyReserved');
     expect(r0.quiescence).toBe('waiting');
     expect(r0.sideOutputs).toEqual([
-      { kind: 'checkoutForm', token: 'tok-1', formContent: '<html/>', paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1' },
+      {
+        kind: 'checkoutForm',
+        token: 'tok-1',
+        formContent: '<html/>',
+        paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1',
+      },
     ]);
     expect(h.trace.filter((t) => t === 'psp.initializeCheckoutForm')).toHaveLength(1);
 
@@ -46,7 +51,11 @@ describe('engine happy path — full settlement drive', () => {
     expect(r.ctx.hashHex).toBe('hash_order-001');
     expect(r.ctx.signedXdr).toBe('xdr_order-001');
     expect(h.store.evidence).toHaveLength(1);
-    expect(h.store.evidence[0]?.record).toEqual({ txHash: 'hash_order-001', signedXdr: 'xdr_order-001', seq: r.ctx.activeSeq });
+    expect(h.store.evidence[0]?.record).toEqual({
+      txHash: 'hash_order-001',
+      signedXdr: 'xdr_order-001',
+      seq: r.ctx.activeSeq,
+    });
     expect(h.store.losses).toHaveLength(0);
 
     // money-law ordering: reserve BEFORE the checkout/charge form; the charge (sale form) BEFORE the IRREVERSIBLE

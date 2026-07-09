@@ -3,7 +3,16 @@
 // the pure core never sees an SDK type. Not exercised by the offline suite (it needs a live RPC); it is
 // type-checked by tsc and live-smoked once contracts are deployed (Phase 4.4+).
 
-import { Account, Address, Contract, Keypair, rpc, StrKey, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
+import {
+  Account,
+  Address,
+  Contract,
+  Keypair,
+  rpc,
+  StrKey,
+  TransactionBuilder,
+  xdr,
+} from '@stellar/stellar-sdk';
 import type {
   AccountSeqRead,
   GetTxOutcome,
@@ -30,15 +39,24 @@ export class SorobanRpcAdapter implements RpcPort {
     private readonly passphrase: string,
     opts?: { allowHttp?: boolean; timeoutMs?: number },
   ) {
-    this.server = new rpc.Server(rpcUrl, opts?.allowHttp === true ? { allowHttp: true } : undefined);
+    this.server = new rpc.Server(
+      rpcUrl,
+      opts?.allowHttp === true ? { allowHttp: true } : undefined,
+    );
     this.timeoutMs = opts?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
   }
 
   async simulate(unprepared: UnpreparedTx): Promise<SimResult> {
-    const sim = await withTimeout(this.server.simulateTransaction(unprepared), this.timeoutMs, 'rpc.simulate');
+    const sim = await withTimeout(
+      this.server.simulateTransaction(unprepared),
+      this.timeoutMs,
+      'rpc.simulate',
+    );
     if (rpc.Api.isSimulationError(sim)) throw new SimulationError(sim.error);
     if (rpc.Api.isSimulationRestore(sim)) {
-      throw new SimulationError('footprint touches archived entries — RestoreFootprint required first');
+      throw new SimulationError(
+        'footprint touches archived entries — RestoreFootprint required first',
+      );
     }
     if (sim.transactionData === undefined) {
       throw new SimulationError('simulation returned no transactionData (footprint)');
@@ -71,7 +89,11 @@ export class SorobanRpcAdapter implements RpcPort {
   }
 
   async getTransaction(hashHex: string): Promise<GetTxOutcome> {
-    const res = await withTimeout(this.server.getTransaction(hashHex), this.timeoutMs, 'rpc.getTransaction');
+    const res = await withTimeout(
+      this.server.getTransaction(hashHex),
+      this.timeoutMs,
+      'rpc.getTransaction',
+    );
     switch (res.status) {
       case rpc.Api.GetTransactionStatus.SUCCESS:
         return { kind: 'SUCCESS', ledger: res.ledger };
@@ -88,14 +110,22 @@ export class SorobanRpcAdapter implements RpcPort {
     const key = xdr.LedgerKey.account(
       new xdr.LedgerKeyAccount({ accountId: Keypair.fromPublicKey(operatorPublic).xdrAccountId() }),
     );
-    const res = await withTimeout(this.server.getLedgerEntries(key), this.timeoutMs, 'rpc.getLedgerEntries');
+    const res = await withTimeout(
+      this.server.getLedgerEntries(key),
+      this.timeoutMs,
+      'rpc.getLedgerEntries',
+    );
     const entry = res.entries[0];
     if (entry === undefined) return { exists: false, seq: '0' };
     return { exists: true, seq: entry.val.account().seqNum().toString() };
   }
 
   async latestLedger(): Promise<LedgerHead> {
-    const res = await withTimeout(this.server.getLatestLedger(), this.timeoutMs, 'rpc.latestLedger');
+    const res = await withTimeout(
+      this.server.getLatestLedger(),
+      this.timeoutMs,
+      'rpc.latestLedger',
+    );
     return { sequence: res.sequence, closeTimeUnix: Number(res.closeTime) };
   }
 
@@ -103,7 +133,11 @@ export class SorobanRpcAdapter implements RpcPort {
    *  so `source` only needs to be a valid G-address (its on-chain seq is irrelevant to a read simulation). The
    *  composition uses this once at bootstrap to seed the Store with the live pool balance. Extra method beyond
    *  RpcPort; network:true, live-smoked. */
-  async readSacBalance(sacContractId: string, holderAddress: string, sourcePublic: string): Promise<bigint> {
+  async readSacBalance(
+    sacContractId: string,
+    holderAddress: string,
+    sourcePublic: string,
+  ): Promise<bigint> {
     const op = new Contract(sacContractId).call('balance', new Address(holderAddress).toScVal());
     const tx = new TransactionBuilder(new Account(sourcePublic, '0'), {
       fee: '100',
@@ -112,7 +146,11 @@ export class SorobanRpcAdapter implements RpcPort {
       .addOperation(op)
       .setTimeout(30)
       .build();
-    const sim = await withTimeout(this.server.simulateTransaction(tx), this.timeoutMs, 'rpc.readSacBalance');
+    const sim = await withTimeout(
+      this.server.simulateTransaction(tx),
+      this.timeoutMs,
+      'rpc.readSacBalance',
+    );
     if (rpc.Api.isSimulationError(sim)) throw new SimulationError(sim.error);
     const retval = sim.result?.retval;
     if (retval === undefined) throw new SimulationError('balance simulation returned no retval');
@@ -127,7 +165,11 @@ export class SorobanRpcAdapter implements RpcPort {
    *  double-pay shield, so a null can never cause a double payout). Extra method beyond RpcPort; live-smoked. */
   async readContractErrorCode(hashHex: string, contractId: string): Promise<number | null> {
     try {
-      const res = await withTimeout(this.server.getTransaction(hashHex), this.timeoutMs, 'rpc.readContractErrorCode');
+      const res = await withTimeout(
+        this.server.getTransaction(hashHex),
+        this.timeoutMs,
+        'rpc.readContractErrorCode',
+      );
       if (res.status !== rpc.Api.GetTransactionStatus.FAILED) return null;
       return firstContractErrorCodeFromContract(collectDiagnosticEvents(res), contractId);
     } catch {
@@ -148,9 +190,18 @@ export class SorobanRpcAdapter implements RpcPort {
     eventContractIds: readonly (string | null)[];
     classifiedCode: number | null;
   }> {
-    const res = await withTimeout(this.server.getTransaction(hashHex), this.timeoutMs, 'rpc.describeRevert');
+    const res = await withTimeout(
+      this.server.getTransaction(hashHex),
+      this.timeoutMs,
+      'rpc.describeRevert',
+    );
     if (res.status !== rpc.Api.GetTransactionStatus.FAILED) {
-      return { status: String(res.status), topDiagnosticEvents: 0, eventContractIds: [], classifiedCode: null };
+      return {
+        status: String(res.status),
+        topDiagnosticEvents: 0,
+        eventContractIds: [],
+        classifiedCode: null,
+      };
     }
     const events = collectDiagnosticEvents(res);
     return {

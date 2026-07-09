@@ -4,15 +4,15 @@
 > yourself, offline, in seconds.** Everything below is scripted so the run is deterministic and honest — each
 > beat is labeled **[runs today]** (zero setup) or **[runs live — stack up]** so nothing is oversold.
 
-One-line pitch to open with: *"A custodial TRY→USDC settlement layer that makes every lira accountable
-hash-by-hash. Don't trust me — run one command and check the math yourself."*
+One-line pitch to open with: _"A custodial TRY→USDC settlement layer that makes every lira accountable
+hash-by-hash. Don't trust me — run one command and check the math yourself."_
 
 ---
 
 ## The arc (what the reviewer will see)
 
 1. The whole system compiles, tests, and lints clean. **[runs today]**
-2. The reviewer-verifiable reconciler passes offline — and *fails* on a tampered report. **[runs today]**
+2. The reviewer-verifiable reconciler passes offline — and _fails_ on a tampered report. **[runs today]**
 3. The money-first settlement flow, narrated end-to-end, with the honest `signed ≠ settled` boundary. **[runs today]**
 4. "Pay with Troy card" — the storefront + browser extension settling a real order live on testnet. **[runs live — stack up]**
 
@@ -40,8 +40,8 @@ just lint       # ESLint clean
 cargo test      # 14 Soroban contract tests (unit + integration + fuzz conservation)
 ```
 
-Say, while it runs: *"The money core, the FX oracle, the state machine, the iyzico adapter, the Soroban pool —
-all offline-testable, all green. Nothing here needs my servers to be up."*
+Say, while it runs: _"The money core, the FX oracle, the state machine, the iyzico adapter, the Soroban pool —
+all offline-testable, all green. Nothing here needs my servers to be up."_
 
 ---
 
@@ -56,18 +56,24 @@ just verify
 Point at the output line:
 
 ```json
-{"ok":true,"summary":{"total":3,"matched":2,"mismatch":1,"unsettled":0},"ordersVerified":3,"networkAttempts":0,"failures":[]}
+{
+  "ok": true,
+  "summary": { "total": 3, "matched": 2, "mismatch": 1, "unsettled": 0 },
+  "ordersVerified": 3,
+  "networkAttempts": 0,
+  "failures": []
+}
 ```
 
 Narrate the three things that make the `0` exit code meaningful:
 
-1. **Offline, provably.** `networkAttempts: 0`, and a startup canary confirmed the network block is *armed* — a
-   deliberate connection attempt threw. This didn't "happen not to call out"; it *could not*.
+1. **Offline, provably.** `networkAttempts: 0`, and a startup canary confirmed the network block is _armed_ — a
+   deliberate connection attempt threw. This didn't "happen not to call out"; it _could not_.
 2. **It recomputes, it doesn't trust.** The verifier ignores the report's own verdicts and re-derives each one
    from the embedded signed transaction and chain snapshot — pinned operator key, real Stellar tx hash.
 3. **`ord-003` is a deliberate mismatch, and it's caught.** Local DB says 0.6 USDC; the signed tx and the chain
    both say 0.5. Verdict `CORRUPT_LOCAL`, and `signature_valid` is still `true` — so the evidence proves the
-   error is in *our records*, and the chain is the authority.
+   error is in _our records_, and the chain is the authority.
 
 Then break it on purpose:
 
@@ -81,7 +87,7 @@ node --import ./packages/reconciler/bin/block-net.mjs \
 {"ok":false,...,"failures":["ord-003: verdict MATCHED != recomputed CORRUPT_LOCAL","ord-003: status matched != recomputed mismatch"]}
 ```
 
-Exit code `1`. Say: *"A report that lies about its own outcome cannot pass. That's the guarantee."* Point to
+Exit code `1`. Say: _"A report that lies about its own outcome cannot pass. That's the guarantee."_ Point to
 [`RECONCILIATION.md`](RECONCILIATION.md) for the full model.
 
 ---
@@ -94,7 +100,7 @@ Walk the flow (screen: a diagram or the state list; no live payment needed):
 
 1. **`POST /intent`** — the backend prices the order **server-side** (FX oracle mid × commission), reserves the
    pool (hard `409` if it can't), and returns a hosted iyzico direct-sale form priced at exactly that frozen ₺.
-   *A client cannot dictate the price or the currency.*
+   _A client cannot dictate the price or the currency._
 2. **The customer pays TRY** on iyzico's hosted form (PAN never touches our servers).
 3. **Only after the charge is confirmed** does the backend submit the **irreversible USDC leg** —
    `TroyPool.pay()`, a deterministic tx with an order-pinned sequence. USDC is **last** on purpose.
@@ -105,8 +111,8 @@ Walk the flow (screen: a diagram or the state list; no live payment needed):
 The customer only ever sees a coarse status — `pending → processing → completed`, or `failed` / `review`. The
 USDC / crypto leg is never exposed to the storefront.
 
-Close on the honest boundary: *"We prove what we signed with cryptography that survives a reset, and what
-settled while the chain remembers it. We never blur the two."*
+Close on the honest boundary: _"We prove what we signed with cryptography that survives a reset, and what
+settled while the chain remembers it. We never blur the two."_
 
 ---
 
@@ -119,9 +125,9 @@ loaded unpacked, a public webhook tunnel so iyzico can reach `/webhook`.
 
 1. **Shop like a customer.** On the demo storefront, sign in, add items, pick a shipping tier, reach the payment
    step. The customer sees only a ₺ total — never USDC, never a wallet, never a memo.
-2. **The extension notices.** A "Pay with Troy card" banner appears at the bottom of the page. Say: *"The merchant
+2. **The extension notices.** A "Pay with Troy card" banner appears at the bottom of the page. Say: _"The merchant
    integrated nothing. The extension read a standard SEP-7 payment request off the page, verified it fail-closed —
-   allowlisted USDC issuer, valid destination, byte-exact memo — and only then offered to pay."*
+   allowlisted USDC issuer, valid destination, byte-exact memo — and only then offered to pay."_
 3. **Pay with a Troy sandbox card.** Click the banner → iyzico's **hosted** card form opens in a new tab (the PAN
    never touches our servers or the extension). Use a Troy test card (see `README.md`); the 3DS OTP is shown in
    parentheses on the verification screen.
@@ -131,15 +137,15 @@ loaded unpacked, a public webhook tunnel so iyzico can reach `/webhook`.
    link**. Open it: this is a real on-chain `pay()` moving USDC pool → merchant. In the proven run it was **74
    USDC**, tx `cd643d71…`.
 6. **The pool refills itself.** ~30s later — the real iyzico valör is ~21 days, **compressed to `DEMO_VALOR_SECS`**
-   for the demo — a background `settleTick` worker automatically refills the USDC pool from *this order's* collected
+   for the demo — a background `settleTick` worker automatically refills the USDC pool from _this order's_ collected
    TRY, converted at the live CEX oracle rate, via a real issuer-signed SAC mint, so the pool grows by the
-   commission. Say: *"On mainnet that same seam becomes a real CEX buy driven by an agent + on/off-ramp service —
-   the backend doesn't change."*
+   commission. Say: _"On mainnet that same seam becomes a real CEX buy driven by an agent + on/off-ramp service —
+   the backend doesn't change."_
 
-Say, pointing at the explorer: *"The customer paid a lira price with a Troy card. On-chain, the merchant received
-USDC — and neither of them had to see the other's world. That's the whole product in one screen."*
+Say, pointing at the explorer: _"The customer paid a lira price with a Troy card. On-chain, the merchant received
+USDC — and neither of them had to see the other's world. That's the whole product in one screen."_
 
-Optional trust beat: *"And if anything stalls, the banner never lies about money — a pre-payment timeout says 'you were not charged'; a post-payment delay says 'settlement is taking a little longer, you can safely close this'; and a double Pay click is a no-op."*
+Optional trust beat: _"And if anything stalls, the banner never lies about money — a pre-payment timeout says 'you were not charged'; a post-payment delay says 'settlement is taking a little longer, you can safely close this'; and a double Pay click is a no-op."_
 
 > Honest note for the reviewer: this is a single manual live smoke on **testnet** with iyzico **sandbox** (no real
 > money). If recording without the stack up, narrate it over the confirmation screenshots + the explorer tx — do
@@ -149,16 +155,16 @@ Optional trust beat: *"And if anything stalls, the banner never lies about money
 
 ## What runs today vs. what is phase-gated
 
-| Beat | Status |
-|---|---|
-| `just build` / `just test` / `cargo test` / `just lint` | ✅ **runs today** (zero setup) |
-| `just verify` (offline reconciler proof + tampered-report failure) | ✅ **runs today** (zero setup) |
-| Money-first flow **narration** + public-status mapping | ✅ **runs today** (design + tests) |
-| `just fund` (friendbot + USDC SAC deploy + mint) | ✅ done (Phase 4.4) |
-| Live storefront (`app/storefront`, SEP-7 pay URI) | ✅ built (Phase 5.1) |
-| "Pay with Troy card" extension → real charge → real `pay()` | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run |
-| `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done (Phase 4.4 + 5.2) |
-| Automatic TRY-driven pool rebalance (`settleTick` + issuer-signed mint) | ✅ built (compressed valör 30s; real-CEX buy is Phase-2) |
+| Beat                                                                    | Status                                                         |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `just build` / `just test` / `cargo test` / `just lint`                 | ✅ **runs today** (zero setup)                                 |
+| `just verify` (offline reconciler proof + tampered-report failure)      | ✅ **runs today** (zero setup)                                 |
+| Money-first flow **narration** + public-status mapping                  | ✅ **runs today** (design + tests)                             |
+| `just fund` (friendbot + USDC SAC deploy + mint)                        | ✅ done (Phase 4.4)                                            |
+| Live storefront (`app/storefront`, SEP-7 pay URI)                       | ✅ built (Phase 5.1)                                           |
+| "Pay with Troy card" extension → real charge → real `pay()`             | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run |
+| `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done (Phase 4.4 + 5.2)                                      |
+| Automatic TRY-driven pool rebalance (`settleTick` + issuer-signed mint) | ✅ built (compressed valör 30s; real-CEX buy is Phase-2)       |
 
 Acts 1–3 run today with zero setup; Act 2 (the offline, zero-trust proof) is the reproducible centerpiece. Act 4
 is proven — a real Troy sandbox card charge auto-drove a real on-chain `pay()` (74 USDC, tx `cd643d71…`) — but

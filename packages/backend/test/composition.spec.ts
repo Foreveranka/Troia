@@ -7,7 +7,14 @@ import { InMemoryStore } from '../src/store/in-memory-store.js';
 import { InMemoryPendingSettlementStore } from '../src/settlement/pending-settlement-store.js';
 import { TryDrivenRebalancePolicy } from '../src/settlement/rebalance-policy.js';
 import type { TopUpRequest } from '../src/settlement/rebalance-policy.js';
-import { FakeClock, FakePspPort, FakeStellarPort, FakeStore, makeConfig, makeCtx } from './fakes/harness.js';
+import {
+  FakeClock,
+  FakePspPort,
+  FakeStellarPort,
+  FakeStore,
+  makeConfig,
+  makeCtx,
+} from './fakes/harness.js';
 import { intentBody, quote, signV3, WEBHOOK_SECRET, webhookEvent } from './http/http-harness.js';
 
 const UNIT = 10_000_000n;
@@ -47,7 +54,8 @@ describe('buildEngineConfig — NetworkConfig -> EngineConfig, secret-free', () 
 
   it('carries NO secret (no apiKey / secretKey anywhere)', () => {
     // poolLowWatermarkStroops is a bigint under the money-first policy, so serialize with a bigint replacer.
-    const bigintSafe = (_k: string, v: unknown): unknown => (typeof v === 'bigint' ? v.toString() : v);
+    const bigintSafe = (_k: string, v: unknown): unknown =>
+      typeof v === 'bigint' ? v.toString() : v;
     const json = JSON.stringify(buildEngineConfig(network, extras()), bigintSafe);
     expect(json).not.toMatch(/secretKey|apiKey|secret/i);
     expect(Object.keys(buildEngineConfig(network, extras()))).toEqual(['stellar', 'psp', 'policy']);
@@ -75,7 +83,11 @@ describe('createServer — app + poll worker over ONE shared order lock', () => 
     const { server, stellar } = makeServer();
 
     // 1) intent -> hosted checkout
-    const intent = await server.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const intent = await server.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(intent.statusCode).toBe(200);
 
     // 2) webhook while the USDC tx is still in flight -> parks in the USDC durable wait
@@ -102,7 +114,12 @@ describe('createServer — app + poll worker over ONE shared order lock', () => 
 
   it('a poll tick with no in-flight orders is a no-op', async () => {
     const { server } = makeServer();
-    expect(await server.pollTick()).toEqual({ polled: 0, advanced: 0, escalated: 0, quarantined: 0 });
+    expect(await server.pollTick()).toEqual({
+      polled: 0,
+      advanced: 0,
+      escalated: 0,
+      quarantined: 0,
+    });
   });
 
   it('a server built without a settlement bundle exposes no settleTick', () => {

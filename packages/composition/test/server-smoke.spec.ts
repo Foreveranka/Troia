@@ -14,9 +14,14 @@ import type { BootstrapReads, TestnetServerConfig } from '../src/testnet-deps.js
 
 const fakeOracle: OracleProvider = {
   getRate: () =>
-    Promise.resolve({ ok: true, quote: { midTryPerUsdc: 405_000_000n, sources: ['fake'], asOfMs: 0 } } as OracleResult),
+    Promise.resolve({
+      ok: true,
+      quote: { midTryPerUsdc: 405_000_000n, sources: ['fake'], asOfMs: 0 },
+    } as OracleResult),
 };
-const fakeHistory: RateHistoryProvider = { dailyCloses: () => Promise.resolve([40.0, 40.1, 40.2, 40.3, 40.4]) };
+const fakeHistory: RateHistoryProvider = {
+  dailyCloses: () => Promise.resolve([40.0, 40.1, 40.2, 40.3, 40.4]),
+};
 const bootstrap: BootstrapReads = {
   operatorSeqNum: () => Promise.resolve(1000n),
   poolBalanceStroops: () => Promise.resolve(100_000n * 10_000_000n),
@@ -60,14 +65,23 @@ describe('the composed server boots from buildTestnetServerDeps (offline fail-cl
       method: 'POST',
       url: '/webhook',
       headers: { 'x-iyz-signature-v3': 'not-a-valid-signature' },
-      payload: { iyziEventType: 'CHECKOUT_FORM_AUTH', paymentConversationId: 'c', token: 't', status: 'SUCCESS' },
+      payload: {
+        iyziEventType: 'CHECKOUT_FORM_AUTH',
+        paymentConversationId: 'c',
+        token: 't',
+        status: 'SUCCESS',
+      },
     });
     expect(r.statusCode).toBe(401);
   });
 
   it('POST /intent with a malformed body -> 400 (fail-closed before any network call)', async () => {
     const server = await makeServer();
-    const r = await server.app.inject({ method: 'POST', url: '/intent', payload: { orderId: 'x' } });
+    const r = await server.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: { orderId: 'x' },
+    });
     expect(r.statusCode).toBe(400);
   });
 

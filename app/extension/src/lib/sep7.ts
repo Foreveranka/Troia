@@ -24,7 +24,8 @@ export function parseSep7(uri: string): Sep7Pay | null {
   const params = new URLSearchParams(q === -1 ? '' : rest.slice(q + 1));
   const destination = params.get('destination');
   const amount = params.get('amount');
-  if (destination === null || destination.length === 0 || amount === null || amount.length === 0) return null;
+  if (destination === null || destination.length === 0 || amount === null || amount.length === 0)
+    return null;
 
   return {
     operation: 'pay',

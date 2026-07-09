@@ -225,7 +225,9 @@ describe('SequenceAllocator — lifecycle & persistence', () => {
     expect(restored.activeSeqFor('A')).toBe(26n);
     expect(restored.allocate('A')).toBe(26n); // idempotent, NOT the burned 27
     expectSeqError(() => restored.reallocate('A'), 'SeqNotBurned'); // A's current 26 is active
-    const activeForA = restored.snapshot().records.filter((r) => r.orderId === 'A' && r.status === 'active');
+    const activeForA = restored
+      .snapshot()
+      .records.filter((r) => r.orderId === 'A' && r.status === 'active');
     expect(activeForA.map((r) => r.seq)).toEqual([26n]); // exactly ONE active seq
   });
 

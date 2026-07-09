@@ -9,7 +9,11 @@ import type { StellarClient, WriteAheadJournal } from '@troia/stellar-client';
 /** The two extra Soroban reads the backend StellarPort needs beyond a StellarClient. SorobanRpcAdapter satisfies
  *  this structurally (it has both methods); a fake satisfies it in tests. */
 export interface SorobanReads {
-  readSacBalance(sacContractId: string, holderAddress: string, sourcePublic: string): Promise<bigint>;
+  readSacBalance(
+    sacContractId: string,
+    holderAddress: string,
+    sourcePublic: string,
+  ): Promise<bigint>;
   readContractErrorCode(hashHex: string, contractId: string): Promise<number | null>;
 }
 
@@ -42,7 +46,8 @@ export function wrapStellarPort(
     resendPersisted: (orderId) => client.resendPersisted(orderId),
     observe: (state) => client.observe(state),
     loadDestinationSnapshot: (destination) => client.loadDestinationSnapshot(destination),
-    readPoolBalanceStroops: () => reads.readSacBalance(wiring.sacContractId, wiring.troyPool, wiring.operatorPublic),
+    readPoolBalanceStroops: () =>
+      reads.readSacBalance(wiring.sacContractId, wiring.troyPool, wiring.operatorPublic),
     async readRevertErrorCode(orderId) {
       const persisted = await journal.loadPersisted(orderId);
       if (persisted === null) return null; // no pay() witness for this order -> nothing to classify -> safe (Other)

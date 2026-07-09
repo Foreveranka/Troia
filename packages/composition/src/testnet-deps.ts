@@ -17,7 +17,13 @@ import {
   OFFLINE_DEFAULT_POLICY,
   OFFLINE_DEFAULT_PRICING_POLICY,
 } from '@troia/backend';
-import type { EnginePspConfig, PolicyConfig, PricingPolicy, ServerDeps, SettlementBundle } from '@troia/backend';
+import type {
+  EnginePspConfig,
+  PolicyConfig,
+  PricingPolicy,
+  ServerDeps,
+  SettlementBundle,
+} from '@troia/backend';
 import { createPaymentProvider } from '@troia/psp';
 import type { OracleProvider, RateHistoryProvider } from '@troia/oracle';
 import { SimulatedRebalance } from '@troia/rebalance';
@@ -84,9 +90,24 @@ export const DEFAULT_TESTNET_MERCHANT: MerchantTemplate = {
     country: 'Turkey',
     ip: '0.0.0.0',
   },
-  shippingAddress: { contactName: 'Troia Buyer', city: 'Istanbul', country: 'Turkey', address: 'Test Mah. No:1' },
-  billingAddress: { contactName: 'Troia Buyer', city: 'Istanbul', country: 'Turkey', address: 'Test Mah. No:1' },
-  basketItemTemplate: { id: 'item-1', name: 'USDC settlement', category1: 'Settlement', itemType: 'VIRTUAL' },
+  shippingAddress: {
+    contactName: 'Troia Buyer',
+    city: 'Istanbul',
+    country: 'Turkey',
+    address: 'Test Mah. No:1',
+  },
+  billingAddress: {
+    contactName: 'Troia Buyer',
+    city: 'Istanbul',
+    country: 'Turkey',
+    address: 'Test Mah. No:1',
+  },
+  basketItemTemplate: {
+    id: 'item-1',
+    name: 'USDC settlement',
+    category1: 'Settlement',
+    itemType: 'VIRTUAL',
+  },
 };
 
 function assertOperatorKeyMatches(operatorSecret: string, expectedPublic: string): void {
@@ -122,7 +143,11 @@ function buildSettlementBundle(
 ): SettlementBundle {
   assertIssuerKeyMatches(issuerSecret, network.usdc.issuer); // fail-closed BEFORE any wiring
   const mintPort = createSacMintClient(
-    { rpc: new SorobanRpcAdapter(network.rpcUrl, network.passphrase, opts), signer: new LocalKeySigner(issuerSecret), nowUnix: () => clock.nowUnix() },
+    {
+      rpc: new SorobanRpcAdapter(network.rpcUrl, network.passphrase, opts),
+      signer: new LocalKeySigner(issuerSecret),
+      nowUnix: () => clock.nowUnix(),
+    },
     {
       sacContractId: network.usdc.sacContractId,
       pool: network.contracts.troyPool,
@@ -161,7 +186,9 @@ function defaultBootstrap(
     async operatorSeqNum() {
       const r = await rpc.readAccountSeq(network.operatorPublic);
       if (!r.exists) {
-        throw new Error(`operator account ${network.operatorPublic} not found on-chain — fund it before serving`);
+        throw new Error(
+          `operator account ${network.operatorPublic} not found on-chain — fund it before serving`,
+        );
       }
       return BigInt(r.seq);
     },
@@ -170,7 +197,10 @@ function defaultBootstrap(
 }
 
 /** Build the full ServerDeps for a testnet deployment. Async: it seeds the store from two chain reads (injectable). */
-export async function buildTestnetServerDeps(cfg: TestnetServerConfig, bootstrap?: BootstrapReads): Promise<ServerDeps> {
+export async function buildTestnetServerDeps(
+  cfg: TestnetServerConfig,
+  bootstrap?: BootstrapReads,
+): Promise<ServerDeps> {
   const network = testnetConfig(cfg.deployment);
   assertOperatorKeyMatches(cfg.secrets.operatorSecret, network.operatorPublic); // fail-closed BEFORE any wiring
 
@@ -186,8 +216,12 @@ export async function buildTestnetServerDeps(cfg: TestnetServerConfig, bootstrap
     policy: cfg.pricingPolicy ?? OFFLINE_DEFAULT_PRICING_POLICY,
   });
 
-  const reads = bootstrap ?? defaultBootstrap(network, () => stellar.readPoolBalanceStroops(), cfg.opts);
-  const [baseSeq, balanceStroops] = await Promise.all([reads.operatorSeqNum(), reads.poolBalanceStroops()]);
+  const reads =
+    bootstrap ?? defaultBootstrap(network, () => stellar.readPoolBalanceStroops(), cfg.opts);
+  const [baseSeq, balanceStroops] = await Promise.all([
+    reads.operatorSeqNum(),
+    reads.poolBalanceStroops(),
+  ]);
   const store = new InMemoryStore({ balanceStroops, baseSeq });
 
   const clock = new SystemClock(); // shared: the app/worker clock AND the mint client's timebounds source

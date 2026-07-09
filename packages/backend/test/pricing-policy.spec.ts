@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { commissionBps, quoteUsdc, quoteUsdcWithPsp, applyPspPassthrough, STROOP } from '../../pricing/src/index.js';
+import {
+  commissionBps,
+  quoteUsdc,
+  quoteUsdcWithPsp,
+  applyPspPassthrough,
+  STROOP,
+} from '../../pricing/src/index.js';
 import type { ReturnStats } from '../../pricing/src/index.js';
 import { OFFLINE_DEFAULT_PRICING_POLICY } from '../src/pricing-policy.js';
 

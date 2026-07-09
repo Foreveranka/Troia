@@ -107,7 +107,13 @@ export async function run(
     event = null; // quiesce: durable wait (rePollObserveOnly / UsdcConfirmed / fireCheckoutForm) or terminal
   }
 
-  return finish(ctx, state, sideOutputs, escalate, isAbsoluteTerminal(state) ? 'terminal' : 'waiting');
+  return finish(
+    ctx,
+    state,
+    sideOutputs,
+    escalate,
+    isAbsoluteTerminal(state) ? 'terminal' : 'waiting',
+  );
 }
 
 /**
@@ -141,12 +147,23 @@ export async function start(ctx: OrderCtx, deps: EngineDeps): Promise<RunResult>
   // fireSolvencyCheck always feeds a solvency event → continue to quiescence (reserve, then the checkout form).
   if (fed !== null) {
     const rest = await run(c, boot.state, fed, deps);
-    return finish(rest.ctx, rest.state, [...bootSideOutputs, ...rest.sideOutputs], rest.escalate, rest.quiescence);
+    return finish(
+      rest.ctx,
+      rest.state,
+      [...bootSideOutputs, ...rest.sideOutputs],
+      rest.escalate,
+      rest.quiescence,
+    );
   }
   return finish(c, boot.state, bootSideOutputs, null, 'waiting');
 }
 
 /** Feed an external event: webhook (charge), poll-worker (evidence/poll/recovery), or reconciler (reconciled). */
-export function advance(ctx: OrderCtx, state: State, event: Event, deps: EngineDeps): Promise<RunResult> {
+export function advance(
+  ctx: OrderCtx,
+  state: State,
+  event: Event,
+  deps: EngineDeps,
+): Promise<RunResult> {
   return run(ctx, state, event, deps);
 }

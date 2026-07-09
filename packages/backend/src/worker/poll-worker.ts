@@ -67,7 +67,8 @@ export async function pollInFlight(
         const patched = proj.kind === 'ok' ? { ...ctx, paymentId: proj.paymentId } : ctx;
         // Only chargeOk (which advances to the irreversible USDC leg) when a durable paymentId was extracted; a
         // malformed retrieve stays as chargeUnknown, never a chargeOk we could not later void.
-        const event = proj.kind === 'ok' ? chargeEvent(retrieved) : { type: 'chargeUnknown' as const };
+        const event =
+          proj.kind === 'ok' ? chargeEvent(retrieved) : { type: 'chargeUnknown' as const };
         const r = await advance(patched, state, event, deps);
         registry.put(r.ctx, r.state);
         return r.state !== state ? 'advanced' : 'polled';

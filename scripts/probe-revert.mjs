@@ -18,27 +18,47 @@ if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) {
   process.exit(1);
 }
 
-const dep = JSON.parse(readFileSync(process.env.TROIA_DEPLOYMENT_PATH ?? 'deployment.testnet.json', 'utf8'));
+const dep = JSON.parse(
+  readFileSync(process.env.TROIA_DEPLOYMENT_PATH ?? 'deployment.testnet.json', 'utf8'),
+);
 const network = testnetConfig(dep);
 const rpc = new SorobanRpcAdapter(network.rpcUrl, network.passphrase);
 
-const NAMED = { 1: 'AlreadyProcessed', 2: 'InsufficientBalance', 3: 'Paused', 4: 'NotAuthorized', 5: 'InvalidAmount' };
+const NAMED = {
+  1: 'AlreadyProcessed',
+  2: 'InsufficientBalance',
+  3: 'Paused',
+  4: 'NotAuthorized',
+  5: 'InvalidAmount',
+};
 const r = await rpc.describeRevert(hash, network.contracts.troyPool);
 
 console.log(`\n  tx ${hash}`);
 console.log(`  status                 ${r.status}`);
 console.log(`  diagnostic events      ${r.topDiagnosticEvents}`);
-console.log(`  event contractIds      ${r.eventContractIds.length ? r.eventContractIds.join(', ') : '(none)'}`);
+console.log(
+  `  event contractIds      ${r.eventContractIds.length ? r.eventContractIds.join(', ') : '(none)'}`,
+);
 console.log(`  TroyPool               ${network.contracts.troyPool}`);
 const c = r.classifiedCode;
-console.log(`  readContractErrorCode  ${c === null ? 'null' : `${c} (${NAMED[c] ?? 'unknown'})`}\n`);
+console.log(
+  `  readContractErrorCode  ${c === null ? 'null' : `${c} (${NAMED[c] ?? 'unknown'})`}\n`,
+);
 
 if (c === 1) {
-  console.log('  OK — the contract-scoped revert-read works end-to-end on a live reverted tx (flag-1 confirmed).\n');
+  console.log(
+    '  OK — the contract-scoped revert-read works end-to-end on a live reverted tx (flag-1 confirmed).\n',
+  );
 } else if (r.status === 'FAILED' && r.topDiagnosticEvents > 0) {
-  console.log('  NOTE — FAILED with diagnostics but no TroyPool-scoped code. Check whether the revert code sits on a');
-  console.log('         different contractId (SAC vs TroyPool) or nested in the soroban meta. Re-drive is money-safe.\n');
+  console.log(
+    '  NOTE — FAILED with diagnostics but no TroyPool-scoped code. Check whether the revert code sits on a',
+  );
+  console.log(
+    '         different contractId (SAC vs TroyPool) or nested in the soroban meta. Re-drive is money-safe.\n',
+  );
 } else if (r.status !== 'FAILED') {
-  console.log(`  NOTE — this tx is ${r.status}, not a reverted pay(). Pass the hash of a REVERTED invocation.\n`);
+  console.log(
+    `  NOTE — this tx is ${r.status}, not a reverted pay(). Pass the hash of a REVERTED invocation.\n`,
+  );
 }
 process.exit(0);

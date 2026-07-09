@@ -49,7 +49,7 @@ This is where the design earns its keep. Everything here is pure/deterministic a
 - **1.6 `ledger`** — double-entry append-only (fiat_in/crypto_out/spread/fee). Tests: entries balance.
 - **1.7 composition smoke** (`packages/integration`) — one happy-path order threaded through the WHOLE
   core module-to-module (`deriveIds → build → allocate → state machine → oracle → pricing → ledger →
-  drift`), plus a fail-closed seam (tampered memo stops at `build`). Proves the modules **compose** —
+drift`), plus a fail-closed seam (tampered memo stops at `build`). Proves the modules **compose** —
   each was only unit-tested in isolation. Cheap insurance inserted before the Phase-2 Rust mode-switch.
 
 **Done when:** the entire money core is green offline AND one order composes end-to-end through it; no
@@ -146,8 +146,8 @@ Now connect the core to the outside world, one provider at a time, behind interf
   (the real iyzico valör is ~21 days, **compressed to `DEMO_VALOR_SECS`, default 30s**, so the refill is visible in
   the demo) — mints real issuer-signed USDC into the pool at the live oracle rate (`TryDrivenRebalancePolicy`,
   Model-B: converts the whole collected TRY, truncated down), books it in the ledger, and `creditPool`s the
-  `/intent` gate. Seamed for a future **agent + on/off-ramp service** (agent = the *decision*, on/off-ramp = the
-  real fiat↔USDC *execution*); on mainnet that seam replaces the SAC mint with a real CEX buy, backend unchanged.
+  `/intent` gate. Seamed for a future **agent + on/off-ramp service** (agent = the _decision_, on/off-ramp = the
+  real fiat↔USDC _execution_); on mainnet that seam replaces the SAC mint with a real CEX buy, backend unchanged.
 
 **Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches. ✅
 
@@ -177,7 +177,7 @@ video remain.
 
 ## Deferred — Phase-2, boundary only (NOT built now) ⏸
 
-- Real CEX rebalance **inventory buy** — only the real exchange buy+withdraw that *economically acquires* the USDC is deferred (invariant ③b); the automatic trigger + the testnet SAC-mint top-up are **built** (4.7). The future **agent + on/off-ramp service** plugs into the existing `RebalancePolicy` (decision) + `RebalanceProvider` (execution) seams.
+- Real CEX rebalance **inventory buy** — only the real exchange buy+withdraw that _economically acquires_ the USDC is deferred (invariant ③b); the automatic trigger + the testnet SAC-mint top-up are **built** (4.7). The future **agent + on/off-ramp service** plugs into the existing `RebalancePolicy` (decision) + `RebalanceProvider` (execution) seams.
 - KYC (interface now, testnet no-op).
 - HSM/multisig real thresholds (Signer boundary now, threshold=1 same flow).
 - Channel accounts for concurrency (`SequenceProvider` seam now).

@@ -26,7 +26,8 @@ const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[
 // eslint-disable-next-line no-control-regex -- control chars are valid ASCII bytes; we only reject > 0x7F
 const NON_ASCII = /[^\x00-\x7F]/;
 
-export type DeriveIdsErrorCode = 'OrderIdNotWellFormed' | 'DestinationNotAscii' | 'AmountOutOfRange';
+export type DeriveIdsErrorCode =
+  'OrderIdNotWellFormed' | 'DestinationNotAscii' | 'AmountOutOfRange';
 
 export class DeriveIdsError extends Error {
   readonly code: DeriveIdsErrorCode;

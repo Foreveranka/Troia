@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  SimulatedRebalance,
-  RebalanceError,
-  type MintPort,
-} from '../src/index.js';
+import { SimulatedRebalance, RebalanceError, type MintPort } from '../src/index.js';
 import { Ledger, STROOP } from '../../ledger/src/index.js';
 
 // SimulatedRebalance mints self-issued test USDC to top up the pool. The on-chain mint is an INJECTED port, so
@@ -37,10 +33,18 @@ describe('rebalance — SimulatedRebalance mints to top up the pool', () => {
   it('fails closed on an invalid request without minting', async () => {
     const { port, calls } = fakeMint();
     const r = new SimulatedRebalance(port);
-    await expect(r.topUp({ ref: '', usdcStroops: STROOP, valueKurus: 100n })).rejects.toBeInstanceOf(RebalanceError);
-    await expect(r.topUp({ ref: 'x', usdcStroops: 0n, valueKurus: 100n })).rejects.toBeInstanceOf(RebalanceError);
-    await expect(r.topUp({ ref: 'x', usdcStroops: -1n, valueKurus: 100n })).rejects.toBeInstanceOf(RebalanceError);
-    await expect(r.topUp({ ref: 'x', usdcStroops: STROOP, valueKurus: 0n })).rejects.toBeInstanceOf(RebalanceError);
+    await expect(
+      r.topUp({ ref: '', usdcStroops: STROOP, valueKurus: 100n }),
+    ).rejects.toBeInstanceOf(RebalanceError);
+    await expect(r.topUp({ ref: 'x', usdcStroops: 0n, valueKurus: 100n })).rejects.toBeInstanceOf(
+      RebalanceError,
+    );
+    await expect(r.topUp({ ref: 'x', usdcStroops: -1n, valueKurus: 100n })).rejects.toBeInstanceOf(
+      RebalanceError,
+    );
+    await expect(r.topUp({ ref: 'x', usdcStroops: STROOP, valueKurus: 0n })).rejects.toBeInstanceOf(
+      RebalanceError,
+    );
     expect(calls).toEqual([]); // never reached the mint
   });
 
@@ -74,7 +78,9 @@ describe('rebalance — SimulatedRebalance mints to top up the pool', () => {
       },
     };
     const r = new SimulatedRebalance(port);
-    await expect(r.topUp({ ref: 'cycle-1', usdcStroops: STROOP, valueKurus: 4_000n })).rejects.toThrow();
+    await expect(
+      r.topUp({ ref: 'cycle-1', usdcStroops: STROOP, valueKurus: 4_000n }),
+    ).rejects.toThrow();
     const res = await r.topUp({ ref: 'cycle-1', usdcStroops: STROOP, valueKurus: 4_000n }); // retry
     expect(res.txHash).toBe('mint-ok');
     expect(attempts).toBe(2); // the clean failure did not land, so the retry is allowed to mint

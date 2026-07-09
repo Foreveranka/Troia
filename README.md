@@ -3,8 +3,8 @@
 Custodial TRY→USDC settlement bridge on Stellar (testnet PoC). A Turkish user pays TRY with a Troy card;
 the operator settles the merchant in USDC from a Stellar pool that is pre-funded and automatically topped up from the collected TRY. The spread is revenue.
 
-> *"A settlement layer that makes every lira accountable hash-by-hash — it never silently loses money;
-> the one irreversible loss bucket (`LOSS_REVIEW`) is surfaced, never hidden."* Honest proof boundary:
+> _"A settlement layer that makes every lira accountable hash-by-hash — it never silently loses money;
+> the one irreversible loss bucket (`LOSS_REVIEW`) is surfaced, never hidden."_ Honest proof boundary:
 > **`signed ≠ settled`**.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design contract and [`docs/ROADMAP.md`](docs/ROADMAP.md)
@@ -19,12 +19,12 @@ for the phased build plan. For the reviewer-verifiable proof story, see [`docs/R
 
 ## Commands
 
-| Command | What |
-|---|---|
-| `just build` | Build all TypeScript packages |
-| `just test` | Run the test suite (Vitest) |
-| `just lint` | ESLint over the workspace |
-| `just format` | Prettier write |
+| Command               | What                                    |
+| --------------------- | --------------------------------------- |
+| `just build`          | Build all TypeScript packages           |
+| `just test`           | Run the test suite (Vitest)             |
+| `just lint`           | ESLint over the workspace               |
+| `just format`         | Prettier write                          |
 | `just contract-build` | `stellar contract build` (Soroban wasm) |
 
 `just verify` runs today (offline, network-blocked reconciliation proof — see
@@ -78,9 +78,9 @@ on `SETTLEMENT_TICK_MS`, default 5s) arms every money-good order and, after the 
 valör is **~21 days**, **compressed to `DEMO_VALOR_SECS` (default 30s)** for the demo so the refill is visible —
 refills the pool from that order's collected TRY at the live oracle rate by minting real issuer-signed USDC into
 the pool, so the pool grows by the commission. The system is seamed for a future **agent + on/off-ramp service**:
-the agent owns the *decision* (when / how much), an on/off-ramp provider owns the real fiat↔USDC *execution*; on
+the agent owns the _decision_ (when / how much), an on/off-ramp provider owns the real fiat↔USDC _execution_; on
 mainnet that seam becomes a real CEX buy with the backend unchanged. On testnet the refill is a self-issued SAC
-mint, so the only Phase-2 piece is the real exchange buy that *economically acquires* the USDC.
+mint, so the only Phase-2 piece is the real exchange buy that _economically acquires_ the USDC.
 
 Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend → Render) so the demo runs without
 a local machine, and a 3–5 min proof video. The live run was a single manual smoke, not a load/soak test. See

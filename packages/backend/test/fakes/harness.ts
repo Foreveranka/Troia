@@ -148,7 +148,13 @@ export class FakeStellarPort implements StellarPort {
 }
 
 export class FakePspPort implements PspPort {
-  init: RawIyzicoResult = body({ status: 'success', token: 'tok-1', checkoutFormContent: '<html/>', conversationId: 'cid', paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1' });
+  init: RawIyzicoResult = body({
+    status: 'success',
+    token: 'tok-1',
+    checkoutFormContent: '<html/>',
+    conversationId: 'cid',
+    paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1',
+  });
   cancelResult: RawIyzicoResult = body({ status: 'success', conversationId: 'cid' });
 
   constructor(private readonly trace: Trace) {}
@@ -215,9 +221,24 @@ export function makeConfig(): EngineConfig {
         country: 'Turkey',
         ip: '0.0.0.0',
       },
-      shippingAddress: { contactName: 'Troia Buyer', city: 'Istanbul', country: 'Turkey', address: 'Test Mah. No:1' },
-      billingAddress: { contactName: 'Troia Buyer', city: 'Istanbul', country: 'Turkey', address: 'Test Mah. No:1' },
-      basketItemTemplate: { id: 'item-1', name: 'USDC settlement', category1: 'Settlement', itemType: 'VIRTUAL' },
+      shippingAddress: {
+        contactName: 'Troia Buyer',
+        city: 'Istanbul',
+        country: 'Turkey',
+        address: 'Test Mah. No:1',
+      },
+      billingAddress: {
+        contactName: 'Troia Buyer',
+        city: 'Istanbul',
+        country: 'Turkey',
+        address: 'Test Mah. No:1',
+      },
+      basketItemTemplate: {
+        id: 'item-1',
+        name: 'USDC settlement',
+        category1: 'Settlement',
+        itemType: 'VIRTUAL',
+      },
     },
     policy: {
       maxDeadRetries: 3,
@@ -235,7 +256,15 @@ export function makeHarness(): Harness {
   const psp = new FakePspPort(trace);
   const clock = new FakeClock();
   const config = makeConfig();
-  return { deps: { stellar, psp, store, clock, config }, store, stellar, psp, clock, config, trace };
+  return {
+    deps: { stellar, psp, store, clock, config },
+    store,
+    stellar,
+    psp,
+    clock,
+    config,
+    trace,
+  };
 }
 
 const DESTINATION = 'GDESTINATIONACCOUNTPLACEHOLDER0000000000000000';

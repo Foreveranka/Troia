@@ -11,13 +11,32 @@ export const STORE = {
 
 /** A short, human order reference — used as the on-chain payment memo. */
 export function orderRef(): string {
-  return 'ST-' + Math.random().toString(36).slice(2, 8).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase();
+  return (
+    'ST-' +
+    Math.random().toString(36).slice(2, 8).toUpperCase() +
+    Math.random().toString(36).slice(2, 4).toUpperCase()
+  );
 }
 
 /** Build a SEP-7 (`web+stellar:pay`) payment request URI. Defaults to a USDC payment; pass 'native' for XLM. */
-export function buildSep7(amount: string, memo: string, asset: 'native' | { code: string; issuer: string } = { code: STORE.usdcCode, issuer: STORE.usdcIssuer }): string {
-  const params = new URLSearchParams({ destination: STORE.merchant, amount, memo, memo_type: 'text' });
-  if (asset !== 'native') { params.set('asset_code', asset.code); params.set('asset_issuer', asset.issuer); }
+export function buildSep7(
+  amount: string,
+  memo: string,
+  asset: 'native' | { code: string; issuer: string } = {
+    code: STORE.usdcCode,
+    issuer: STORE.usdcIssuer,
+  },
+): string {
+  const params = new URLSearchParams({
+    destination: STORE.merchant,
+    amount,
+    memo,
+    memo_type: 'text',
+  });
+  if (asset !== 'native') {
+    params.set('asset_code', asset.code);
+    params.set('asset_issuer', asset.issuer);
+  }
   return `web+stellar:pay?${params.toString()}`;
 }
 
@@ -50,24 +69,66 @@ const A = {
 };
 
 export const COINS: readonly Coin[] = [
-  { code: 'BTC', name: 'Bitcoin', color: '#f7931a', rate: 95000, networks: [{ id: 'bitcoin', name: 'Bitcoin', addr: A.btc }] },
-  { code: 'ETH', name: 'Ethereum', color: '#627eea', rate: 3400, networks: [{ id: 'ethereum', name: 'Ethereum', addr: A.eth }] },
-  { code: 'USDT', name: 'Tether', color: '#26a17b', rate: 1, networks: [
-    { id: 'ethereum', name: 'Ethereum (ERC-20)', addr: A.eth },
-    { id: 'tron', name: 'Tron (TRC-20)', addr: A.tron },
-    { id: 'bsc', name: 'BNB Smart Chain', addr: A.eth },
-    { id: 'solana', name: 'Solana', addr: A.sol },
-  ] },
-  { code: 'USDC', name: 'USD Coin', color: '#2775ca', rate: 1, networks: [
-    { id: 'ethereum', name: 'Ethereum', addr: A.eth },
-    { id: 'solana', name: 'Solana', addr: A.sol },
-    { id: 'polygon', name: 'Polygon', addr: A.eth },
-    { id: 'base', name: 'Base', addr: A.eth },
-    { id: 'stellar', name: 'Stellar', addr: A.xlm, needsMemo: true },
-  ] },
-  { code: 'SOL', name: 'Solana', color: '#14f195', rate: 185, networks: [{ id: 'solana', name: 'Solana', addr: A.sol }] },
-  { code: 'XLM', name: 'Stellar', color: '#7d5cff', rate: 0.38, networks: [{ id: 'stellar', name: 'Stellar', addr: A.xlm, needsMemo: true }] },
-  { code: 'BNB', name: 'BNB', color: '#f3ba2f', rate: 620, networks: [{ id: 'bsc', name: 'BNB Smart Chain', addr: A.eth }] },
+  {
+    code: 'BTC',
+    name: 'Bitcoin',
+    color: '#f7931a',
+    rate: 95000,
+    networks: [{ id: 'bitcoin', name: 'Bitcoin', addr: A.btc }],
+  },
+  {
+    code: 'ETH',
+    name: 'Ethereum',
+    color: '#627eea',
+    rate: 3400,
+    networks: [{ id: 'ethereum', name: 'Ethereum', addr: A.eth }],
+  },
+  {
+    code: 'USDT',
+    name: 'Tether',
+    color: '#26a17b',
+    rate: 1,
+    networks: [
+      { id: 'ethereum', name: 'Ethereum (ERC-20)', addr: A.eth },
+      { id: 'tron', name: 'Tron (TRC-20)', addr: A.tron },
+      { id: 'bsc', name: 'BNB Smart Chain', addr: A.eth },
+      { id: 'solana', name: 'Solana', addr: A.sol },
+    ],
+  },
+  {
+    code: 'USDC',
+    name: 'USD Coin',
+    color: '#2775ca',
+    rate: 1,
+    networks: [
+      { id: 'ethereum', name: 'Ethereum', addr: A.eth },
+      { id: 'solana', name: 'Solana', addr: A.sol },
+      { id: 'polygon', name: 'Polygon', addr: A.eth },
+      { id: 'base', name: 'Base', addr: A.eth },
+      { id: 'stellar', name: 'Stellar', addr: A.xlm, needsMemo: true },
+    ],
+  },
+  {
+    code: 'SOL',
+    name: 'Solana',
+    color: '#14f195',
+    rate: 185,
+    networks: [{ id: 'solana', name: 'Solana', addr: A.sol }],
+  },
+  {
+    code: 'XLM',
+    name: 'Stellar',
+    color: '#7d5cff',
+    rate: 0.38,
+    networks: [{ id: 'stellar', name: 'Stellar', addr: A.xlm, needsMemo: true }],
+  },
+  {
+    code: 'BNB',
+    name: 'BNB',
+    color: '#f3ba2f',
+    rate: 620,
+    networks: [{ id: 'bsc', name: 'BNB Smart Chain', addr: A.eth }],
+  },
 ];
 
 /** The crypto amount for a USD total, formatted per coin. */

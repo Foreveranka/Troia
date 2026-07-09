@@ -37,7 +37,8 @@ export function decodeSignedPay(signedXdr: string, passphrase: string): DecodedP
 
   const op = tx.operations[0];
   if (!op || tx.operations.length !== 1) throw new EvidenceError('expected exactly one operation');
-  if (op.type !== 'invokeHostFunction') throw new EvidenceError(`op is ${op.type}, not invokeHostFunction`);
+  if (op.type !== 'invokeHostFunction')
+    throw new EvidenceError(`op is ${op.type}, not invokeHostFunction`);
 
   const func = op.func;
   if (func.switch().name !== 'hostFunctionTypeInvokeContract') {

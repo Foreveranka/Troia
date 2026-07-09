@@ -19,7 +19,9 @@ function yahooPayload(closes: readonly (number | null)[]): unknown {
 
 describe('rate-history — Yahoo USD/TRY daily-close data source', () => {
   it('parseYahooChartCloses extracts the closes and drops null / no-trade days', () => {
-    expect(parseYahooChartCloses(yahooPayload([40.0, null, 40.5, 41.0, null, 40.8]))).toEqual([40.0, 40.5, 41.0, 40.8]);
+    expect(parseYahooChartCloses(yahooPayload([40.0, null, 40.5, 41.0, null, 40.8]))).toEqual([
+      40.0, 40.5, 41.0, 40.8,
+    ]);
   });
 
   it('parseYahooChartCloses fails closed on a malformed payload or too few valid closes', () => {
@@ -54,13 +56,18 @@ describe('rate-history — Yahoo USD/TRY daily-close data source', () => {
       if (attempts === 1) throw new Error('transient reset');
       return { json: async () => yahooPayload(closes) };
     };
-    const got = await new YahooUsdTryHistory({ fetch: flaky, net: { timeoutMs: 1000, retries: 1 } }).dailyCloses();
+    const got = await new YahooUsdTryHistory({
+      fetch: flaky,
+      net: { timeoutMs: 1000, retries: 1 },
+    }).dailyCloses();
     expect(got).toEqual(closes); // second attempt served the data -> a single blip does not fail the quote
     expect(attempts).toBe(2);
   });
 
   it('StaticRateHistory returns its fixed series (the offline PoC data source)', async () => {
-    expect(await new StaticRateHistory([40.0, 40.5, 40.2]).dailyCloses()).toEqual([40.0, 40.5, 40.2]);
+    expect(await new StaticRateHistory([40.0, 40.5, 40.2]).dailyCloses()).toEqual([
+      40.0, 40.5, 40.2,
+    ]);
     expect(() => new StaticRateHistory([40])).toThrow(RangeError); // needs >= 3
   });
 
@@ -77,7 +84,9 @@ describe('rate-history — Yahoo USD/TRY daily-close data source', () => {
       b *= 1 + 0.0005 + 0.012 * Math.sin(i);
       tense.push(b);
     }
-    const fetchOf = (closes: readonly number[]): FetchLike => async () => ({ json: async () => yahooPayload(closes) });
+    const fetchOf =
+      (closes: readonly number[]): FetchLike =>
+      async () => ({ json: async () => yahooPayload(closes) });
 
     const calmCloses = await new YahooUsdTryHistory({ fetch: fetchOf(calm) }).dailyCloses();
     const tenseCloses = await new YahooUsdTryHistory({ fetch: fetchOf(tense) }).dailyCloses();

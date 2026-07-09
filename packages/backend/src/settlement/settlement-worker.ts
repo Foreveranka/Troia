@@ -57,7 +57,9 @@ export interface SettlementDeps {
   readonly policy: RebalancePolicy;
   readonly rebalance: { topUp(req: TopUpRequest): Promise<TopUpExecution> };
   readonly store: { creditPool(stroops: bigint): Promise<void> };
-  readonly ledger: { recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): unknown };
+  readonly ledger: {
+    recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): unknown;
+  };
   /** the LIVE rate (TRY per USDC, 7-decimal stroops) read at settle time — the oracle. Throws => fail-closed. */
   readonly rate: { liveRateStroops(): Promise<bigint> };
   readonly demoValorSecs: number;
@@ -120,7 +122,11 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
         const req = deps.policy.plan(dueRec, liveRate);
         const result = await deps.rebalance.topUp(req); // mint (idempotent per ref)
         try {
-          deps.ledger.recordTopUp({ ref: req.ref, usdcStroops: result.usdcStroops, valueKurus: req.valueKurus });
+          deps.ledger.recordTopUp({
+            ref: req.ref,
+            usdcStroops: result.usdcStroops,
+            valueKurus: req.valueKurus,
+          });
         } catch (e) {
           if (!isDuplicateRef(e)) throw e; // already booked (restart replay) -> proceed idempotently
         }

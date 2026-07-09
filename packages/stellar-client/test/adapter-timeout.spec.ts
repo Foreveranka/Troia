@@ -26,7 +26,9 @@ describe('adapter network reads are bounded by withTimeout (no unwedgeable hang)
       // `this.server.` (trailing dot) matches only METHOD accesses; the constructor assignment is `this.server =`.
       const calls = count(src, 'this.server.');
       expect(calls, `${f} should make at least one server call`).toBeGreaterThan(0);
-      expect(count(src, 'withTimeout(this.server.'), `${f} has an unwrapped server call`).toBe(calls);
+      expect(count(src, 'withTimeout(this.server.'), `${f} has an unwrapped server call`).toBe(
+        calls,
+      );
     });
   }
 });

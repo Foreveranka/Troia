@@ -18,15 +18,24 @@ describe('reversal (same-day void) retry is bounded (no unbounded fireCancel loo
 
     // dead budget exhausted -> ChargeReversing[releaseSeq,releaseReservation,fireCancel]; the void declines
     // forever, so the bounded fireCancel loop must terminate in the durable stuck-refund sink (NOT a silent loop).
-    const r = await advance(ctx, 'UsdcDead', { type: 'deadRetry', retriesRemaining: false }, h.deps);
+    const r = await advance(
+      ctx,
+      'UsdcDead',
+      { type: 'deadRetry', retriesRemaining: false },
+      h.deps,
+    );
 
     expect(r.state).toBe('LossReview'); // reversal budget exhausted -> flagLoss -> manual sink
     expect(r.quiescence).toBe('waiting'); // LossReview is a manual sink, not an absolute terminal
     // exactly maxReversalRetries retries + the final exhausting attempt
-    expect(h.trace.filter((t) => t === 'psp.cancel')).toHaveLength(h.config.policy.maxReversalRetries + 1);
+    expect(h.trace.filter((t) => t === 'psp.cancel')).toHaveLength(
+      h.config.policy.maxReversalRetries + 1,
+    );
     expect(h.store.reversalRetries.get(ctx.orderId)).toBe(h.config.policy.maxReversalRetries + 1);
     // the stuck reversal is DURABLY recorded with the on-chain witness, not silently parked
-    expect(h.store.losses).toEqual([{ orderId: ctx.orderId, bucket: 'reversalExhausted', usdcTxHash: 'usdc-hash' }]);
+    expect(h.store.losses).toEqual([
+      { orderId: ctx.orderId, bucket: 'reversalExhausted', usdcTxHash: 'usdc-hash' },
+    ]);
   });
 });
 
@@ -36,7 +45,12 @@ describe('dead-retry budget exhaustion voids the completed sale (USDC could not 
     const ctx = makeCtx(h.store, { hashHex: 'usdc-hash', signedXdr: 'x' });
 
     // deadRetry(false): the replacement budget is spent -> abandon the seq, release the reservation, void the sale.
-    const r = await advance(ctx, 'UsdcDead', { type: 'deadRetry', retriesRemaining: false }, h.deps);
+    const r = await advance(
+      ctx,
+      'UsdcDead',
+      { type: 'deadRetry', retriesRemaining: false },
+      h.deps,
+    );
 
     expect(r.state).toBe('ChargeReversed'); // ChargeReversing -> reversalConfirmed -> clean terminal
     expect(r.quiescence).toBe('terminal');
@@ -89,8 +103,12 @@ describe('USDC-revert family (D2) — the double-pay-critical chain', () => {
     const r = await advance(ctx, 'UsdcSubmitted', { type: 'evidenceReverted' }, h.deps);
 
     expect(r.state).toBe('LossReview'); // converges — NOT stranded in ChargeReversing
-    expect(h.trace.filter((t) => t === 'psp.cancel')).toHaveLength(h.config.policy.maxReversalRetries + 1);
-    expect(h.store.losses).toEqual([{ orderId: ctx.orderId, bucket: 'reversalExhausted', usdcTxHash: 'usdc-hash' }]);
+    expect(h.trace.filter((t) => t === 'psp.cancel')).toHaveLength(
+      h.config.policy.maxReversalRetries + 1,
+    );
+    expect(h.store.losses).toEqual([
+      { orderId: ctx.orderId, bucket: 'reversalExhausted', usdcTxHash: 'usdc-hash' },
+    ]);
   });
 
   it('revertOther (code null): reallocates a FRESH seq and resubmits exactly once (never reuses the burned seq)', async () => {
@@ -172,6 +190,10 @@ describe('pay witness is durably persisted at submit time (cross-process resume 
     expect(r.state).toBe('UsdcPending');
     expect(r.quiescence).toBe('waiting');
     // the witness is durable (a rebuilt-from-OrderRow ctx would carry hashHex), not lost with the in-memory ctx
-    expect(h.store.persisted.some((p) => p.patch.hashHex === 'hash_order-001' && p.patch.signedXdr === 'xdr_order-001')).toBe(true);
+    expect(
+      h.store.persisted.some(
+        (p) => p.patch.hashHex === 'hash_order-001' && p.patch.signedXdr === 'xdr_order-001',
+      ),
+    ).toBe(true);
   });
 });

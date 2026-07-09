@@ -34,13 +34,20 @@ class FakeHistory implements RateHistoryProvider {
   ) {}
   dailyCloses(): Promise<readonly number[]> {
     this.calls += 1;
-    return this.fail ? Promise.reject(new Error('history feed down')) : Promise.resolve(this.closes);
+    return this.fail
+      ? Promise.reject(new Error('history feed down'))
+      : Promise.resolve(this.closes);
   }
 }
 
 function fixedClock(): { now: () => number; set: (t: number) => void } {
   let t = 0;
-  return { now: () => t, set: (v: number) => { t = v; } };
+  return {
+    now: () => t,
+    set: (v: number) => {
+      t = v;
+    },
+  };
 }
 
 describe('makeQuoteFn — maps a SettlementQuote onto the backend Quote seam', () => {
@@ -68,9 +75,19 @@ describe('makeQuoteFn — maps a SettlementQuote onto the backend Quote seam', (
   });
 
   it('scales to a multi-USDC order', async () => {
-    const quote = makeQuoteFn({ spotOracle: new FakeOracle(MID_E7), history: new FakeHistory(CLOSES), policy: POLICY });
+    const quote = makeQuoteFn({
+      spotOracle: new FakeOracle(MID_E7),
+      history: new FakeHistory(CLOSES),
+      policy: POLICY,
+    });
     const got = await quote(25n * UNIT);
-    const sq = quoteUsdcWithPsp(25n * UNIT, MID_E7, computeReturnStats(CLOSES), POLICY.commission, POLICY.psp);
+    const sq = quoteUsdcWithPsp(
+      25n * UNIT,
+      MID_E7,
+      computeReturnStats(CLOSES),
+      POLICY.commission,
+      POLICY.psp,
+    );
     expect(got.userTryKurus).toBe(sq.userTryKurus);
     expect(got.paidPriceTry).toBe(sq.paidPriceTry);
   });
@@ -79,7 +96,11 @@ describe('makeQuoteFn — maps a SettlementQuote onto the backend Quote seam', (
 describe('makeQuoteFn — freshness + caching', () => {
   it('fetches the spot mid FRESH on every quote', async () => {
     const oracle = new FakeOracle(MID_E7);
-    const quote = makeQuoteFn({ spotOracle: oracle, history: new FakeHistory(CLOSES), policy: POLICY });
+    const quote = makeQuoteFn({
+      spotOracle: oracle,
+      history: new FakeHistory(CLOSES),
+      policy: POLICY,
+    });
     await quote(UNIT);
     await quote(UNIT);
     await quote(UNIT);
@@ -89,7 +110,13 @@ describe('makeQuoteFn — freshness + caching', () => {
   it('caches the return stats within the TTL (history fetched once across quotes)', async () => {
     const clock = fixedClock();
     const history = new FakeHistory(CLOSES);
-    const quote = makeQuoteFn({ spotOracle: new FakeOracle(MID_E7), history, policy: POLICY, statsTtlMs: 1000, now: clock.now });
+    const quote = makeQuoteFn({
+      spotOracle: new FakeOracle(MID_E7),
+      history,
+      policy: POLICY,
+      statsTtlMs: 1000,
+      now: clock.now,
+    });
     await quote(UNIT);
     clock.set(999); // still inside the TTL
     await quote(UNIT);
@@ -99,7 +126,13 @@ describe('makeQuoteFn — freshness + caching', () => {
   it('refetches the return stats after the TTL expires', async () => {
     const clock = fixedClock();
     const history = new FakeHistory(CLOSES);
-    const quote = makeQuoteFn({ spotOracle: new FakeOracle(MID_E7), history, policy: POLICY, statsTtlMs: 1000, now: clock.now });
+    const quote = makeQuoteFn({
+      spotOracle: new FakeOracle(MID_E7),
+      history,
+      policy: POLICY,
+      statsTtlMs: 1000,
+      now: clock.now,
+    });
     await quote(UNIT);
     clock.set(1001); // past the TTL
     await quote(UNIT);
@@ -109,7 +142,14 @@ describe('makeQuoteFn — freshness + caching', () => {
   it('BOUNDED last-good: a transient failure WITHIN maxStale reuses the cached stats (quote still succeeds)', async () => {
     const clock = fixedClock();
     const history = new FakeHistory(CLOSES);
-    const quote = makeQuoteFn({ spotOracle: new FakeOracle(MID_E7), history, policy: POLICY, statsTtlMs: 1000, statsMaxStaleMs: 5000, now: clock.now });
+    const quote = makeQuoteFn({
+      spotOracle: new FakeOracle(MID_E7),
+      history,
+      policy: POLICY,
+      statsTtlMs: 1000,
+      statsMaxStaleMs: 5000,
+      now: clock.now,
+    });
     const first = await quote(UNIT); // computes + caches stats at t=0
     clock.set(3000); // past the TTL (refetch attempted) but within maxStale
     history.fail = true; // feed down
@@ -121,7 +161,14 @@ describe('makeQuoteFn — freshness + caching', () => {
   it('MONEY-SAFETY: past maxStale, a continued outage FAILS CLOSED rather than reuse stale (possibly over-charging) stats', async () => {
     const clock = fixedClock();
     const history = new FakeHistory(CLOSES);
-    const quote = makeQuoteFn({ spotOracle: new FakeOracle(MID_E7), history, policy: POLICY, statsTtlMs: 1000, statsMaxStaleMs: 5000, now: clock.now });
+    const quote = makeQuoteFn({
+      spotOracle: new FakeOracle(MID_E7),
+      history,
+      policy: POLICY,
+      statsTtlMs: 1000,
+      statsMaxStaleMs: 5000,
+      now: clock.now,
+    });
     await quote(UNIT); // caches stats at t=0
     clock.set(6000); // BEYOND maxStale (5000)
     history.fail = true; // feed still down
@@ -133,12 +180,20 @@ describe('makeQuoteFn — fail-closed', () => {
   it('rejects when the oracle cannot agree on a mid (no price -> no charge)', async () => {
     const oracle = new FakeOracle(MID_E7);
     oracle.result = { ok: false, error: new Error('DeviationExceeded') } as OracleResult;
-    const quote = makeQuoteFn({ spotOracle: oracle, history: new FakeHistory(CLOSES), policy: POLICY });
+    const quote = makeQuoteFn({
+      spotOracle: oracle,
+      history: new FakeHistory(CLOSES),
+      policy: POLICY,
+    });
     await expect(quote(UNIT)).rejects.toThrow('DeviationExceeded');
   });
 
   it('rejects when NO stats can ever be computed (history down from the start)', async () => {
-    const quote = makeQuoteFn({ spotOracle: new FakeOracle(MID_E7), history: new FakeHistory(CLOSES, true), policy: POLICY });
+    const quote = makeQuoteFn({
+      spotOracle: new FakeOracle(MID_E7),
+      history: new FakeHistory(CLOSES, true),
+      policy: POLICY,
+    });
     await expect(quote(UNIT)).rejects.toThrow('history feed down');
   });
 });

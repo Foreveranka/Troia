@@ -23,10 +23,21 @@ const WIRING = {
   operatorPublic: 'GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S',
 };
 
-const SUBMIT: SubmitResult = { hashHex: 'h1', signedXdr: 's1', seq: '1001', outcome: { kind: 'PENDING', hashHex: 'h1' } };
+const SUBMIT: SubmitResult = {
+  hashHex: 'h1',
+  signedXdr: 's1',
+  seq: '1001',
+  outcome: { kind: 'PENDING', hashHex: 'h1' },
+};
 const RESEND: SendOutcome = { kind: 'PENDING', hashHex: 'h1' };
-const OBSERVE: ObserveResult = { next: { phase: 'polling', hashHex: 'h1', ourSeq: 1001n, maxTime: 0 }, action: 'none' };
-const SNAP: CoreAccountSnapshot = { exists: true, trustlines: [{ assetCode: 'USDC', assetIssuer: 'GISSUER' }] };
+const OBSERVE: ObserveResult = {
+  next: { phase: 'polling', hashHex: 'h1', ourSeq: 1001n, maxTime: 0 },
+  action: 'none',
+};
+const SNAP: CoreAccountSnapshot = {
+  exists: true,
+  trustlines: [{ assetCode: 'USDC', assetIssuer: 'GISSUER' }],
+};
 
 class FakeClient implements StellarClient {
   submitArg?: PayRequest;
@@ -56,7 +67,11 @@ class FakeReads implements SorobanReads {
   codeCalls: [string, string][] = [];
   balance = 99_994n * 10_000_000n;
   code: number | null = 1;
-  readSacBalance(sacContractId: string, holderAddress: string, sourcePublic: string): Promise<bigint> {
+  readSacBalance(
+    sacContractId: string,
+    holderAddress: string,
+    sourcePublic: string,
+  ): Promise<bigint> {
     this.sacCalls.push([sacContractId, holderAddress, sourcePublic]);
     return Promise.resolve(this.balance);
   }
@@ -66,7 +81,12 @@ class FakeReads implements SorobanReads {
   }
 }
 
-function make(): { port: ReturnType<typeof wrapStellarPort>; client: FakeClient; reads: FakeReads; journal: InMemoryJournal } {
+function make(): {
+  port: ReturnType<typeof wrapStellarPort>;
+  client: FakeClient;
+  reads: FakeReads;
+  journal: InMemoryJournal;
+} {
   const client = new FakeClient();
   const reads = new FakeReads();
   const journal = new InMemoryJournal();
@@ -78,7 +98,9 @@ describe('wrapStellarPort — the two extra reads (money-critical)', () => {
     const { port, reads } = make();
     const bal = await port.readPoolBalanceStroops();
     expect(bal).toBe(99_994n * 10_000_000n);
-    expect(reads.sacCalls).toEqual([[WIRING.sacContractId, WIRING.troyPool, WIRING.operatorPublic]]);
+    expect(reads.sacCalls).toEqual([
+      [WIRING.sacContractId, WIRING.troyPool, WIRING.operatorPublic],
+    ]);
   });
 
   it('readRevertErrorCode resolves orderId->hash from the journal and scopes the read to the POOL contract', async () => {
@@ -122,7 +144,14 @@ describe('wrapStellarPort — core methods forward to the client', () => {
 
   it('exposes all six StellarPort methods', () => {
     const { port } = make();
-    for (const m of ['submitPay', 'resendPersisted', 'observe', 'loadDestinationSnapshot', 'readPoolBalanceStroops', 'readRevertErrorCode'] as const) {
+    for (const m of [
+      'submitPay',
+      'resendPersisted',
+      'observe',
+      'loadDestinationSnapshot',
+      'readPoolBalanceStroops',
+      'readRevertErrorCode',
+    ] as const) {
       expect(typeof port[m]).toBe('function');
     }
   });

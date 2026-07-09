@@ -32,14 +32,24 @@ describe('buildIntentBody', () => {
 
   it('refuses a non-payable detection (fail-closed)', async () => {
     // native XLM (no USDC) — evaluate marks it not payable
-    const detection = evaluate(`web+stellar:pay?destination=${MERCHANT}&amount=1&memo=X&memo_type=text`)!;
+    const detection = evaluate(
+      `web+stellar:pay?destination=${MERCHANT}&amount=1&memo=X&memo_type=text`,
+    )!;
     const r = await buildIntentBody(detection);
     expect(r).toEqual({ ok: false, reason: 'not-payable' });
   });
 
   it('fails closed on a malformed order_id (lone surrogate) instead of sending a doomed memo', async () => {
     const detection: Detection = {
-      sep7: { operation: 'pay', destination: MERCHANT, amount: '62.00', assetCode: 'USDC', assetIssuer: ISSUER, memo: 'ab\uD83D', memoType: 'text' },
+      sep7: {
+        operation: 'pay',
+        destination: MERCHANT,
+        amount: '62.00',
+        assetCode: 'USDC',
+        assetIssuer: ISSUER,
+        memo: 'ab\uD83D',
+        memoType: 'text',
+      },
       checks: [],
       confidence: 1,
       payable: true,
@@ -68,7 +78,10 @@ describe('intentUiAction', () => {
   const base: IntentResponse = { orderId: 'o', token: 't', paidPriceTry: '1.00' };
 
   it('opens + polls when a hosted page URL is present', () => {
-    const a = intentUiAction({ ...base, paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=t' });
+    const a = intentUiAction({
+      ...base,
+      paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=t',
+    });
     expect(a).toMatchObject({ kind: 'open', poll: true });
   });
 

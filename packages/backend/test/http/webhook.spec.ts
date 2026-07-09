@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { body } from '../fakes/harness.js';
-import { intentBody, makeHttpHarness, signV3, WEBHOOK_SECRET, webhookEvent } from './http-harness.js';
+import {
+  intentBody,
+  makeHttpHarness,
+  signV3,
+  WEBHOOK_SECRET,
+  webhookEvent,
+} from './http-harness.js';
 
 // Money-first (Phase 4.6): /intent quiesces the order in SolvencyReserved (pool reserved + hosted DIRECT-SALE
 // form shown, NO preauth). A verified CHECKOUT_FORM_AUTH webhook re-retrieves the sale by the BACKEND-issued
@@ -11,8 +17,17 @@ async function startOrder(h: ReturnType<typeof makeHttpHarness>, orderId: string
   expect(r.statusCode).toBe(200); // lands in SolvencyReserved (public status 'pending')
 }
 
-function post(h: ReturnType<typeof makeHttpHarness>, event: ReturnType<typeof webhookEvent>, sig: string) {
-  return h.app.inject({ method: 'POST', url: '/webhook', headers: { 'x-iyz-signature-v3': sig }, payload: event });
+function post(
+  h: ReturnType<typeof makeHttpHarness>,
+  event: ReturnType<typeof webhookEvent>,
+  sig: string,
+) {
+  return h.app.inject({
+    method: 'POST',
+    url: '/webhook',
+    headers: { 'x-iyz-signature-v3': sig },
+    payload: event,
+  });
 }
 
 describe('POST /webhook — SPIKE-4 money gate', () => {
@@ -78,7 +93,9 @@ describe('POST /webhook — SPIKE-4 money gate', () => {
     await startOrder(h, 'order-1');
     // first, valid webhook settles the order to UsdcConfirmed (past the charge-pending SolvencyReserved state).
     const first = webhookEvent('order-1');
-    expect((await post(h, first, signV3(WEBHOOK_SECRET, first))).json()).toMatchObject({ status: 'ok' });
+    expect((await post(h, first, signV3(WEBHOOK_SECRET, first))).json()).toMatchObject({
+      status: 'ok',
+    });
     const submits = h.stellar.submitReqs.length;
 
     // a fresh CHECKOUT_FORM_AUTH (distinct iyziPaymentId dodges the dedup) now hits the state guard: the order is
@@ -109,7 +126,13 @@ describe('POST /webhook — SPIKE-4 money gate', () => {
     let retrieved = false;
     h.psp.retrieveCheckoutFormResult = async (p) => {
       retrieved = true;
-      return body({ status: 'success', token: p.token, paymentStatus: 'SUCCESS', fraudStatus: 1, conversationId: p.conversationId });
+      return body({
+        status: 'success',
+        token: p.token,
+        paymentStatus: 'SUCCESS',
+        fraudStatus: 1,
+        conversationId: p.conversationId,
+      });
     };
     const event = webhookEvent('order-1');
     const res = await post(h, event, signV3(WEBHOOK_SECRET, event));

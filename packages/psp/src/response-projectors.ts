@@ -19,7 +19,11 @@ function str(body: Readonly<Record<string, unknown>>, key: string): string | und
   return typeof v === 'string' ? v : undefined;
 }
 function reasonOf(raw: RawIyzicoResult): string {
-  return raw.kind === 'timeout' ? 'transport timeout' : raw.kind === 'malformed' ? raw.reason : 'unknown';
+  return raw.kind === 'timeout'
+    ? 'transport timeout'
+    : raw.kind === 'malformed'
+      ? raw.reason
+      : 'unknown';
 }
 
 export function projectCheckoutFormInit(raw: RawIyzicoResult): Projection<CheckoutFormInitFields> {
@@ -43,14 +47,21 @@ export function projectCheckoutFormInit(raw: RawIyzicoResult): Projection<Checko
   };
 }
 
-export function projectCheckoutFormResult(raw: RawIyzicoResult): Projection<CheckoutFormResultFields> {
+export function projectCheckoutFormResult(
+  raw: RawIyzicoResult,
+): Projection<CheckoutFormResultFields> {
   const body = bodyOf(raw);
   if (body === null) return { kind: 'malformed', reason: reasonOf(raw) };
   const token = str(body, 'token');
   const paymentId = str(body, 'paymentId');
   const paymentStatus = str(body, 'paymentStatus');
   const conversationId = str(body, 'conversationId');
-  if (token === undefined || paymentId === undefined || paymentStatus === undefined || conversationId === undefined) {
+  if (
+    token === undefined ||
+    paymentId === undefined ||
+    paymentStatus === undefined ||
+    conversationId === undefined
+  ) {
     return { kind: 'malformed', reason: 'missing token/paymentId/paymentStatus/conversationId' };
   }
   return { kind: 'ok', token, paymentId, paymentStatus, conversationId };

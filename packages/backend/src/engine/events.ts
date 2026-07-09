@@ -45,7 +45,11 @@ export interface PerformResult {
  * counter from 0, `<= max` = exactly `max` replacements). Returns null for every non-decision state (terminals,
  * the manual sink, and durable waits — including UsdcConfirmed, which now waits for the reconciler).
  */
-export async function decisionEvent(coreState: State, ctx: OrderCtx, deps: EngineDeps): Promise<Event | null> {
+export async function decisionEvent(
+  coreState: State,
+  ctx: OrderCtx,
+  deps: EngineDeps,
+): Promise<Event | null> {
   switch (coreState) {
     case 'UsdcDead': {
       const n = await deps.store.bumpDeadRetries(ctx.orderId);

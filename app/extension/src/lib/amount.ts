@@ -10,6 +10,7 @@ export function toStroops(amount: string): bigint | null {
   const [intPart, fracPart = ''] = amount.split('.');
   if (fracPart.length > USDC_DECIMALS) return null; // more precision than USDC can represent
   const fracPadded = fracPart.padEnd(USDC_DECIMALS, '0');
-  const stroops = BigInt(intPart) * 10n ** BigInt(USDC_DECIMALS) + BigInt(fracPadded === '' ? '0' : fracPadded);
+  const stroops =
+    BigInt(intPart) * 10n ** BigInt(USDC_DECIMALS) + BigInt(fracPadded === '' ? '0' : fracPadded);
   return stroops > 0n ? stroops : null; // amount must be strictly positive
 }

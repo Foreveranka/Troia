@@ -86,7 +86,11 @@ describe('SPIKE-3 — solvency reservation under concurrency', () => {
     // Guards specifically against a regression that inserts an await between the counter read and write
     // (which a durable/DB impl would have) — the in-memory RMW is synchronous, so it is atomic by construction.
     const store = new InMemoryStore({ balanceStroops: UNIT, baseSeq: 1000n });
-    const results = await Promise.all([store.bumpDeadRetries('o'), store.bumpDeadRetries('o'), store.bumpDeadRetries('o')]);
+    const results = await Promise.all([
+      store.bumpDeadRetries('o'),
+      store.bumpDeadRetries('o'),
+      store.bumpDeadRetries('o'),
+    ]);
     expect([...results].sort((a, b) => a - b)).toEqual([1, 2, 3]);
   });
 });

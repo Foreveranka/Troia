@@ -11,7 +11,10 @@ function requireNonEmpty(name: string, value: unknown): void {
   }
 }
 
-export function createPaymentProvider(config: PspNetworkConfig, secrets: PspSecrets): PaymentProvider {
+export function createPaymentProvider(
+  config: PspNetworkConfig,
+  secrets: PspSecrets,
+): PaymentProvider {
   // Fail fast on a misconfigured deploy rather than run silently keyless (an empty HMAC key is attacker-known).
   requireNonEmpty('baseUrl', config.baseUrl);
   requireNonEmpty('apiKey', secrets.apiKey);

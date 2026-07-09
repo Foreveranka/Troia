@@ -38,11 +38,7 @@ export interface ChainEvidence {
 }
 
 export type Verdict =
-  | 'MATCHED'
-  | 'CORRUPT_LOCAL'
-  | 'EVIDENCE_TAMPERED'
-  | 'CHAIN_DIVERGENCE'
-  | 'UNSETTLED';
+  'MATCHED' | 'CORRUPT_LOCAL' | 'EVIDENCE_TAMPERED' | 'CHAIN_DIVERGENCE' | 'UNSETTLED';
 
 export type OrderStatus = 'matched' | 'mismatch' | 'unsettled';
 

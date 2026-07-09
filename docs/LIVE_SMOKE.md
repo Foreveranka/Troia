@@ -151,10 +151,10 @@ diagnostics, the code sits on a different contractId (SAC vs TroyPool) or nested
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
-|---|---|
-| `just serve` throws on boot | a missing/blank env var, or the operator secret ≠ deployment operator (run `just preflight`) |
-| `/intent` → `409 PoolInsufficient` | the pool cannot cover the amount — reduce it or re-`just fund` |
-| `/intent` → `502 PriceUnavailable` | the live oracle/history is down — re-run `just preflight` to see which |
-| the browser shows an error after paying | the tunnel is down or `TROIA_CALLBACK_URL` is stale/not pointing at `/return` — settlement still proceeds via the poll worker regardless |
-| the charge succeeds but no `pay()` | check the `just serve` logs; the poll worker re-retrieves the sale by token and drives it on each `POLL_INTERVAL_MS` tick (an `UNKNOWN` charge is re-driven, a declined one fails clean) |
+| Symptom                                 | Likely cause                                                                                                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `just serve` throws on boot             | a missing/blank env var, or the operator secret ≠ deployment operator (run `just preflight`)                                                                                             |
+| `/intent` → `409 PoolInsufficient`      | the pool cannot cover the amount — reduce it or re-`just fund`                                                                                                                           |
+| `/intent` → `502 PriceUnavailable`      | the live oracle/history is down — re-run `just preflight` to see which                                                                                                                   |
+| the browser shows an error after paying | the tunnel is down or `TROIA_CALLBACK_URL` is stale/not pointing at `/return` — settlement still proceeds via the poll worker regardless                                                 |
+| the charge succeeds but no `pay()`      | check the `just serve` logs; the poll worker re-retrieves the sale by token and drives it on each `POLL_INTERVAL_MS` tick (an `UNKNOWN` charge is re-driven, a declined one fails clean) |

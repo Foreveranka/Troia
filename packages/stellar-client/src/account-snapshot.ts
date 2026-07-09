@@ -17,7 +17,9 @@ export function toAccountSnapshot(json: AccountSnapshotJson | null): CoreAccount
   if (json === null) return { exists: false, trustlines: [] };
 
   const trustlines = json.balances
-    .filter((b) => CREDIT_ASSET_TYPES.has(b.asset_type) && b.asset_code != null && b.asset_issuer != null)
+    .filter(
+      (b) => CREDIT_ASSET_TYPES.has(b.asset_type) && b.asset_code != null && b.asset_issuer != null,
+    )
     .map((b) => ({ assetCode: b.asset_code as string, assetIssuer: b.asset_issuer as string }));
 
   return { exists: true, trustlines };

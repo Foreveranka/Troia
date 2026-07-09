@@ -15,7 +15,10 @@ import type { TestnetSecrets } from './testnet-deps.js';
 async function main(): Promise<void> {
   const env = process.env;
   const deploymentPath = env.TROIA_DEPLOYMENT_PATH ?? 'deployment.testnet.json';
-  const deployment = parseDeployment(JSON.parse(readFileSync(deploymentPath, 'utf8')), deploymentPath);
+  const deployment = parseDeployment(
+    JSON.parse(readFileSync(deploymentPath, 'utf8')),
+    deploymentPath,
+  );
 
   const iyzicoSecretKey = requireEnv(env, 'IYZICO_SECRET_KEY');
   const secrets: TestnetSecrets = {
@@ -45,7 +48,9 @@ async function main(): Promise<void> {
     // Settlement-rate oracle: sources must agree within 0.5% AND a genuine 3-source majority must be present
     // (minQuorum 3), so a single compromised in-band source cannot move the median — the money-safe default the
     // oracle doc demands. A CEX outage fails a quote CLOSED (retry) rather than settling on a 2-source mid.
-    spotOracle: new LiveCexOracle({ policy: { maxAgeMs: 60_000, deviationThresholdBps: 50, minQuorum: 3 } }),
+    spotOracle: new LiveCexOracle({
+      policy: { maxAgeMs: 60_000, deviationThresholdBps: 50, minQuorum: 3 },
+    }),
     history: new YahooUsdTryHistory(),
   });
 
@@ -82,7 +87,9 @@ async function main(): Promise<void> {
           settling = false;
         });
     }, settlementTickMs);
-    console.log(`troia rebalance bot armed — demo valör ${demoValorSecs}s, tick ${settlementTickMs}ms`);
+    console.log(
+      `troia rebalance bot armed — demo valör ${demoValorSecs}s, tick ${settlementTickMs}ms`,
+    );
   }
 }
 

@@ -26,7 +26,7 @@ lives in the workspace packages and the extension.)
   The destination is the hardcoded testnet merchant (`GA4WBDANMT…IESX`) and the asset is our testnet USDC issuer
   (`GCRAO5VCC…4N5W`); each order gets a short `ST-XXXXXXXX` reference used as the on-chain memo. The SEP-7 is
   rendered as a hidden anchor the moment the payment step opens, so the extension can read it off the DOM.
-- **Two checkout paths.** *Pay with Troy card* (handled by the extension → Troia backend → USDC settlement) or a
+- **Two checkout paths.** _Pay with Troy card_ (handled by the extension → Troia backend → USDC settlement) or a
   plain **mock card** path (a local demo, no settlement) so the store is usable without the extension.
 - **The `TROIA_PAID` handshake.** When the extension finishes, it posts
   `{ source: 'troia-extension', type: 'TROIA_PAID', orderId, amount, txHash, paidPriceTry }` to the page. The

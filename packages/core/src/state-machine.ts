@@ -132,7 +132,10 @@ function t(next: State, effects: readonly Effect[]): TransitionResult {
   return { status: 'transition', next, effects };
 }
 function rejected(state: State, event: Event): TransitionResult {
-  return { status: 'rejected', reason: `no transition for event '${event.type}' in state '${state}'` };
+  return {
+    status: 'rejected',
+    reason: `no transition for event '${event.type}' in state '${state}'`,
+  };
 }
 
 /** The entry point: a freshly created order reserves pool solvency BEFORE any charge. No seq is allocated

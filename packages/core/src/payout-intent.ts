@@ -120,7 +120,8 @@ export class PayoutIntent {
     try {
       canonicalOrderId = canonicalizeOrderId(raw.orderId);
     } catch (e) {
-      if (e instanceof DeriveIdsError && e.code === 'OrderIdNotWellFormed') return err('OrderIdMalformed');
+      if (e instanceof DeriveIdsError && e.code === 'OrderIdNotWellFormed')
+        return err('OrderIdMalformed');
       throw e;
     }
 

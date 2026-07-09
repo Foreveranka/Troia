@@ -11,7 +11,12 @@ import { OPERATOR_PUBLIC } from './fixtures/vectors.js';
 
 const OUR_SEQ = 101n;
 const MAX_TIME = 1000;
-const state: ReducerState = { phase: 'polling', hashHex: 'ab'.repeat(32), ourSeq: OUR_SEQ, maxTime: MAX_TIME };
+const state: ReducerState = {
+  phase: 'polling',
+  hashHex: 'ab'.repeat(32),
+  ourSeq: OUR_SEQ,
+  maxTime: MAX_TIME,
+};
 
 function makeClient(opts: {
   getTx: GetTxOutcome;

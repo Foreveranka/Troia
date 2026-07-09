@@ -104,7 +104,8 @@ describe('network-literal boundary', () => {
     for (const file of files) {
       const content = readFileSync(file, 'utf8');
       for (const literal of FORBIDDEN_LITERALS) {
-        if (content.includes(literal)) offenders.push(`${file} contains forbidden literal "${literal}"`);
+        if (content.includes(literal))
+          offenders.push(`${file} contains forbidden literal "${literal}"`);
       }
       const addr = content.match(STELLAR_ADDRESS);
       if (addr) offenders.push(`${file} hard-codes a Stellar address literal "${addr[0]}"`);

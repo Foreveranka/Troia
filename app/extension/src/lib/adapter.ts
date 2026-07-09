@@ -36,7 +36,12 @@ export function evaluate(uri: string): Detection | null {
 
   const checks: readonly DetectionCheck[] = [
     { id: 'op', label: 'SEP-7 pay operation', pass: sep7.operation === 'pay', required: true },
-    { id: 'asset', label: 'Asset is USDC', pass: sep7.assetCode === USDC_ASSET_CODE, required: true },
+    {
+      id: 'asset',
+      label: 'Asset is USDC',
+      pass: sep7.assetCode === USDC_ASSET_CODE,
+      required: true,
+    },
     {
       id: 'issuer',
       label: 'Issuer is trusted',
@@ -49,9 +54,24 @@ export function evaluate(uri: string): Detection | null {
       pass: isValidStellarPublicKey(sep7.destination),
       required: true,
     },
-    { id: 'amount', label: 'Amount is a valid USDC amount', pass: toStroops(sep7.amount) !== null, required: true },
-    { id: 'memo', label: 'Payment reference present', pass: sep7.memo !== null && sep7.memo.length > 0, required: true },
-    { id: 'merchant', label: 'Known merchant', pass: sep7.destination === DEMO_MERCHANT, required: false },
+    {
+      id: 'amount',
+      label: 'Amount is a valid USDC amount',
+      pass: toStroops(sep7.amount) !== null,
+      required: true,
+    },
+    {
+      id: 'memo',
+      label: 'Payment reference present',
+      pass: sep7.memo !== null && sep7.memo.length > 0,
+      required: true,
+    },
+    {
+      id: 'merchant',
+      label: 'Known merchant',
+      pass: sep7.destination === DEMO_MERCHANT,
+      required: false,
+    },
   ];
 
   const passed = checks.filter((c) => c.pass).length;

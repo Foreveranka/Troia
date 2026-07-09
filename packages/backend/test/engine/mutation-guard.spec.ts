@@ -46,7 +46,10 @@ describe('mutation-on-uncertainty guard (property over the whole core table)', (
         const r = transition(state, event);
         if (r.status !== 'transition' || !r.effects.includes('rePollObserveOnly')) continue;
         expect(containsMutation(r.effects), `${state}/${event.type} must not mutate`).toBe(false);
-        expect(isObserveOnlyEvent(event), `${state}/${event.type} must be classified observe-only`).toBe(true);
+        expect(
+          isObserveOnlyEvent(event),
+          `${state}/${event.type} must be classified observe-only`,
+        ).toBe(true);
       }
     }
   });
@@ -57,7 +60,10 @@ describe('mutation-on-uncertainty guard (property over the whole core table)', (
         if (!isObserveOnlyEvent(event)) continue;
         const r = transition(state, event);
         if (r.status === 'transition') {
-          expect(() => assertNoMutationOnUnknown(event, r.effects), `${state}/${event.type}`).not.toThrow();
+          expect(
+            () => assertNoMutationOnUnknown(event, r.effects),
+            `${state}/${event.type}`,
+          ).not.toThrow();
         }
       }
     }

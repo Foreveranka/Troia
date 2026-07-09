@@ -20,15 +20,16 @@ function seed(
   overrides: Partial<OrderCtx> = {},
   opts: { charged?: boolean } = {},
 ) {
-  const ctx = (opts.charged ?? true)
-    ? makeCtx(h.store, {
-        orderId,
-        hashHex: `hash_${orderId}`,
-        signedXdr: `xdr_${orderId}`,
-        payMaxTimeUnix: 2_000_000_000,
-        ...overrides,
-      })
-    : makePreChargeCtx(h.store, { orderId, ...overrides });
+  const ctx =
+    (opts.charged ?? true)
+      ? makeCtx(h.store, {
+          orderId,
+          hashHex: `hash_${orderId}`,
+          signedXdr: `xdr_${orderId}`,
+          payMaxTimeUnix: 2_000_000_000,
+          ...overrides,
+        })
+      : makePreChargeCtx(h.store, { orderId, ...overrides });
   const registry = new InMemoryOrderRegistry();
   registry.put(ctx, state);
   return { ctx, registry, locks: new KeyedMutex() };
@@ -42,7 +43,13 @@ describe('pollInFlight — crash-recovery worker', () => {
     h.stellar.observeVerdict = 'STILL_PENDING'; // the resumed USDC leg lands in the durable pending wait
     // pre-charge row (late allocation: no seq yet); token set (a form was issued); default psp retrieve =>
     // paymentStatus SUCCESS + fraud 1 => chargeOk
-    const { ctx, registry, locks } = seed(h, 'order-1', 'SolvencyReserved', { token: 'tok-1' }, { charged: false });
+    const { ctx, registry, locks } = seed(
+      h,
+      'order-1',
+      'SolvencyReserved',
+      { token: 'tok-1' },
+      { charged: false },
+    );
     expect(ctx.activeSeq).toBeNull(); // the stuck order held NO seq while awaiting the charge
 
     const report = await pollInFlight(registry, locks, h.deps);
@@ -59,7 +66,13 @@ describe('pollInFlight — crash-recovery worker', () => {
   it('(A) a still-UNKNOWN charge (PRE_AUTH read) stays in SolvencyReserved — NEVER submits USDC nor allocates a seq', async () => {
     const h = makeHarness();
     h.psp.retrievePhase = 'PRE_AUTH'; // an uncaptured hold reads UNKNOWN => chargeUnknown
-    const { registry, locks } = seed(h, 'order-1', 'SolvencyReserved', { token: 'tok-1' }, { charged: false });
+    const { registry, locks } = seed(
+      h,
+      'order-1',
+      'SolvencyReserved',
+      { token: 'tok-1' },
+      { charged: false },
+    );
 
     const report = await pollInFlight(registry, locks, h.deps);
 
@@ -140,19 +153,29 @@ describe('pollInFlight — crash-recovery worker', () => {
     const report = await pollInFlight(registry, locks, h.deps);
 
     expect(report).toMatchObject({ escalated: 1, advanced: 0 });
-    expect(h.store.losses).toEqual([{ orderId: 'order-1', bucket: 'indeterminateLossReview', usdcTxHash: 'hash_order-1' }]);
-    expect((h.store.sequences as SequenceAllocator).statusOf(BigInt(ctx.activeSeq as string))).toBe('active');
+    expect(h.store.losses).toEqual([
+      { orderId: 'order-1', bucket: 'indeterminateLossReview', usdcTxHash: 'hash_order-1' },
+    ]);
+    expect((h.store.sequences as SequenceAllocator).statusOf(BigInt(ctx.activeSeq as string))).toBe(
+      'active',
+    );
   });
 
   it('a witness-null durable-wait row that CANNOT prove the pay was never sent is QUARANTINED (never stranded)', async () => {
     const h = makeHarness();
     // UsdcPending + null witness => the (B) never-sent proof does not apply (only UsdcSubmitted qualifies) => quarantine
-    const { registry, locks } = seed(h, 'order-1', 'UsdcPending', { hashHex: null, signedXdr: null, payMaxTimeUnix: null });
+    const { registry, locks } = seed(h, 'order-1', 'UsdcPending', {
+      hashHex: null,
+      signedXdr: null,
+      payMaxTimeUnix: null,
+    });
 
     const report = await pollInFlight(registry, locks, h.deps);
 
     expect(report).toMatchObject({ quarantined: 1, advanced: 0 });
-    expect(h.store.losses).toEqual([{ orderId: 'order-1', bucket: 'indeterminateLossReview', usdcTxHash: null }]);
+    expect(h.store.losses).toEqual([
+      { orderId: 'order-1', bucket: 'indeterminateLossReview', usdcTxHash: null },
+    ]);
     expect(h.trace).not.toContain('stellar.observe'); // no observe on a null witness — quarantine before READ
   });
 

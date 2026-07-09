@@ -8,7 +8,10 @@ const IYZICO: PspCost = { rateBps: 429, fixedKurus: 25n };
 describe('psp-cost — applyPspPassthrough (gross-up)', () => {
   it('textbook: to net 90.00 TRY after a 10% cut, the customer pays 100.00 (not 99)', () => {
     // The whole point of gross-up: 90 / (1 − 0.10) = 100, and 10% of 100 = 10, leaving exactly 90.
-    const { grossKurus, pspCostKurus } = applyPspPassthrough(9000n, { rateBps: 1000, fixedKurus: 0n });
+    const { grossKurus, pspCostKurus } = applyPspPassthrough(9000n, {
+      rateBps: 1000,
+      fixedKurus: 0n,
+    });
     expect(grossKurus).toBe(10_000n); // 100.00 TRY
     expect(pspCostKurus).toBe(1000n); // 10.00 TRY cut
   });
@@ -58,7 +61,9 @@ describe('psp-cost — applyPspPassthrough (gross-up)', () => {
     ];
     for (const [net, psp] of vectors) {
       const { grossKurus } = applyPspPassthrough(net, psp);
-      expect(grossKurus * (10_000n - BigInt(psp.rateBps))).toBeGreaterThanOrEqual((net + psp.fixedKurus) * 10_000n);
+      expect(grossKurus * (10_000n - BigInt(psp.rateBps))).toBeGreaterThanOrEqual(
+        (net + psp.fixedKurus) * 10_000n,
+      );
     }
   });
 
@@ -71,7 +76,10 @@ describe('psp-cost — applyPspPassthrough (gross-up)', () => {
   });
 
   it('fixed-only fee is added straight through', () => {
-    const { grossKurus, pspCostKurus } = applyPspPassthrough(1000n, { rateBps: 0, fixedKurus: 50n });
+    const { grossKurus, pspCostKurus } = applyPspPassthrough(1000n, {
+      rateBps: 0,
+      fixedKurus: 50n,
+    });
     expect(grossKurus).toBe(1050n);
     expect(pspCostKurus).toBe(50n);
   });
@@ -91,7 +99,9 @@ describe('psp-cost — applyPspPassthrough (gross-up)', () => {
   });
 
   it('rejects an out-of-range rate, a negative fixed fee, or a negative net', () => {
-    expect(() => applyPspPassthrough(1000n, { rateBps: 10_000, fixedKurus: 0n })).toThrow(RangeError); // 100% unrecoverable
+    expect(() => applyPspPassthrough(1000n, { rateBps: 10_000, fixedKurus: 0n })).toThrow(
+      RangeError,
+    ); // 100% unrecoverable
     expect(() => applyPspPassthrough(1000n, { rateBps: -1, fixedKurus: 0n })).toThrow(RangeError);
     expect(() => applyPspPassthrough(1000n, { rateBps: 1.5, fixedKurus: 0n })).toThrow(RangeError);
     expect(() => applyPspPassthrough(1000n, { rateBps: 200, fixedKurus: -1n })).toThrow(RangeError);

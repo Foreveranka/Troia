@@ -77,7 +77,8 @@ function isPrivateOrLoopback(ip: string): boolean {
 
 function buyerIpOf(request: FastifyRequest): string {
   const ip = request.ip;
-  if (typeof ip !== 'string' || ip.length === 0 || isPrivateOrLoopback(ip)) return DEV_FALLBACK_BUYER_IP;
+  if (typeof ip !== 'string' || ip.length === 0 || isPrivateOrLoopback(ip))
+    return DEV_FALLBACK_BUYER_IP;
   return ip;
 }
 
@@ -96,14 +97,19 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // application/x-www-form-urlencoded. Fastify has no default parser for that content type, so register a
   // permissive one (keep the raw string, never fail) — otherwise the browser redirect would 415. The landing page
   // ignores the body, and no money route relies on this parser (/intent + /webhook send application/json).
-  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
-    done(null, body);
-  });
+  app.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string' },
+    (_req, body, done) => {
+      done(null, body);
+    },
+  );
 
   // POST /intent — the fail-closed ① gate. A rejected intent consumes NO sequence and starts NO order.
   app.post('/intent', async (request, reply) => {
     const raw = request.body;
-    if (typeof raw !== 'object' || raw === null) return reply.code(400).send({ error: 'BadRequest' });
+    if (typeof raw !== 'object' || raw === null)
+      return reply.code(400).send({ error: 'BadRequest' });
     const body = raw as Record<string, unknown>;
     const rawOrderId = optStr(body, 'orderId');
     const destination = optStr(body, 'destination');
@@ -116,8 +122,12 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // so a client can never dictate what it pays NOR the currency it is charged in. Such body fields are ignored.
     const ip = buyerIpOf(request);
     if (
-      rawOrderId === undefined || rawOrderId.length === 0 || destination === undefined || amountStr === undefined ||
-      assetIssuer === undefined || memoHex === undefined
+      rawOrderId === undefined ||
+      rawOrderId.length === 0 ||
+      destination === undefined ||
+      amountStr === undefined ||
+      assetIssuer === undefined ||
+      memoHex === undefined
     ) {
       return reply.code(400).send({ error: 'BadRequest' });
     }
@@ -208,7 +218,11 @@ export function createApp(deps: AppDeps): FastifyInstance {
       const checkout = result.sideOutputs.find((s) => s.kind === 'checkoutForm');
       const finalCtx: OrderCtx =
         checkout !== undefined
-          ? { ...result.ctx, token: checkout.token, paymentPageUrl: checkout.paymentPageUrl ?? null }
+          ? {
+              ...result.ctx,
+              token: checkout.token,
+              paymentPageUrl: checkout.paymentPageUrl ?? null,
+            }
           : result.ctx;
       registry.put(finalCtx, result.state); // in-lock single-writer
       return { kind: 'started' as const, quiescence: result.quiescence, checkout };
@@ -247,7 +261,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
   app.get('/status/:orderId', async (request, reply) => {
     const params = request.params as { orderId?: string };
     const rawOrderId = params.orderId;
-    if (typeof rawOrderId !== 'string' || rawOrderId.length === 0) return reply.code(400).send({ error: 'BadRequest' });
+    if (typeof rawOrderId !== 'string' || rawOrderId.length === 0)
+      return reply.code(400).send({ error: 'BadRequest' });
     const orderId = canonicalizeOrderId(rawOrderId); // key on the same canonical identity /intent registered under
     const rec = registry.getByOrderId(orderId);
     if (rec === undefined) return reply.code(404).send({ error: 'NotFound' });
@@ -260,7 +275,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
   app.get('/receipt/:orderId', async (request, reply) => {
     const params = request.params as { orderId?: string };
     const rawOrderId = params.orderId;
-    if (typeof rawOrderId !== 'string' || rawOrderId.length === 0) return reply.code(400).send({ error: 'BadRequest' });
+    if (typeof rawOrderId !== 'string' || rawOrderId.length === 0)
+      return reply.code(400).send({ error: 'BadRequest' });
     const orderId = canonicalizeOrderId(rawOrderId);
     const rec = registry.getByOrderId(orderId);
     if (rec === undefined) return reply.code(404).send({ error: 'NotFound' });
@@ -291,17 +307,28 @@ export function createApp(deps: AppDeps): FastifyInstance {
     };
 
     const sig = headerStr(request.headers['x-iyz-signature-v3']);
-    if (!verifyWebhookSignature({ signingSecret: webhookSigningSecret, event, providedSignature: sig })) {
+    if (
+      !verifyWebhookSignature({
+        signingSecret: webhookSigningSecret,
+        event,
+        providedSignature: sig,
+      })
+    ) {
       return reply.code(401).send({ error: 'BadSignature' }); // <-- money gate; zero side effects on false
     }
 
     // --- authenticated past this line ---
     const rec = conv !== undefined ? registry.getByConversationId(conv) : undefined;
-    if (rec === undefined || conv === undefined) return reply.code(404).send({ error: 'UnknownOrder' });
+    if (rec === undefined || conv === undefined)
+      return reply.code(404).send({ error: 'UnknownOrder' });
     const orderId = rec.ctx.orderId;
 
     const eventId = `${event.iyziEventType}:${conv}:${iyziPaymentId ?? paymentId ?? token ?? ''}:${status ?? ''}`;
-    const seen = await engine.store.markWebhookSeen(eventId, orderId, engine.clock.nowUnix() * 1000);
+    const seen = await engine.store.markWebhookSeen(
+      eventId,
+      orderId,
+      engine.clock.nowUnix() * 1000,
+    );
     if (seen === 'duplicate') return reply.send({ status: 'duplicate' }); // replay guard (after verify)
 
     const result = await orderLocks.run(orderId, async () => {
@@ -313,16 +340,22 @@ export function createApp(deps: AppDeps): FastifyInstance {
       if (current.ctx.token === null || event.token !== current.ctx.token) {
         return { status: 'tokenMismatch' as const };
       }
-      const retrieved = await engine.psp.retrieveCheckoutFormResult({ conversationId: conv, token: current.ctx.token });
+      const retrieved = await engine.psp.retrieveCheckoutFormResult({
+        conversationId: conv,
+        token: current.ctx.token,
+      });
       const proj = projectCheckoutFormResult(retrieved);
-      if (proj.kind === 'ok' && proj.conversationId !== conv) return { status: 'convMismatch' as const };
-      const patchedCtx: OrderCtx = proj.kind === 'ok' ? { ...current.ctx, paymentId: proj.paymentId } : current.ctx;
+      if (proj.kind === 'ok' && proj.conversationId !== conv)
+        return { status: 'convMismatch' as const };
+      const patchedCtx: OrderCtx =
+        proj.kind === 'ok' ? { ...current.ctx, paymentId: proj.paymentId } : current.ctx;
       // Advance to the IRREVERSIBLE USDC leg ONLY when the projector validated the sale AND extracted a durable
       // paymentId into ctx (needed to void the sale later). A malformed retrieve — even one whose raw looks
       // successful — is chargeUnknown (stay), NEVER a chargeOk with a null paymentId that we could not unwind.
       // chargeEvent then decides: chargeOk submits the USDC leg (money LAST); chargeRejected fails clean;
       // chargeUnknown stays (re-driven by the poll worker's re-retrieve worklist).
-      const coreEvent = proj.kind === 'ok' ? chargeEvent(retrieved) : { type: 'chargeUnknown' as const };
+      const coreEvent =
+        proj.kind === 'ok' ? chargeEvent(retrieved) : { type: 'chargeUnknown' as const };
       const r = await advance(patchedCtx, 'SolvencyReserved', coreEvent, engine);
       registry.put(r.ctx, r.state); // in-lock single-writer
       return { status: 'ok' as const, quiescence: r.quiescence };

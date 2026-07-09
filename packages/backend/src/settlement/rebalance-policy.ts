@@ -30,8 +30,10 @@ const KURUS_TO_STROOP_NUMERATOR = 1_000_000_000_000n; // 1e12
 
 export class TryDrivenRebalancePolicy implements RebalancePolicy {
   plan(rec: PendingSettlement, liveRateStroops: bigint): TopUpRequest {
-    if (liveRateStroops <= 0n) throw new RangeError('liveRateStroops must be > 0 (fail-closed: no mint on a bogus rate)');
-    if (rec.tryKurus <= 0n) throw new RangeError('tryKurus must be > 0 (fail-closed: no mint without collected TRY)');
+    if (liveRateStroops <= 0n)
+      throw new RangeError('liveRateStroops must be > 0 (fail-closed: no mint on a bogus rate)');
+    if (rec.tryKurus <= 0n)
+      throw new RangeError('tryKurus must be > 0 (fail-closed: no mint without collected TRY)');
     // Integer division truncates DOWN — the mint is never rounded up, so a rounding error can only UNDER-fund
     // the pool (money-safe), never over-mint.
     const usdcStroops = (rec.tryKurus * KURUS_TO_STROOP_NUMERATOR) / liveRateStroops;

@@ -70,27 +70,44 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
       stopPolling();
       return;
     }
-    chrome.runtime.sendMessage({ type: 'TROIA_STATUS', orderId }, (res: StatusOutcome | undefined) => {
-      if (chrome.runtime.lastError || res === undefined || !res.ok) return; // transient — keep polling
-      if (res.status === 'processing' && !sawProcessing) {
-        // payment received — reset the budget so the settlement-confirm window is fresh, not consumed by the
-        // time the buyer spent on the card form.
-        sawProcessing = true;
-        polls = 0;
-      }
-      const { text, kind, terminal } = statusCopy(res.status);
-      h.setStatus(text, kind);
-      if (res.status === 'completed') {
-        // fetch the settlement proof (on-chain tx hash + the TRY charged), then tell the storefront to place
-        // the order — so the confirmation + order details can show a "verify the tx yourself" link.
-        chrome.runtime.sendMessage({ type: 'TROIA_RECEIPT', orderId }, (receipt: ReceiptOutcome | undefined) => {
-          const txHash = receipt !== undefined && receipt.ok ? receipt.txHash : null;
-          const paidPriceTry = receipt !== undefined && receipt.ok ? receipt.paidPriceTry : null;
-          window.postMessage({ source: 'troia-extension', type: 'TROIA_PAID', orderId, amount, txHash, paidPriceTry }, location.origin);
-        });
-      }
-      if (terminal) stopPolling();
-    });
+    chrome.runtime.sendMessage(
+      { type: 'TROIA_STATUS', orderId },
+      (res: StatusOutcome | undefined) => {
+        if (chrome.runtime.lastError || res === undefined || !res.ok) return; // transient — keep polling
+        if (res.status === 'processing' && !sawProcessing) {
+          // payment received — reset the budget so the settlement-confirm window is fresh, not consumed by the
+          // time the buyer spent on the card form.
+          sawProcessing = true;
+          polls = 0;
+        }
+        const { text, kind, terminal } = statusCopy(res.status);
+        h.setStatus(text, kind);
+        if (res.status === 'completed') {
+          // fetch the settlement proof (on-chain tx hash + the TRY charged), then tell the storefront to place
+          // the order — so the confirmation + order details can show a "verify the tx yourself" link.
+          chrome.runtime.sendMessage(
+            { type: 'TROIA_RECEIPT', orderId },
+            (receipt: ReceiptOutcome | undefined) => {
+              const txHash = receipt !== undefined && receipt.ok ? receipt.txHash : null;
+              const paidPriceTry =
+                receipt !== undefined && receipt.ok ? receipt.paidPriceTry : null;
+              window.postMessage(
+                {
+                  source: 'troia-extension',
+                  type: 'TROIA_PAID',
+                  orderId,
+                  amount,
+                  txHash,
+                  paidPriceTry,
+                },
+                location.origin,
+              );
+            },
+          );
+        }
+        if (terminal) stopPolling();
+      },
+    );
   }, POLL_INTERVAL_MS);
 }
 
@@ -111,31 +128,41 @@ function pay(detection: Detection): void {
       fail(`Couldn't start the payment${NOT_CHARGED}`);
       return;
     }
-    chrome.runtime.sendMessage({ type: 'TROIA_INTENT', body: built.body }, (outcome: IntentOutcome | undefined) => {
-      if (chrome.runtime.lastError || outcome === undefined) {
-        fail(`Couldn't reach the payment service${NOT_CHARGED}`);
-        return;
-      }
-      if (!outcome.ok) {
-        // A failed tab-open (the background could not open the card page) means the buyer never reached it, so
-        // nothing was charged — say that specifically; otherwise the generic start failure.
-        fail(outcome.error === 'tab_open_failed' ? `Couldn't open the card form${NOT_CHARGED}` : `Couldn't start the payment${NOT_CHARGED}`);
-        console.info('[troia] intent rejected', { status: outcome.status, error: outcome.error });
-        return;
-      }
-      // Success. Only claim the card form is opening when the background actually opened one (paymentPageUrl
-      // present, i.e. action.poll). Keep the button disabled and reflect the coarse status via polling.
-      const action = intentUiAction(outcome.response);
-      h.setStatus(action.text, action.kind === 'error' ? 'error' : 'info');
-      if (action.poll) {
-        startPolling(outcome.response.orderId, h, detection.sep7.amount);
-      } else {
-        // no polling path (success but no form to open) — re-enable so the buyer can retry
-        inFlight = false;
-        h.setBusy(false);
-      }
-      console.info('[troia] intent outcome', { orderId: outcome.response.orderId, action: action.kind });
-    });
+    chrome.runtime.sendMessage(
+      { type: 'TROIA_INTENT', body: built.body },
+      (outcome: IntentOutcome | undefined) => {
+        if (chrome.runtime.lastError || outcome === undefined) {
+          fail(`Couldn't reach the payment service${NOT_CHARGED}`);
+          return;
+        }
+        if (!outcome.ok) {
+          // A failed tab-open (the background could not open the card page) means the buyer never reached it, so
+          // nothing was charged — say that specifically; otherwise the generic start failure.
+          fail(
+            outcome.error === 'tab_open_failed'
+              ? `Couldn't open the card form${NOT_CHARGED}`
+              : `Couldn't start the payment${NOT_CHARGED}`,
+          );
+          console.info('[troia] intent rejected', { status: outcome.status, error: outcome.error });
+          return;
+        }
+        // Success. Only claim the card form is opening when the background actually opened one (paymentPageUrl
+        // present, i.e. action.poll). Keep the button disabled and reflect the coarse status via polling.
+        const action = intentUiAction(outcome.response);
+        h.setStatus(action.text, action.kind === 'error' ? 'error' : 'info');
+        if (action.poll) {
+          startPolling(outcome.response.orderId, h, detection.sep7.amount);
+        } else {
+          // no polling path (success but no form to open) — re-enable so the buyer can retry
+          inFlight = false;
+          h.setBusy(false);
+        }
+        console.info('[troia] intent outcome', {
+          orderId: outcome.response.orderId,
+          action: action.kind,
+        });
+      },
+    );
   });
 }
 
@@ -154,12 +181,17 @@ function scan(): void {
     // Fail-closed: an unrecognized or unverifiable request never gets a banner.
     clearBanner();
     if (detection !== null) {
-      console.info('[troia] SEP-7 found but not payable', detection.checks.filter((c) => !c.pass).map((c) => c.id));
+      console.info(
+        '[troia] SEP-7 found but not payable',
+        detection.checks.filter((c) => !c.pass).map((c) => c.id),
+      );
     }
     return;
   }
 
-  console.info('[troia] payable USDC-on-Stellar request detected', { confidence: detection.confidence });
+  console.info('[troia] payable USDC-on-Stellar request detected', {
+    confidence: detection.confidence,
+  });
   clearBanner();
   handle = showBanner({
     amount: detection.sep7.amount,

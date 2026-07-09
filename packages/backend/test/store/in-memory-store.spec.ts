@@ -31,8 +31,14 @@ describe('InMemoryStore — Store interface conformance', () => {
     const s = mk();
     await s.appendEvidence('o1', { txHash: 'h', signedXdr: 'x', seq: '1001' });
     await s.flagLoss('o1', 'reversalExhausted', 'h');
-    expect(s.evidenceRecords()).toEqual([{ orderId: 'o1', record: { txHash: 'h', signedXdr: 'x', seq: '1001' } }]);
-    expect(s.lossRecords()[0]).toMatchObject({ orderId: 'o1', bucket: 'reversalExhausted', usdcTxHash: 'h' });
+    expect(s.evidenceRecords()).toEqual([
+      { orderId: 'o1', record: { txHash: 'h', signedXdr: 'x', seq: '1001' } },
+    ]);
+    expect(s.lossRecords()[0]).toMatchObject({
+      orderId: 'o1',
+      bucket: 'reversalExhausted',
+      usdcTxHash: 'h',
+    });
   });
 
   it('bump*Retries return the NEW post-increment value from 0 (dead + reversal are independent counters)', async () => {

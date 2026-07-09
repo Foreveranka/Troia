@@ -61,7 +61,10 @@ async function safe(name: string, fn: () => Promise<PreflightCheck>): Promise<Pr
 
 /** Run every probe (in parallel, so an all-down environment reports in one timeout window, not five in series) and
  *  fold the results into a green/red report. Pure over the injected probes. */
-export async function runPreflight(probes: PreflightProbes, t: PreflightThresholds = {}): Promise<PreflightReport> {
+export async function runPreflight(
+  probes: PreflightProbes,
+  t: PreflightThresholds = {},
+): Promise<PreflightReport> {
   const minXlm = t.minNativeXlm ?? 1;
   const minPool = t.minPoolStroops ?? 100_000_000n; // 10 USDC
   const minCloses = t.minCloses ?? 3;
@@ -69,11 +72,19 @@ export async function runPreflight(probes: PreflightProbes, t: PreflightThreshol
   const checks = await Promise.all([
     safe('operator XLM (fees)', async () => {
       const xlm = await probes.operatorNativeXlm();
-      return { name: 'operator XLM (fees)', ok: xlm >= minXlm, detail: `${xlm} XLM (need >= ${minXlm})` };
+      return {
+        name: 'operator XLM (fees)',
+        ok: xlm >= minXlm,
+        detail: `${xlm} XLM (need >= ${minXlm})`,
+      };
     }),
     safe('pool USDC balance', async () => {
       const s = await probes.poolBalanceStroops();
-      return { name: 'pool USDC balance', ok: s >= minPool, detail: `${fmtUsdc(s)} USDC (need >= ${fmtUsdc(minPool)})` };
+      return {
+        name: 'pool USDC balance',
+        ok: s >= minPool,
+        detail: `${fmtUsdc(s)} USDC (need >= ${fmtUsdc(minPool)})`,
+      };
     }),
     safe('spot oracle (CEX mid)', async () => {
       const r = await probes.spotRate();
@@ -83,11 +94,19 @@ export async function runPreflight(probes: PreflightProbes, t: PreflightThreshol
             ok: true,
             detail: `mid ${r.quote.midTryPerUsdc} (x1e7) from ${r.quote.sources.join('+')}`,
           }
-        : { name: 'spot oracle (CEX mid)', ok: false, detail: `oracle fail-closed: ${r.error.code}` };
+        : {
+            name: 'spot oracle (CEX mid)',
+            ok: false,
+            detail: `oracle fail-closed: ${r.error.code}`,
+          };
     }),
     safe('rate history (Yahoo)', async () => {
       const n = await probes.historyCloseCount();
-      return { name: 'rate history (Yahoo)', ok: n >= minCloses, detail: `${n} daily closes (need >= ${minCloses})` };
+      return {
+        name: 'rate history (Yahoo)',
+        ok: n >= minCloses,
+        detail: `${n} daily closes (need >= ${minCloses})`,
+      };
     }),
     safe('iyzico reachability', async () => {
       const r = await probes.iyzicoReachable();
@@ -125,22 +144,34 @@ export function buildPreflightProbes(w: PreflightWiring): PreflightProbes {
   return {
     async operatorNativeXlm() {
       const snap = await horizon.loadAccountSnapshot(w.network.operatorPublic);
-      if (snap === null) throw new Error(`operator ${w.network.operatorPublic} not funded on Horizon`);
+      if (snap === null)
+        throw new Error(`operator ${w.network.operatorPublic} not funded on Horizon`);
       const native = snap.balances.find((b) => b.asset_type === 'native');
       return native?.balance !== undefined ? Number(native.balance) : 0;
     },
     poolBalanceStroops: () =>
-      rpc.readSacBalance(w.network.usdc.sacContractId, w.network.contracts.troyPool, w.network.operatorPublic),
+      rpc.readSacBalance(
+        w.network.usdc.sacContractId,
+        w.network.contracts.troyPool,
+        w.network.operatorPublic,
+      ),
     spotRate: () => w.spotOracle.getRate(),
     historyCloseCount: async () => (await w.history.dailyCloses()).length,
     async iyzicoReachable() {
-      const r = await psp.retrieveCheckoutFormResult({ conversationId: 'preflight-probe', token: 'preflight-probe' });
+      const r = await psp.retrieveCheckoutFormResult({
+        conversationId: 'preflight-probe',
+        token: 'preflight-probe',
+      });
       if (r.kind === 'body') {
         const status = typeof r.body.status === 'string' ? r.body.status : '?';
-        const errorCode = r.body.errorCode === undefined ? '' : `, errorCode=${String(r.body.errorCode)}`;
+        const errorCode =
+          r.body.errorCode === undefined ? '' : `, errorCode=${String(r.body.errorCode)}`;
         return { reached: true, detail: `reached iyzico (status=${status}${errorCode})` };
       }
-      return { reached: false, detail: r.kind === 'timeout' ? 'transport failure/timeout' : `malformed: ${r.reason}` };
+      return {
+        reached: false,
+        detail: r.kind === 'timeout' ? 'transport failure/timeout' : `malformed: ${r.reason}`,
+      };
     },
   };
 }

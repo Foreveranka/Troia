@@ -15,7 +15,11 @@ describe('createPaymentProvider — fail-fast on a misconfigured deploy', () => 
   it('throws on any empty/blank secret or baseUrl (never runs silently keyless)', () => {
     expect(() => createPaymentProvider({ baseUrl: '' }, SECRETS)).toThrow(PspBuildError);
     expect(() => createPaymentProvider(CONFIG, { ...SECRETS, apiKey: '' })).toThrow(PspBuildError);
-    expect(() => createPaymentProvider(CONFIG, { ...SECRETS, secretKey: '  ' })).toThrow(PspBuildError);
-    expect(() => createPaymentProvider(CONFIG, { ...SECRETS, webhookSigningSecret: '' })).toThrow(PspBuildError);
+    expect(() => createPaymentProvider(CONFIG, { ...SECRETS, secretKey: '  ' })).toThrow(
+      PspBuildError,
+    );
+    expect(() => createPaymentProvider(CONFIG, { ...SECRETS, webhookSigningSecret: '' })).toThrow(
+      PspBuildError,
+    );
   });
 });

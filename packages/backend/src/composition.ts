@@ -68,7 +68,9 @@ export interface SettlementBundle {
   readonly pending: PendingSettlementStore;
   readonly policy: RebalancePolicy;
   readonly rebalance: { topUp(req: TopUpRequest): Promise<TopUpExecution> };
-  readonly ledger: { recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): unknown };
+  readonly ledger: {
+    recordTopUp(input: { ref: string; usdcStroops: bigint; valueKurus: bigint }): unknown;
+  };
   readonly rate: { liveRateStroops(): Promise<bigint> };
   readonly demoValorSecs: number;
 }
@@ -98,10 +100,22 @@ export interface Server {
 
 export function createServer(d: ServerDeps): Server {
   const config = buildEngineConfig(d.network, d.extras);
-  const engine: EngineDeps = { stellar: d.ports.stellar, psp: d.ports.psp, store: d.ports.store, clock: d.ports.clock, config };
+  const engine: EngineDeps = {
+    stellar: d.ports.stellar,
+    psp: d.ports.psp,
+    store: d.ports.store,
+    clock: d.ports.clock,
+    config,
+  };
   const orderLocks = new KeyedMutex(); // ONE lock shared by the app AND the worker(s) (load-bearing per SPIKE-2)
   const registry = new InMemoryOrderRegistry();
-  const app = createApp({ engine, registry, quote: d.quote, webhookSigningSecret: d.webhookSigningSecret, orderLocks });
+  const app = createApp({
+    engine,
+    registry,
+    quote: d.quote,
+    webhookSigningSecret: d.webhookSigningSecret,
+    orderLocks,
+  });
   const pollTick = (): Promise<PollReport> => pollInFlight(registry, orderLocks, engine);
 
   const settlement = d.settlement;

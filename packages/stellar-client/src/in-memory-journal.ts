@@ -18,9 +18,17 @@ export class SystemClock implements Clock {
  *  same-process crash/recovery resends the byte-identical envelope (never a fresh build on a live seq). The seq
  *  is part of the persist call but not needed on load (resendPersisted replays signedXdr verbatim). */
 export class InMemoryJournal implements WriteAheadJournal {
-  private readonly entries = new Map<string, { readonly hashHex: string; readonly signedXdr: string }>();
+  private readonly entries = new Map<
+    string,
+    { readonly hashHex: string; readonly signedXdr: string }
+  >();
 
-  async persistPreSubmit(orderId: string, _seq: string, hashHex: string, signedXdrBase64: string): Promise<void> {
+  async persistPreSubmit(
+    orderId: string,
+    _seq: string,
+    hashHex: string,
+    signedXdrBase64: string,
+  ): Promise<void> {
     this.entries.set(orderId, { hashHex, signedXdr: signedXdrBase64 });
   }
 

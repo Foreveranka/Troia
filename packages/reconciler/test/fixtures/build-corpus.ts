@@ -41,12 +41,20 @@ function order(label: string, seq: number, chainAmount: bigint, localAmount?: bi
       memo_hex: memo.toString('hex'),
     },
     ledger_evidence: { signed_xdr: built.signed_xdr, hash: built.hash },
-    chain_evidence: { tx_hash: built.hash, fetched_at_ledger: 2_000_000 + seq, horizon_snapshot: dec.projection },
+    chain_evidence: {
+      tx_hash: built.hash,
+      fetched_at_ledger: 2_000_000 + seq,
+      horizon_snapshot: dec.projection,
+    },
   };
 }
 
 export function acceptanceNetwork(): ReportNetwork {
-  return { network: 'testnet', passphrase: PASSPHRASE, operator_public: operatorKeypair(SEED).publicKey() };
+  return {
+    network: 'testnet',
+    passphrase: PASSPHRASE,
+    operator_public: operatorKeypair(SEED).publicKey(),
+  };
 }
 
 export function buildAcceptanceReport(): ReconReport {

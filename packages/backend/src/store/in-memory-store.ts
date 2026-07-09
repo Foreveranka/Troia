@@ -80,14 +80,23 @@ export class InMemoryStore implements Store {
 
   // --- SPIKE-3 solvency (the money-critical path) ---
 
-  reserve(orderId: string, amountStroops: bigint, ttlMs: number, nowMs: number): Promise<ReserveOutcome> {
+  reserve(
+    orderId: string,
+    amountStroops: bigint,
+    ttlMs: number,
+    nowMs: number,
+  ): Promise<ReserveOutcome> {
     return this.poolMutex.run(async () => {
       // Idempotent per order (at-least-once /intent + solvency recheck on replay). A same-order re-reserve
       // for a DIFFERENT amount fails closed (amount is immutable per order today; a mismatch is a bug).
       const existing = this.ledger.reservationFor(orderId);
       if (existing !== undefined) {
         if (existing.amountStroops !== amountStroops) {
-          return { kind: 'insufficient', available: this.ledger.available(), requested: amountStroops };
+          return {
+            kind: 'insufficient',
+            available: this.ledger.available(),
+            requested: amountStroops,
+          };
         }
         return { kind: 'reserved', reservationId: existing.reservationId };
       }
@@ -136,7 +145,11 @@ export class InMemoryStore implements Store {
     this.losses.push({ orderId, bucket, usdcTxHash, atMs: 0 });
   }
 
-  async markWebhookSeen(eventId: string, orderId: string, nowMs: number): Promise<'first' | 'duplicate'> {
+  async markWebhookSeen(
+    eventId: string,
+    orderId: string,
+    nowMs: number,
+  ): Promise<'first' | 'duplicate'> {
     if (this.webhooks.has(eventId)) return 'duplicate';
     this.webhooks.set(eventId, { orderId, seenAtMs: nowMs });
     return 'first';

@@ -25,9 +25,21 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
   });
 
   it('SUCCESS only on the exact terminal-success shape per op', () => {
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }), 'preauth')).toBe('SUCCESS');
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }), 'checkout')).toBe('SUCCESS');
-    expect(classifyIyzicoResult(body({ status: 'success', paymentId: 'p1' }), 'capture')).toBe('SUCCESS');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }),
+        'preauth',
+      ),
+    ).toBe('SUCCESS');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }),
+        'checkout',
+      ),
+    ).toBe('SUCCESS');
+    expect(classifyIyzicoResult(body({ status: 'success', paymentId: 'p1' }), 'capture')).toBe(
+      'SUCCESS',
+    );
     expect(classifyIyzicoResult(body({ status: 'success' }), 'void')).toBe('SUCCESS');
     expect(classifyIyzicoResult(body({ status: 'success' }), 'refund')).toBe('SUCCESS');
   });
@@ -36,37 +48,87 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
     // 'FAILURE' is UNKNOWN too (not a charge FAILURE): iyzico's hosted form allows a retry on the SAME token, so a
     // failed attempt is not terminal — keeping it UNKNOWN lets a retry-success settle the order (see the dedicated
     // retry-safety test below).
-    for (const paymentStatus of ['INIT_THREEDS', 'CALLBACK_THREEDS', 'BKM_POS_SELECTED', 'PENDING_CREDIT', 'FAILURE']) {
-      expect(classifyIyzicoResult(body({ status: 'success', paymentStatus, fraudStatus: 1 }), 'preauth')).toBe('UNKNOWN');
+    for (const paymentStatus of [
+      'INIT_THREEDS',
+      'CALLBACK_THREEDS',
+      'BKM_POS_SELECTED',
+      'PENDING_CREDIT',
+      'FAILURE',
+    ]) {
+      expect(
+        classifyIyzicoResult(body({ status: 'success', paymentStatus, fraudStatus: 1 }), 'preauth'),
+      ).toBe('UNKNOWN');
     }
     // fraud not approved (0 = manual review, -1 = reject) is UNKNOWN even with paymentStatus SUCCESS
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 0 }), 'preauth')).toBe('UNKNOWN');
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: -1 }), 'preauth')).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 0 }),
+        'preauth',
+      ),
+    ).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: -1 }),
+        'preauth',
+      ),
+    ).toBe('UNKNOWN');
     // capture success envelope but no paymentId, or an error present -> UNKNOWN
     expect(classifyIyzicoResult(body({ status: 'success' }), 'capture')).toBe('UNKNOWN');
-    expect(classifyIyzicoResult(body({ status: 'success', paymentId: 'p1', errorCode: '10051' }), 'capture')).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentId: 'p1', errorCode: '10051' }),
+        'capture',
+      ),
+    ).toBe('UNKNOWN');
   });
 
   it('capture never reads a PRE_AUTH (uncaptured hold) or a numeric-error body as captured', () => {
     // a PRE_AUTH payment-detail is a live, UNCAPTURED hold -> must be UNKNOWN, never captured
-    expect(classifyIyzicoResult(body({ status: 'success', paymentId: 'p1', phase: 'PRE_AUTH' }), 'capture')).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentId: 'p1', phase: 'PRE_AUTH' }),
+        'capture',
+      ),
+    ).toBe('UNKNOWN');
     // a real capture (phase POST_AUTH, or phase absent) is SUCCESS
-    expect(classifyIyzicoResult(body({ status: 'success', paymentId: 'p1', phase: 'POST_AUTH' }), 'capture')).toBe('SUCCESS');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentId: 'p1', phase: 'POST_AUTH' }),
+        'capture',
+      ),
+    ).toBe('SUCCESS');
     // an error field of ANY type (numeric, not just string) blocks SUCCESS
-    expect(classifyIyzicoResult(body({ status: 'success', paymentId: 'p1', errorCode: 10051 as unknown as string }), 'capture')).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentId: 'p1', errorCode: 10051 as unknown as string }),
+        'capture',
+      ),
+    ).toBe('UNKNOWN');
   });
 
   it('sale (direct charge) is SUCCESS only on a captured shape with a paymentId, and NEVER on a PRE_AUTH hold', () => {
-    const captured = { status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 };
+    const captured = {
+      status: 'success',
+      paymentId: 'pay-1',
+      paymentStatus: 'SUCCESS',
+      fraudStatus: 1,
+    };
     // a completed direct sale (phase absent or AUTH) with a paymentId is a real captured charge
     expect(classifyIyzicoResult(body(captured), 'sale')).toBe('SUCCESS');
     expect(classifyIyzicoResult(body({ ...captured, phase: 'AUTH' }), 'sale')).toBe('SUCCESS');
     // the money-safety shield: a still-live PRE_AUTH hold must NEVER read as charged (would send USDC vs a hold)
     expect(classifyIyzicoResult(body({ ...captured, phase: 'PRE_AUTH' }), 'sale')).toBe('UNKNOWN');
     // a SUCCESS shape with NO paymentId must read UNKNOWN — a chargeOk we could not later void is money-unsafe
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }), 'sale')).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }),
+        'sale',
+      ),
+    ).toBe('UNKNOWN');
     // intermediate paymentStatus or fraud-review -> UNKNOWN
-    expect(classifyIyzicoResult(body({ ...captured, paymentStatus: 'CALLBACK_THREEDS' }), 'sale')).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(body({ ...captured, paymentStatus: 'CALLBACK_THREEDS' }), 'sale'),
+    ).toBe('UNKNOWN');
     expect(classifyIyzicoResult(body({ ...captured, fraudStatus: 0 }), 'sale')).toBe('UNKNOWN');
   });
 
@@ -85,23 +147,36 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
   });
 
   it('an out-of-enum op fails safe to UNKNOWN', () => {
-    expect(classifyIyzicoResult(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }), 'bogus' as PspOp)).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(
+        body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }),
+        'bogus' as PspOp,
+      ),
+    ).toBe('UNKNOWN');
   });
 
   it('FAILURE for a charge only on the CLOSED terminal-decline whitelist; unlisted codes are UNKNOWN', () => {
     for (const code of TERMINAL_DECLINE_WHITELIST) {
       for (const op of CHARGE_OPS) {
-        expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), op)).toBe('FAILURE');
+        expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), op)).toBe(
+          'FAILURE',
+        );
       }
     }
     // an unlisted / transient / missing code must NOT be a FAILURE (fail-safe -> UNKNOWN)
-    expect(classifyIyzicoResult(body({ status: 'failure', errorCode: '99999' }), 'preauth')).toBe('UNKNOWN');
+    expect(classifyIyzicoResult(body({ status: 'failure', errorCode: '99999' }), 'preauth')).toBe(
+      'UNKNOWN',
+    );
     expect(classifyIyzicoResult(body({ status: 'failure' }), 'preauth')).toBe('UNKNOWN');
-    expect(classifyIyzicoResult(body({ status: 'failure', errorCode: 'SYSTEM_ERROR' }), 'capture')).toBe('UNKNOWN');
+    expect(
+      classifyIyzicoResult(body({ status: 'failure', errorCode: 'SYSTEM_ERROR' }), 'capture'),
+    ).toBe('UNKNOWN');
   });
 
   it('void/refund failure is a definitive (retry-safe) FAILURE, independent of the charge whitelist', () => {
-    expect(classifyIyzicoResult(body({ status: 'failure', errorCode: 'anything' }), 'void')).toBe('FAILURE');
+    expect(classifyIyzicoResult(body({ status: 'failure', errorCode: 'anything' }), 'void')).toBe(
+      'FAILURE',
+    );
     expect(classifyIyzicoResult(body({ status: 'failure' }), 'refund')).toBe('FAILURE');
   });
 
@@ -121,13 +196,31 @@ describe('classifyIyzicoResult — the money-safety oracle (UNKNOWN is the safe 
 
 describe('per-op mappers onto core §3 events', () => {
   it('chargeEvent maps SUCCESS/FAILURE/UNKNOWN -> chargeOk/Rejected/Unknown (captured shape only)', () => {
-    expect(chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 }))).toEqual({ type: 'chargeOk' });
-    expect(chargeEvent(body({ status: 'failure', errorCode: '10051' }))).toEqual({ type: 'chargeRejected' });
+    expect(
+      chargeEvent(
+        body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 }),
+      ),
+    ).toEqual({ type: 'chargeOk' });
+    expect(chargeEvent(body({ status: 'failure', errorCode: '10051' }))).toEqual({
+      type: 'chargeRejected',
+    });
     expect(chargeEvent({ kind: 'timeout' })).toEqual({ type: 'chargeUnknown' });
     // a PRE_AUTH hold is never a completed charge -> Unknown (re-driven by the recovery worklist, no USDC)
-    expect(chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1, phase: 'PRE_AUTH' }))).toEqual({ type: 'chargeUnknown' });
+    expect(
+      chargeEvent(
+        body({
+          status: 'success',
+          paymentId: 'pay-1',
+          paymentStatus: 'SUCCESS',
+          fraudStatus: 1,
+          phase: 'PRE_AUTH',
+        }),
+      ),
+    ).toEqual({ type: 'chargeUnknown' });
     // a SUCCESS shape with NO paymentId -> chargeUnknown (never a chargeOk we could not unwind)
-    expect(chargeEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }))).toEqual({ type: 'chargeUnknown' });
+    expect(
+      chargeEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 })),
+    ).toEqual({ type: 'chargeUnknown' });
   });
 
   it('LATE-ALLOCATION SAFETY: a success-envelope charge NEVER classifies as chargeRejected (only status:failure does)', () => {
@@ -145,25 +238,44 @@ describe('per-op mappers onto core §3 events', () => {
       { status: 'success', paymentStatus: 'INIT_THREEDS', fraudStatus: 1 }, // intermediate -> Unknown
       { status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 }, // no paymentId -> Unknown
       { status: 'success' }, // bare success envelope
-      { status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1, phase: 'PRE_AUTH' }, // live hold
+      {
+        status: 'success',
+        paymentId: 'pay-1',
+        paymentStatus: 'SUCCESS',
+        fraudStatus: 1,
+        phase: 'PRE_AUTH',
+      }, // live hold
     ];
     for (const env of successEnvelopes) {
       expect(chargeEvent(body(env)).type, JSON.stringify(env)).not.toBe('chargeRejected');
     }
     // and the converse: chargeRejected ONLY ever comes from a status:'failure' + a whitelisted decline code.
     for (const code of TERMINAL_DECLINE_WHITELIST) {
-      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({ type: 'chargeRejected' });
+      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({
+        type: 'chargeRejected',
+      });
     }
-    expect(chargeEvent(body({ status: 'failure', errorCode: '99999' }))).toEqual({ type: 'chargeUnknown' }); // non-whitelisted -> Unknown
+    expect(chargeEvent(body({ status: 'failure', errorCode: '99999' }))).toEqual({
+      type: 'chargeUnknown',
+    }); // non-whitelisted -> Unknown
   });
 
   it('reversalEvent: only SUCCESS confirms; FAILURE and UNKNOWN both re-drive within budget (no reversalUnknown-stay)', () => {
     expect(reversalEvent(body({ status: 'success' }), true)).toEqual({ type: 'reversalConfirmed' });
-    expect(reversalEvent(body({ status: 'failure' }), true)).toEqual({ type: 'reversalNotDone', retriesRemaining: true });
-    expect(reversalEvent(body({ status: 'failure' }), false)).toEqual({ type: 'reversalNotDone', retriesRemaining: false });
+    expect(reversalEvent(body({ status: 'failure' }), true)).toEqual({
+      type: 'reversalNotDone',
+      retriesRemaining: true,
+    });
+    expect(reversalEvent(body({ status: 'failure' }), false)).toEqual({
+      type: 'reversalNotDone',
+      retriesRemaining: false,
+    });
     // an UNKNOWN (timeout) void re-drives within budget too — a same-day void is idempotent, so it must NEVER
     // become a bare observe-only stay that strands a charged order (adversarial finding #1).
-    expect(reversalEvent({ kind: 'timeout' }, true)).toEqual({ type: 'reversalNotDone', retriesRemaining: true });
+    expect(reversalEvent({ kind: 'timeout' }, true)).toEqual({
+      type: 'reversalNotDone',
+      retriesRemaining: true,
+    });
   });
 });
 
@@ -231,8 +343,12 @@ describe('Phase 4.5 decline-code calibration (iyzico published taxonomy + declin
 
   it('classifies every real declining test card as a definitive charge FAILURE (chargeRejected)', () => {
     for (const [code] of DECLINE_TEST_CARDS) {
-      expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), 'sale')).toBe('FAILURE');
-      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({ type: 'chargeRejected' });
+      expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), 'sale')).toBe(
+        'FAILURE',
+      );
+      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({
+        type: 'chargeRejected',
+      });
     }
   });
 
@@ -250,14 +366,32 @@ describe('Phase 4.5 decline-code calibration (iyzico published taxonomy + declin
       '2', // system error
     ];
     for (const code of uncertain) {
-      expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), 'sale')).toBe('UNKNOWN');
-      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({ type: 'chargeUnknown' });
+      expect(classifyIyzicoResult(body({ status: 'failure', errorCode: code }), 'sale')).toBe(
+        'UNKNOWN',
+      );
+      expect(chargeEvent(body({ status: 'failure', errorCode: code }))).toEqual({
+        type: 'chargeUnknown',
+      });
     }
   });
 
   it('pins the exact calibrated whitelist (regression: additions must be deliberate + money-safe)', () => {
     expect([...TERMINAL_DECLINE_WHITELIST].sort()).toEqual(
-      ['10005', '10012', '10034', '10041', '10043', '10051', '10054', '10057', '10093', '10201', '10209', '10225', '6001'].sort(),
+      [
+        '10005',
+        '10012',
+        '10034',
+        '10041',
+        '10043',
+        '10051',
+        '10054',
+        '10057',
+        '10093',
+        '10201',
+        '10209',
+        '10225',
+        '6001',
+      ].sort(),
     );
   });
 });

@@ -4,19 +4,20 @@ import { assembleFromSimulation, hashOf } from '../src/assemble.js';
 import { buildPayTransaction } from '../src/build.js';
 import { SimulationError } from '../src/errors.js';
 import { decodeSignedPay } from '../../reconciler/src/decode.js';
-import {
-  addressAuthXdr,
-  DEFAULT_RESOURCE_FEE,
-  fakeSimResult,
-} from './fixtures/fake-sim-result.js';
+import { addressAuthXdr, DEFAULT_RESOURCE_FEE, fakeSimResult } from './fixtures/fake-sim-result.js';
 import { bytes32, buildParams, MERCHANT, PASSPHRASE, TROY_POOL } from './fixtures/vectors.js';
 
 const unprepared = (): ReturnType<typeof buildPayTransaction> => buildPayTransaction(buildParams);
-const sim = (fee?: string): ReturnType<typeof fakeSimResult> => fakeSimResult(TROY_POOL, MERCHANT, fee);
+const sim = (fee?: string): ReturnType<typeof fakeSimResult> =>
+  fakeSimResult(TROY_POOL, MERCHANT, fee);
 
 // helper to read the invokeHostFunction op's auth entries off an assembled tx
-function opAuth(tx: ReturnType<typeof buildPayTransaction>): readonly { credentials(): { switch(): { name: string } } }[] {
-  const op = tx.operations[0] as { auth?: readonly { credentials(): { switch(): { name: string } } }[] };
+function opAuth(
+  tx: ReturnType<typeof buildPayTransaction>,
+): readonly { credentials(): { switch(): { name: string } } }[] {
+  const op = tx.operations[0] as {
+    auth?: readonly { credentials(): { switch(): { name: string } } }[];
+  };
   return op.auth ?? [];
 }
 

@@ -19,7 +19,10 @@ describe('settlement_evidence — append-only frozen witness (3.1)', () => {
     const stored = s.append(rec('ord-1'));
     expect(Object.isFrozen(stored)).toBe(true);
     expect(s.get('ord-1')?.signed_xdr).toBe('AAAAopaqueblob==');
-    expect(s.toLedgerEvidence('ord-1')).toEqual({ signed_xdr: 'AAAAopaqueblob==', hash: 'aa'.repeat(32) });
+    expect(s.toLedgerEvidence('ord-1')).toEqual({
+      signed_xdr: 'AAAAopaqueblob==',
+      hash: 'aa'.repeat(32),
+    });
   });
 
   it('a duplicate order_id is rejected (append-only, no overwrite)', () => {

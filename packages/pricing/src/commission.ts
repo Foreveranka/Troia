@@ -38,7 +38,8 @@ export interface CommissionBreakdown {
 }
 
 function requireFinite(x: number, name: string): void {
-  if (typeof x !== 'number' || !Number.isFinite(x)) throw new RangeError(`${name} must be a finite number`);
+  if (typeof x !== 'number' || !Number.isFinite(x))
+    throw new RangeError(`${name} must be a finite number`);
 }
 
 /**

@@ -30,10 +30,20 @@ export interface EffectPlan {
 
 const TABLE: Readonly<Record<Effect, EffectPlan>> = {
   // solvency reservation (SPIKE-3), FIRST — the pool must hold USDC before the customer can be charged.
-  fireSolvencyCheck: { port: 'store', call: 'reserve', mutates: false, feedsEventVia: 'reserveOutcome' },
+  fireSolvencyCheck: {
+    port: 'store',
+    call: 'reserve',
+    mutates: false,
+    feedsEventVia: 'reserveOutcome',
+  },
   // hosted DIRECT-SALE form initialize -> URL side-output, no happy-path event (outcome via webhook). Inline
   // checkoutInitFailed only if the init itself malforms. mutates:true so it can never fire on an Unknown/stay.
-  fireCheckoutForm: { port: 'psp', call: 'initializeCheckoutForm', mutates: true, feedsEventVia: 'none' },
+  fireCheckoutForm: {
+    port: 'psp',
+    call: 'initializeCheckoutForm',
+    mutates: true,
+    feedsEventVia: 'none',
+  },
   // LATE allocation (Approach B): hand out the operator seq at chargeOk, then the trailing persist/submit read
   // it. mutates:true (mirrors reallocateSeq) so it can never sit on an observe-only edge. Patches ctx, no event.
   allocateSeq: { port: 'sequences', call: 'allocate', mutates: true, feedsEventVia: 'none' },
@@ -59,12 +69,22 @@ const TABLE: Readonly<Record<Effect, EffectPlan>> = {
     feedsEventVia: 'classifyRevertCause',
   },
   releaseSeq: { port: 'sequences', call: 'release', mutates: false, feedsEventVia: 'none' },
-  releaseReservation: { port: 'store', call: 'releaseReservation', mutates: false, feedsEventVia: 'none' },
+  releaseReservation: {
+    port: 'store',
+    call: 'releaseReservation',
+    mutates: false,
+    feedsEventVia: 'none',
+  },
   // void the completed TRY sale (same-day /payment/cancel) -> reversalConfirmed|reversalNotDone|reversalUnknown.
   fireCancel: { port: 'psp', call: 'cancel', mutates: true, feedsEventVia: 'reversalEvent' },
   flagLoss: { port: 'store', call: 'flagLoss', mutates: false, feedsEventVia: 'none' },
   // record the landed witness + run reconciliation -> reconciled.
-  handToReconciler: { port: 'store', call: 'appendEvidence', mutates: false, feedsEventVia: 'reconcile' },
+  handToReconciler: {
+    port: 'store',
+    call: 'appendEvidence',
+    mutates: false,
+    feedsEventVia: 'reconcile',
+  },
   // observe-only: a durable WAIT. The poll/recovery worker performs the actual re-observation and feeds the
   // next event; the driver never mutates here (this is how "Unknown never advances" is honored).
   rePollObserveOnly: { port: 'none', call: 'none', mutates: false, feedsEventVia: 'none' },

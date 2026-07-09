@@ -18,7 +18,8 @@ function index(a: unknown, i: number): unknown {
   return Array.isArray(a) ? a[i] : undefined;
 }
 function reqStr(x: unknown): string {
-  if (typeof x !== 'string') throw new RangeError('expected a price string in the CEX ticker payload');
+  if (typeof x !== 'string')
+    throw new RangeError('expected a price string in the CEX ticker payload');
   return x;
 }
 /** A best-effort epoch-ms timestamp (number, or numeric string as some CEXes return `ts`); undefined otherwise. */
@@ -33,7 +34,8 @@ const DECIMAL = /^\d+(\.\d+)?$/;
 /** Parse a canonical decimal price string (e.g. "40.5000", "0.9998") to an integer scaled by RATE_SCALE (1e7),
  *  truncating beyond 7 dp. Fail-closed on any non-canonical input (no float, no parseFloat salvage). */
 export function parseDecimalToE7(s: string): bigint {
-  if (typeof s !== 'string' || !DECIMAL.test(s)) throw new RangeError(`invalid price: ${String(s)}`);
+  if (typeof s !== 'string' || !DECIMAL.test(s))
+    throw new RangeError(`invalid price: ${String(s)}`);
   const parts = s.split('.');
   const intPart = parts[0] ?? '0';
   const frac = ((parts[1] ?? '') + '0000000').slice(0, 7); // pad/truncate to 7 dp
@@ -81,9 +83,17 @@ interface Leg {
   readonly priceE7: bigint;
   readonly asOfMs: number | undefined; // the exchange's timestamp if it carries one, else undefined
 }
-async function fetchLeg(url: string, source: CexSource, fetch: FetchLike, net: NetPolicy): Promise<Leg> {
+async function fetchLeg(
+  url: string,
+  source: CexSource,
+  fetch: FetchLike,
+  net: NetPolicy,
+): Promise<Leg> {
   const payload = await fetchJsonWithRetry(url, fetch, net);
-  return { priceE7: parseDecimalToE7(source.parsePrice(payload)), asOfMs: source.parseAsOfMs?.(payload) };
+  return {
+    priceE7: parseDecimalToE7(source.parsePrice(payload)),
+    asOfMs: source.parseAsOfMs?.(payload),
+  };
 }
 
 /** Fetch + derive one source's TRY/USDC quote. Returns null (dropped, fail-SAFE) if either pair fails.

@@ -2,9 +2,9 @@
 
 > Custodial TRY→USDC settlement bridge on Stellar (testnet PoC).
 > A Turkish user pays TRY with a Troy card; the operator settles the merchant in USDC from a
-> pre-funded Stellar pool. The spread is revenue. Positioning: *"a settlement layer that makes every
+> pre-funded Stellar pool. The spread is revenue. Positioning: _"a settlement layer that makes every
 > lira accountable hash-by-hash — it never silently loses money; the one irreversible loss bucket
-> (`LOSS_REVIEW`) is surfaced, never hidden."* Honest proof boundary: **`signed ≠ settled`**.
+> (`LOSS_REVIEW`) is surfaced, never hidden."_ Honest proof boundary: **`signed ≠ settled`**.
 
 This document is the formal companion to the working narrative in `troia-olay-orgusu.md`. The narrative
 is the reasoning; this is the ADR-backed contract the code must satisfy. Everything network-specific is
@@ -28,7 +28,7 @@ All code, comments, commit messages, and log strings are **English only**.
 - **Troia** sits in the middle, owns the FX conversion and the settlement risk.
 
 The pool is **pre-funded**, so the merchant is paid instantly and does not wait for TRY→USDC rebalancing.
-The user *does* wait (~10–45s) while the on-chain settlement chain completes — this is the finality wait
+The user _does_ wait (~10–45s) while the on-chain settlement chain completes — this is the finality wait
 (timebounds ~45s), distinct from the compressed rebalance valör (now 30s), which the user never waits for since
 the merchant is paid from the pre-funded pool.
 
@@ -138,6 +138,7 @@ deriveIds(order_id, destination, amount):
 ```
 
 **Canonical input rules (pinned — an independent adversarial pass found these five divergence points):**
+
 1. **order_id** is NFC-normalized before UTF-8, so logically-equal ids never diverge (NFC vs NFD).
    `canonicalizeOrderId` is the single authority; callers that persist/key on order_id store its output.
 2. **Lone UTF-16 surrogates** in order_id are rejected (strict well-formed Unicode; no U+FFFD/WTF-8 drift).
@@ -154,6 +155,7 @@ rules live in `PayoutIntent.build` (fail-closed). Violations of rules 1–4 thro
 `order_id`. A golden-vector fixture (`packages/core/test/fixtures/derive-ids.golden.json`) locks the hex.
 
 **Two shields, two DIFFERENT fields:**
+
 - Same-seq domain (PoC): a replacement with seq S is rejected at protocol level (`txBAD_SEQ`) if the first tx
   landed — the shield is the **sequence**, the contract is never consulted.
 - Different-seq domain (allocator bug / manual retry / channel accounts = Phase-2): the only shield is the
@@ -164,10 +166,10 @@ rules live in `PayoutIntent.build` (fail-closed). Violations of rules 1–4 thro
 
 ## 5. Two Stellar entities — `TroyPool` (contract) vs `operator` (account)
 
-| Entity | Type | Role | Sequence? |
-|---|---|---|---|
-| `TroyPool` | Soroban contract (`C…`) | Holds USDC custody; `pay()` moves balance inside the contract | **None** (contracts have no seq) |
-| `operator` | Classic account (`G…`) | Signs + submits every `pay()` tx; `operator.require_auth` identity | **Yes** (managed by `SequenceAllocator`) |
+| Entity     | Type                    | Role                                                               | Sequence?                                |
+| ---------- | ----------------------- | ------------------------------------------------------------------ | ---------------------------------------- |
+| `TroyPool` | Soroban contract (`C…`) | Holds USDC custody; `pay()` moves balance inside the contract      | **None** (contracts have no seq)         |
+| `operator` | Classic account (`G…`)  | Signs + submits every `pay()` tx; `operator.require_auth` identity | **Yes** (managed by `SequenceAllocator`) |
 
 `getAccount(pool).sequence` is really `getAccount(operator).sequence`. In PoC, `require_auth` identity =
 tx source = fee account = a single `operator`. The operator's single sequence space is the serialization
@@ -183,14 +185,14 @@ bottleneck → the **head-of-line** rule (one in-flight payout at a time). Phase
 
 The pool is the **treasury**, and its refill is timed by **iyzico's settlement, not by pool drainage**. The two
 legs are **asynchronous**: USDC leaves the pool **instantly** at settlement, but the matching TRY is released by
-iyzico only after its **valör (blokaj)** hold — **2–21 days** (worst ~28), volume/contract-tied, *not* the
+iyzico only after its **valör (blokaj)** hold — **2–21 days** (worst ~28), volume/contract-tied, _not_ the
 marketed T+1. So the treasury spends now and is reimbursed ~21 days later; **rebalance can only run once iyzico
 has actually paid us the held TRY** (we have no fiat to buy USDC with until then).
 
 - **The pre-funded pool bridges the gap.** The seed USDC must cover a whole valör window of outflow before the
-  first TRY returns — that is *why* the pool is pre-funded rather than paid-as-you-go (§1), and why the merchant
+  first TRY returns — that is _why_ the pool is pre-funded rather than paid-as-you-go (§1), and why the merchant
   never waits for a TRY→USDC conversion.
-- **Rebalance = collected-TRY → buy USDC → top up.** Only *after* iyzico settles the held TRY can we acquire
+- **Rebalance = collected-TRY → buy USDC → top up.** Only _after_ iyzico settles the held TRY can we acquire
   replacement USDC (mainnet: a real CEX buy + withdraw on the same venues the oracle reads; testnet:
   `SimulatedRebalance` mints self-issued USDC). Idempotent per `ref`; books an `EXTERNAL_FUNDING` leg (§7a), so
   the double-entry ledger stays in sync with the on-chain balance.
@@ -201,25 +203,25 @@ has actually paid us the held TRY** (we have no fiat to buy USDC with until then
 **Status (PoC).** The automatic TRY-driven rebalance loop is **built and running**. A background settlement
 worker (`settleTick`, on its own `SETTLEMENT_TICK_MS` interval, default 5s) runs alongside the poll worker: each
 tick **arms** every money-good order (`UsdcConfirmed`/`Reconciled`) and, after the settlement valör, refills the
-pool from *exactly that order's* collected TRY — converted to USDC at the live oracle rate — by minting real
+pool from _exactly that order's_ collected TRY — converted to USDC at the live oracle rate — by minting real
 issuer-signed USDC into the pool (a `SimulatedRebalance` wrapping `createSacMintClient`, the SAC-admin mint: the
 programmatic form of `just fund`'s mint step); `store.creditPool` then lifts the `/intent` solvency gate. The
-trigger is **time/valör-driven per order**, *not* watermark→`topUp`; the `poolLowWatermarkStroops` low-water mark
+trigger is **time/valör-driven per order**, _not_ watermark→`topUp`; the `poolLowWatermarkStroops` low-water mark
 still only **warns** (`/intent → poolLow:true`). `just fund` now only **seeds** the pool at boot — ongoing refill
 is automatic.
 
 **Valör (demo).** The real iyzico settlement valör is **~21 days**; for the demo it is **compressed** to
 `DEMO_VALOR_SECS` (default **30s**) so the automatic rebalance is visible within the demo window. This is demo
-time-compression of the *settlement clock* only — separate from the FX-risk pricing knob (`valorDays` = 21) that
+time-compression of the _settlement clock_ only — separate from the FX-risk pricing knob (`valorDays` = 21) that
 sizes the commission, which still uses the real ~21-day figure.
 
 **Designed for what comes next.** The rebalance system is deliberately seamed for a future **agent + on/off-ramp
-service**: a policy/agent owns the *decision* (when and how much to rebalance — the `RebalancePolicy` seam), and
-an on/off-ramp provider owns the *execution* (the real fiat↔USDC conversion — the `RebalanceProvider`/mint-port
+service**: a policy/agent owns the _decision_ (when and how much to rebalance — the `RebalancePolicy` seam), and
+an on/off-ramp provider owns the _execution_ (the real fiat↔USDC conversion — the `RebalanceProvider`/mint-port
 seam). On testnet the execution is a self-issued SAC mint; on mainnet the **same seam** becomes a real CEX buy +
 withdrawal driven by the agent — the backend and the money-first core do not change.
 
-**Still Phase-2:** only the real inventory-acquiring CEX buy that *economically* acquires the USDC (invariant ③b;
+**Still Phase-2:** only the real inventory-acquiring CEX buy that _economically_ acquires the USDC (invariant ③b;
 testnet mints self-issued USDC without limit) and a durable cross-restart pending-settlement store + mint
 idempotency (in-memory in the PoC) remain deferred.
 
@@ -227,16 +229,16 @@ idempotency (in-memory in the PoC) remain deferred.
 
 ## 6. Invariants (each owned by exactly one module)
 
-| # | Invariant | Owner |
-|---|---|---|
-| ① | MEMO FAIL-CLOSED — no `PayoutIntent` without valid memo+address+trustline; button cannot be pressed | `packages/core` `PayoutIntent.build` |
-| ② | DOUBLE-PAY SHIELD (USDC) — order-pinned seq (single-writer, serial) → 2nd tx = `txBAD_SEQ` | `SequenceAllocator` + `TroyPool` guard |
-| ③a | SOLVENCY MECHANISM — backend reservation AND contract `balance>=amount` (both "yes") | backend + `TroyPool` |
-| ③b | SOLVENCY (ECONOMIC) — real inventory adequacy = Phase-2 (testnet mints infinitely) | `packages/rebalance` |
-| ④ | EVIDENCE — every submit writes hash+XDR+seq to our append-only ledger | `settlement_evidence` |
-| ⑤ | PRICE-LOCK — the ₺ is priced server-side and frozen at `/intent`; the hosted direct-sale form charges exactly that | `packages/pricing` computes, `core` freezes |
-| ⑥ | CHARGE IDEMPOTENCY (TRY) — iyzico has no dedup → our DB-guard + backend-issued token + 3-valued retrieve on the webhook | `packages/psp` + backend |
-| ⑦ | SALE VOID (TRY) — a USDC failure after the charge voids the completed sale via `iyzico.cancel` (same-day) → `ChargeReversed` | `packages/psp` + backend |
+| #   | Invariant                                                                                                                    | Owner                                       |
+| --- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| ①   | MEMO FAIL-CLOSED — no `PayoutIntent` without valid memo+address+trustline; button cannot be pressed                          | `packages/core` `PayoutIntent.build`        |
+| ②   | DOUBLE-PAY SHIELD (USDC) — order-pinned seq (single-writer, serial) → 2nd tx = `txBAD_SEQ`                                   | `SequenceAllocator` + `TroyPool` guard      |
+| ③a  | SOLVENCY MECHANISM — backend reservation AND contract `balance>=amount` (both "yes")                                         | backend + `TroyPool`                        |
+| ③b  | SOLVENCY (ECONOMIC) — real inventory adequacy = Phase-2 (testnet mints infinitely)                                           | `packages/rebalance`                        |
+| ④   | EVIDENCE — every submit writes hash+XDR+seq to our append-only ledger                                                        | `settlement_evidence`                       |
+| ⑤   | PRICE-LOCK — the ₺ is priced server-side and frozen at `/intent`; the hosted direct-sale form charges exactly that           | `packages/pricing` computes, `core` freezes |
+| ⑥   | CHARGE IDEMPOTENCY (TRY) — iyzico has no dedup → our DB-guard + backend-issued token + 3-valued retrieve on the webhook      | `packages/psp` + backend                    |
+| ⑦   | SALE VOID (TRY) — a USDC failure after the charge voids the completed sale via `iyzico.cancel` (same-day) → `ChargeReversed` | `packages/psp` + backend                    |
 
 **`BuildError` (flat enum, deterministic control order):**
 `AddressInvalidChecksum → MemoMissing → MemoWrongLength → MemoZero → MemoMismatch → AmountNonPositive →

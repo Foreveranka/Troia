@@ -42,7 +42,11 @@ describe('postIntent', () => {
     let captured: { url: string; init: RequestInit } | null = null;
     const spy = (async (url: string, init: RequestInit) => {
       captured = { url, init };
-      return { ok: true, status: 200, json: async () => ({ orderId: 'ST-AB12CD', token: 't', paidPriceTry: '1.00' }) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ orderId: 'ST-AB12CD', token: 't', paidPriceTry: '1.00' }),
+      };
     }) as unknown as typeof fetch;
 
     await postIntent(BODY, { fetchImpl: spy, baseUrl: 'http://localhost:3000' });
@@ -98,7 +102,9 @@ describe('postIntent', () => {
 
 describe('getStatus', () => {
   it('returns the coarse public status on 200', async () => {
-    const r = await getStatus('ST-AB12CD', { fetchImpl: fakeFetch(200, { orderId: 'ST-AB12CD', status: 'processing' }) });
+    const r = await getStatus('ST-AB12CD', {
+      fetchImpl: fakeFetch(200, { orderId: 'ST-AB12CD', status: 'processing' }),
+    });
     expect(r).toEqual({ ok: true, status: 'processing' });
   });
 
@@ -128,20 +134,33 @@ describe('getStatus', () => {
 describe('getReceipt', () => {
   it('returns txHash + paidPriceTry on a settled receipt', async () => {
     const r = await getReceipt('ST-AB12CD', {
-      fetchImpl: fakeFetch(200, { orderId: 'ST-AB12CD', status: 'completed', txHash: 'abc123', paidPriceTry: '2650.00' }),
+      fetchImpl: fakeFetch(200, {
+        orderId: 'ST-AB12CD',
+        status: 'completed',
+        txHash: 'abc123',
+        paidPriceTry: '2650.00',
+      }),
     });
     expect(r).toEqual({ ok: true, txHash: 'abc123', paidPriceTry: '2650.00' });
   });
 
   it('normalizes a not-yet-settled receipt to a null txHash', async () => {
     const r = await getReceipt('x', {
-      fetchImpl: fakeFetch(200, { orderId: 'x', status: 'pending', txHash: null, paidPriceTry: '1.00' }),
+      fetchImpl: fakeFetch(200, {
+        orderId: 'x',
+        status: 'pending',
+        txHash: null,
+        paidPriceTry: '1.00',
+      }),
     });
     expect(r).toEqual({ ok: true, txHash: null, paidPriceTry: '1.00' });
   });
 
   it('maps a 404 to a fail outcome', async () => {
-    expect(await getReceipt('nope', { fetchImpl: fakeFetch(404, { error: 'NotFound' }) })).toEqual({ ok: false, error: 'NotFound' });
+    expect(await getReceipt('nope', { fetchImpl: fakeFetch(404, { error: 'NotFound' }) })).toEqual({
+      ok: false,
+      error: 'NotFound',
+    });
   });
 });
 

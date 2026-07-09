@@ -13,7 +13,11 @@ import { vi, type Mock } from 'vitest';
 import type { PublicStatus } from '../../src/lib/intent';
 import type { IntentOutcome, ReceiptOutcome, StatusOutcome } from '../../src/lib/backend';
 
-type MessageHandler = (message: unknown, sender: unknown, sendResponse: (r?: unknown) => void) => boolean | void;
+type MessageHandler = (
+  message: unknown,
+  sender: unknown,
+  sendResponse: (r?: unknown) => void,
+) => boolean | void;
 
 export interface ChromeStubScript {
   /** the outcome returned to a TROIA_INTENT sendMessage (undefined models a dropped reply). */
@@ -55,7 +59,10 @@ export function installChromeStub(script: Partial<ChromeStubScript> = {}): Chrom
           cb(state.intent);
           return;
         case 'TROIA_STATUS': {
-          const status = state.statuses.length > 0 ? (state.statuses.shift() as PublicStatus) : state.defaultStatus;
+          const status =
+            state.statuses.length > 0
+              ? (state.statuses.shift() as PublicStatus)
+              : state.defaultStatus;
           cb({ ok: true, status } satisfies StatusOutcome);
           return;
         }
@@ -80,7 +87,8 @@ export function installChromeStub(script: Partial<ChromeStubScript> = {}): Chrom
     tabsCreate: tabs.create,
     onInstalled: runtime.onInstalled.addListener,
     onMessageListener: () => {
-      if (messageHandler === undefined) throw new Error('background registered no onMessage listener');
+      if (messageHandler === undefined)
+        throw new Error('background registered no onMessage listener');
       return messageHandler;
     },
     script: state,

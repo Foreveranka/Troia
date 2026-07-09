@@ -6,7 +6,14 @@
 //   arg0 scvBytes(tx_id) · arg1 i128(amount) · arg2 i128(applied_rate) · arg3 Address(merchant) · arg4 scvBytes(memo).
 // No key material and no network types cross this file (keyless-boundary guard).
 
-import { Account, Address, Contract, nativeToScVal, TransactionBuilder, xdr } from '@stellar/stellar-base';
+import {
+  Account,
+  Address,
+  Contract,
+  nativeToScVal,
+  TransactionBuilder,
+  xdr,
+} from '@stellar/stellar-base';
 import type { UnpreparedTx } from './ports.js';
 import { BuildError } from './errors.js';
 
@@ -45,7 +52,9 @@ export function buildPayTransaction(p: BuildParams): UnpreparedTx {
     p.maxTime <= 0 ||
     p.maxTime <= p.minTime
   ) {
-    throw new BuildError('timebounds must be integers with 0 <= minTime < maxTime (never TimeoutInfinite)');
+    throw new BuildError(
+      'timebounds must be integers with 0 <= minTime < maxTime (never TimeoutInfinite)',
+    );
   }
 
   // Arg encoding is IDENTICAL to reconciler/test/fixtures/generate.ts — the reconciler decodes exactly

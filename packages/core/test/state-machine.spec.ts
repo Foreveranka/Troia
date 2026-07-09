@@ -152,7 +152,9 @@ describe('state machine — reachability & terminals (D7)', () => {
 
 describe('state machine — money-safety invariants', () => {
   const transitions = allEdges().filter(
-    (e): e is Edge & { result: { status: 'transition'; next: State; effects: readonly Effect[] } } =>
+    (
+      e,
+    ): e is Edge & { result: { status: 'transition'; next: State; effects: readonly Effect[] } } =>
       e.result.status === 'transition',
   );
 
@@ -179,7 +181,9 @@ describe('state machine — money-safety invariants', () => {
     const pending = new Set<State>(REVERSAL_PENDING_STATES);
     for (const e of transitions) {
       if (pending.has(e.result.next) && e.result.next !== e.state) {
-        expect(e.result.effects, `entry ${e.state}->${e.result.next} must void`).toContain('fireCancel');
+        expect(e.result.effects, `entry ${e.state}->${e.result.next} must void`).toContain(
+          'fireCancel',
+        );
       }
     }
   });
@@ -205,12 +209,20 @@ describe('state machine — money-safety invariants', () => {
   it('no pre-charge edge (Reserved, or a non-chargeOk SolvencyReserved event) touches the sequence', () => {
     // Money-safety of late allocation: nothing before the charge may allocate/release/burn a seq — the whole
     // point is that an order that never charges leaves the operator sequence space untouched (no gap).
-    const seqEffects = new Set<Effect>(['allocateSeq' as Effect, 'releaseSeq', 'reallocateSeq', 'confirmBurnedSeq']);
+    const seqEffects = new Set<Effect>([
+      'allocateSeq' as Effect,
+      'releaseSeq',
+      'reallocateSeq',
+      'confirmBurnedSeq',
+    ]);
     for (const e of transitions) {
-      const preCharge = e.state === 'Reserved' || (e.state === 'SolvencyReserved' && e.event.type !== 'chargeOk');
+      const preCharge =
+        e.state === 'Reserved' || (e.state === 'SolvencyReserved' && e.event.type !== 'chargeOk');
       if (!preCharge) continue;
       for (const eff of e.result.effects) {
-        expect(seqEffects.has(eff), `${e.state}/${e.event.type} must not touch the seq`).toBe(false);
+        expect(seqEffects.has(eff), `${e.state}/${e.event.type} must not touch the seq`).toBe(
+          false,
+        );
       }
     }
   });
@@ -261,7 +273,10 @@ describe('state machine — money-safety invariants', () => {
         const gi = effects.indexOf(guarded);
         if (gi >= 0) {
           const pi = effects.indexOf('persistInFlight');
-          expect(pi, `${e.state}->${e.result.next} must persist before ${guarded}`).toBeGreaterThanOrEqual(0);
+          expect(
+            pi,
+            `${e.state}->${e.result.next} must persist before ${guarded}`,
+          ).toBeGreaterThanOrEqual(0);
           expect(pi).toBeLessThan(gi);
         }
       }
@@ -316,13 +331,17 @@ describe('state machine — canonical walks', () => {
       effects: ['rePollObserveOnly'],
     });
     // budget remaining -> bounded retry void
-    expect(transition('ChargeReversing', { type: 'reversalNotDone', retriesRemaining: true })).toEqual({
+    expect(
+      transition('ChargeReversing', { type: 'reversalNotDone', retriesRemaining: true }),
+    ).toEqual({
       status: 'transition',
       next: 'ChargeReversing',
       effects: ['fireCancel'],
     });
     // budget exhausted -> DURABLE flag + LossReview (a failed refund does NOT self-heal; never silent-quiesce)
-    expect(transition('ChargeReversing', { type: 'reversalNotDone', retriesRemaining: false })).toEqual({
+    expect(
+      transition('ChargeReversing', { type: 'reversalNotDone', retriesRemaining: false }),
+    ).toEqual({
       status: 'transition',
       next: 'LossReview',
       effects: ['flagLoss'],

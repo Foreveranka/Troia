@@ -40,14 +40,19 @@ export interface SacMintPort {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createSacMintClient(ports: SacMintClientPorts, cfg: SacMintClientConfig): SacMintPort {
+export function createSacMintClient(
+  ports: SacMintClientPorts,
+  cfg: SacMintClientConfig,
+): SacMintPort {
   const issuerPublic = ports.signer.publicKey();
 
   return {
     async mintToPool(usdcStroops) {
       const seqRead = await ports.rpc.readAccountSeq(issuerPublic);
       if (!seqRead.exists) {
-        throw new SubmitError(`issuer account ${issuerPublic} not found on-chain — fund it before minting`);
+        throw new SubmitError(
+          `issuer account ${issuerPublic} not found on-chain — fund it before minting`,
+        );
       }
       const now = ports.nowUnix();
       const unprepared = buildSacMintTransaction({
@@ -73,7 +78,8 @@ export function createSacMintClient(ports: SacMintClientPorts, cfg: SacMintClien
       // the SAME mint (same seq) is DUPLICATE, which is safe to poll to the same result.
       if (outcome.kind === 'ERROR') throw new SubmitError(`SAC mint send failed: ${outcome.code}`);
       if (outcome.kind === 'BAD_SEQ') throw new SubmitError('SAC mint send returned BAD_SEQ');
-      if (outcome.kind === 'TRY_AGAIN') throw new SubmitError('SAC mint send returned TRY_AGAIN (retry next tick)');
+      if (outcome.kind === 'TRY_AGAIN')
+        throw new SubmitError('SAC mint send returned TRY_AGAIN (retry next tick)');
 
       for (let attempt = 0; attempt < cfg.finalityMaxAttempts; attempt += 1) {
         const g = await ports.rpc.getTransaction(txHash);

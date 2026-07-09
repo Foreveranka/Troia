@@ -22,7 +22,9 @@ describe('withTimeout — bound a hung network read', () => {
   });
 
   it('propagates the inner rejection (a real error is surfaced, not masked as a timeout)', async () => {
-    await expect(withTimeout(Promise.reject(new Error('rpc 500')), 1000, 'x')).rejects.toThrow('rpc 500');
+    await expect(withTimeout(Promise.reject(new Error('rpc 500')), 1000, 'x')).rejects.toThrow(
+      'rpc 500',
+    );
   });
 
   it('takes the fast path without waiting out the bound (timer is cleared on a quick resolve)', async () => {

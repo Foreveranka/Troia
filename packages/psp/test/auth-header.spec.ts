@@ -34,11 +34,14 @@ describe('computeAuthorizationHeader — IYZWSv2, byte-exact vs iyzipay@2.0.69',
     const h0 = computeAuthorizationHeader(base).authorization;
     expect(computeAuthorizationHeader({ ...base, secretKey: 'other' }).authorization).not.toBe(h0);
     expect(computeAuthorizationHeader({ ...base, apiKey: 'other' }).authorization).not.toBe(h0);
-    expect(computeAuthorizationHeader({ ...base, uriPath: '/payment/postauth' }).authorization).not.toBe(h0);
+    expect(
+      computeAuthorizationHeader({ ...base, uriPath: '/payment/postauth' }).authorization,
+    ).not.toBe(h0);
     expect(computeAuthorizationHeader({ ...base, randomKey: 'other' }).authorization).not.toBe(h0);
     // a single trailing byte in the body flips the signature (sign-the-sent-string is exact)
     expect(
-      computeAuthorizationHeader({ ...base, requestBodyString: base.requestBodyString + ' ' }).authorization,
+      computeAuthorizationHeader({ ...base, requestBodyString: base.requestBodyString + ' ' })
+        .authorization,
     ).not.toBe(h0);
   });
 });

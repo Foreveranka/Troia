@@ -15,7 +15,10 @@ export interface RateHistoryProvider {
 /** The minimal shape of `fetch` we depend on — injectable so tests substitute a controlled fake (a "mock"). The
  *  optional `init` carries the AbortSignal the timeout/retry wrapper passes (the real fetch honors it; fakes may
  *  ignore it). Widened from `(url) => ...` so a hung upstream can be aborted rather than hanging forever. */
-export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ json(): Promise<unknown> }>;
+export type FetchLike = (
+  url: string,
+  init?: { signal?: AbortSignal },
+) => Promise<{ json(): Promise<unknown> }>;
 
 function prop(o: unknown, key: string): unknown {
   return typeof o === 'object' && o !== null ? (o as Record<string, unknown>)[key] : undefined;
@@ -34,8 +37,11 @@ export function parseYahooChartCloses(payload: unknown): number[] {
   const result = index(prop(prop(payload, 'chart'), 'result'), 0);
   const quote0 = index(prop(prop(result, 'indicators'), 'quote'), 0);
   const close = prop(quote0, 'close');
-  if (!Array.isArray(close)) throw new RangeError('Yahoo chart payload: missing indicators.quote[0].close');
-  const closes = close.filter((c): c is number => typeof c === 'number' && Number.isFinite(c) && c > 0);
+  if (!Array.isArray(close))
+    throw new RangeError('Yahoo chart payload: missing indicators.quote[0].close');
+  const closes = close.filter(
+    (c): c is number => typeof c === 'number' && Number.isFinite(c) && c > 0,
+  );
   if (closes.length < 3) throw new RangeError('Yahoo chart payload: fewer than 3 valid closes');
   return closes;
 }

@@ -22,7 +22,8 @@ function probes(over: Partial<PreflightProbes> = {}): PreflightProbes {
     poolBalanceStroops: () => Promise.resolve(100_000n * 10_000_000n), // 100,000 USDC
     spotRate: () => Promise.resolve(okRate),
     historyCloseCount: () => Promise.resolve(126),
-    iyzicoReachable: () => Promise.resolve({ reached: true, detail: 'reached iyzico (status=failure)' }),
+    iyzicoReachable: () =>
+      Promise.resolve({ reached: true, detail: 'reached iyzico (status=failure)' }),
     ...over,
   };
 }
@@ -36,7 +37,9 @@ describe('runPreflight — the live-smoke readiness gate (offline, injected prob
   });
 
   it('an RPC read that THROWS (pool balance) fails only that check + the whole report, and never throws', async () => {
-    const r = await runPreflight(probes({ poolBalanceStroops: () => Promise.reject(new Error('RPC 503')) }));
+    const r = await runPreflight(
+      probes({ poolBalanceStroops: () => Promise.reject(new Error('RPC 503')) }),
+    );
     expect(r.ok).toBe(false);
     const pool = r.checks.find((c) => c.name.includes('pool'));
     expect(pool?.ok).toBe(false);
@@ -55,7 +58,10 @@ describe('runPreflight — the live-smoke readiness gate (offline, injected prob
 
   it('a fail-closed oracle (no quorum) fails the spot check and surfaces the error code', async () => {
     const r = await runPreflight(
-      probes({ spotRate: () => Promise.resolve({ ok: false, error: new OracleError('InsufficientSources', 'only 2') }) }),
+      probes({
+        spotRate: () =>
+          Promise.resolve({ ok: false, error: new OracleError('InsufficientSources', 'only 2') }),
+      }),
     );
     expect(r.ok).toBe(false);
     const spot = r.checks.find((c) => c.name.includes('oracle'));
@@ -64,21 +70,28 @@ describe('runPreflight — the live-smoke readiness gate (offline, injected prob
   });
 
   it('too few history closes fails the history check (commission stats need a sample)', async () => {
-    const r = await runPreflight(probes({ historyCloseCount: () => Promise.resolve(2) }), { minCloses: 3 });
+    const r = await runPreflight(probes({ historyCloseCount: () => Promise.resolve(2) }), {
+      minCloses: 3,
+    });
     expect(r.ok).toBe(false);
     expect(r.checks.find((c) => c.name.includes('history'))?.ok).toBe(false);
   });
 
   it('an unreachable iyzico (network failure) fails the reachability check', async () => {
     const r = await runPreflight(
-      probes({ iyzicoReachable: () => Promise.resolve({ reached: false, detail: 'network timeout/failure' }) }),
+      probes({
+        iyzicoReachable: () =>
+          Promise.resolve({ reached: false, detail: 'network timeout/failure' }),
+      }),
     );
     expect(r.ok).toBe(false);
     expect(r.checks.find((c) => c.name.includes('iyzico'))?.ok).toBe(false);
   });
 
   it('an operator with too little XLM for fees fails closed', async () => {
-    const r = await runPreflight(probes({ operatorNativeXlm: () => Promise.resolve(0) }), { minNativeXlm: 1 });
+    const r = await runPreflight(probes({ operatorNativeXlm: () => Promise.resolve(0) }), {
+      minNativeXlm: 1,
+    });
     expect(r.ok).toBe(false);
     expect(r.checks.find((c) => c.name.includes('XLM'))?.ok).toBe(false);
   });

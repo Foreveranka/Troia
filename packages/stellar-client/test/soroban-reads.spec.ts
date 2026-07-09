@@ -70,7 +70,9 @@ describe('firstContractErrorCode — first contract error across a flat ScVal li
   });
 
   it('skips non-error ScVals and returns the first contract error', () => {
-    expect(firstContractErrorCode([xdr.ScVal.scvU32(9), xdr.ScVal.scvString('boom'), err(2)])).toBe(2);
+    expect(firstContractErrorCode([xdr.ScVal.scvU32(9), xdr.ScVal.scvString('boom'), err(2)])).toBe(
+      2,
+    );
   });
 
   it('returns the FIRST contract error when several are present', () => {
@@ -91,7 +93,10 @@ describe('firstContractErrorCodeFromContract — scope the revert code to the Tr
   const POOL = 'CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ'; // TroyPool
   const SAC = 'CCOAUUKWWPSVFZUPIVZECTV3PIVFRTVFKWWF2PQY5Q5CN3JBCDXGNCMB'; // inner USDC SAC
   const err = (code: number): xdr.ScVal => xdr.ScVal.scvError(xdr.ScError.sceContract(code));
-  const ev = (contractId: string | null, ...vals: xdr.ScVal[]): DiagnosticScVals => ({ contractId, vals });
+  const ev = (contractId: string | null, ...vals: xdr.ScVal[]): DiagnosticScVals => ({
+    contractId,
+    vals,
+  });
 
   it('reads the code from a TroyPool-emitted error event', () => {
     expect(firstContractErrorCodeFromContract([ev(POOL, err(2))], POOL)).toBe(2);
@@ -116,7 +121,12 @@ describe('firstContractErrorCodeFromContract — scope the revert code to the Tr
   });
 
   it('returns the first TroyPool error across its own multiple events', () => {
-    expect(firstContractErrorCodeFromContract([ev(POOL, xdr.ScVal.scvU32(9)), ev(POOL, err(4)), ev(POOL, err(1))], POOL)).toBe(4);
+    expect(
+      firstContractErrorCodeFromContract(
+        [ev(POOL, xdr.ScVal.scvU32(9)), ev(POOL, err(4)), ev(POOL, err(1))],
+        POOL,
+      ),
+    ).toBe(4);
   });
 
   it('returns null on no events (empty diagnostics -> safe re-drive default)', () => {

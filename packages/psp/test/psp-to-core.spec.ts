@@ -17,18 +17,60 @@ function expectTransition(from: State, event: Event, to: State): void {
 
 describe('psp classify -> core §3 events (one machine, money-first)', () => {
   it('Charge (from SolvencyReserved): Ok->UsdcSubmitted, Rejected->FailedClean, Unknown->SolvencyReserved (observe)', () => {
-    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 })), 'UsdcSubmitted');
-    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'failure', errorCode: '10051' })), 'FailedClean');
+    expectTransition(
+      'SolvencyReserved',
+      chargeEvent(
+        body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1 }),
+      ),
+      'UsdcSubmitted',
+    );
+    expectTransition(
+      'SolvencyReserved',
+      chargeEvent(body({ status: 'failure', errorCode: '10051' })),
+      'FailedClean',
+    );
     expectTransition('SolvencyReserved', chargeEvent({ kind: 'timeout' }), 'SolvencyReserved');
     // a PRE_AUTH hold or a paymentId-less success is not a completed charge -> Unknown -> stay (NEVER to USDC)
-    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'success', paymentId: 'pay-1', paymentStatus: 'SUCCESS', fraudStatus: 1, phase: 'PRE_AUTH' })), 'SolvencyReserved');
-    expectTransition('SolvencyReserved', chargeEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 })), 'SolvencyReserved');
+    expectTransition(
+      'SolvencyReserved',
+      chargeEvent(
+        body({
+          status: 'success',
+          paymentId: 'pay-1',
+          paymentStatus: 'SUCCESS',
+          fraudStatus: 1,
+          phase: 'PRE_AUTH',
+        }),
+      ),
+      'SolvencyReserved',
+    );
+    expectTransition(
+      'SolvencyReserved',
+      chargeEvent(body({ status: 'success', paymentStatus: 'SUCCESS', fraudStatus: 1 })),
+      'SolvencyReserved',
+    );
   });
 
   it('Reversal (from ChargeReversing): Confirmed->ChargeReversed, NotDone(retry)->ChargeReversing, NotDone(exhausted)->LossReview, Unknown->ChargeReversing', () => {
-    expectTransition('ChargeReversing', reversalEvent(body({ status: 'success' }), true), 'ChargeReversed');
-    expectTransition('ChargeReversing', reversalEvent(body({ status: 'failure' }), true), 'ChargeReversing');
-    expectTransition('ChargeReversing', reversalEvent(body({ status: 'failure' }), false), 'LossReview');
-    expectTransition('ChargeReversing', reversalEvent({ kind: 'malformed', reason: 'x' }, true), 'ChargeReversing');
+    expectTransition(
+      'ChargeReversing',
+      reversalEvent(body({ status: 'success' }), true),
+      'ChargeReversed',
+    );
+    expectTransition(
+      'ChargeReversing',
+      reversalEvent(body({ status: 'failure' }), true),
+      'ChargeReversing',
+    );
+    expectTransition(
+      'ChargeReversing',
+      reversalEvent(body({ status: 'failure' }), false),
+      'LossReview',
+    );
+    expectTransition(
+      'ChargeReversing',
+      reversalEvent({ kind: 'malformed', reason: 'x' }, true),
+      'ChargeReversing',
+    );
   });
 });

@@ -21,8 +21,17 @@ function tickerFor(url: string, tryUsdt: string, usdcUsdt: string, tsMs?: number
   const isTry = url.includes('USDTTRY') || url.includes('USDT-TRY');
   const price = isTry ? tryUsdt : usdcUsdt;
   if (url.includes('binance')) return { symbol: isTry ? 'USDTTRY' : 'USDCUSDT', price };
-  if (url.includes('bybit')) return { retCode: 0, ...(tsMs !== undefined ? { time: tsMs } : {}), result: { list: [{ lastPrice: price }] } };
-  if (url.includes('okx')) return { code: '0', data: [{ last: price, ...(tsMs !== undefined ? { ts: String(tsMs) } : {}) }] };
+  if (url.includes('bybit'))
+    return {
+      retCode: 0,
+      ...(tsMs !== undefined ? { time: tsMs } : {}),
+      result: { list: [{ lastPrice: price }] },
+    };
+  if (url.includes('okx'))
+    return {
+      code: '0',
+      data: [{ last: price, ...(tsMs !== undefined ? { ts: String(tsMs) } : {}) }],
+    };
   throw new Error(`unexpected url: ${url}`);
 }
 
@@ -121,7 +130,11 @@ describe('LiveCexOracle — aggregate a spot mid across CEXes (mocked fetch, no 
 
   it('survives a single source outage on the quorum (2 of 3), dropping it fail-SAFE', async () => {
     const fetch = mockFetch(
-      { binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' }, bybit: { tryUsdt: '40.51', usdcUsdt: '1.0000' }, okx: { tryUsdt: '0', usdcUsdt: '0' } },
+      {
+        binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' },
+        bybit: { tryUsdt: '40.51', usdcUsdt: '1.0000' },
+        okx: { tryUsdt: '0', usdcUsdt: '0' },
+      },
       ['okx'], // okx network failure
     );
     const r = await new LiveCexOracle({ policy: POLICY, sources, fetch, now: () => NOW }).getRate();
@@ -131,7 +144,14 @@ describe('LiveCexOracle — aggregate a spot mid across CEXes (mocked fetch, no 
   });
 
   it('FAILS CLOSED (InsufficientSources) when too few sources respond', async () => {
-    const fetch = mockFetch({ binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' }, bybit: { tryUsdt: '0', usdcUsdt: '0' }, okx: { tryUsdt: '0', usdcUsdt: '0' } }, ['bybit', 'okx']);
+    const fetch = mockFetch(
+      {
+        binance: { tryUsdt: '40.50', usdcUsdt: '1.0000' },
+        bybit: { tryUsdt: '0', usdcUsdt: '0' },
+        okx: { tryUsdt: '0', usdcUsdt: '0' },
+      },
+      ['bybit', 'okx'],
+    );
     const r = await new LiveCexOracle({ policy: POLICY, sources, fetch, now: () => NOW }).getRate();
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('InsufficientSources');
@@ -215,7 +235,10 @@ describe('LiveCexOracle — aggregate a spot mid across CEXes (mocked fetch, no 
     expect(r.ok).toBe(true);
     if (!r.ok) throw new Error(r.error.code);
     // wire the CEX mid into the same pricing path /intent uses: commission (T+15 -> 229 bps) + spread.
-    const bps = commissionBps({ muDaily: 0.00055, sigmaDaily: 0.003 }, { valorDays: 15, z: 1, marginBps: 30 });
+    const bps = commissionBps(
+      { muDaily: 0.00055, sigmaDaily: 0.003 },
+      { valorDays: 15, z: 1, marginBps: 30 },
+    );
     const price = priceUsdc(STROOP, r.quote.midTryPerUsdc, bps);
     expect(bps).toBe(229);
     expect(price.userTryKurus).toBe(4142n); // 41.42 TRY for 1 USDC, priced off the live CEX mid

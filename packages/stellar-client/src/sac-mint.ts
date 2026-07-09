@@ -5,7 +5,13 @@
 // absolute unix seconds (determinism), and it neither simulates nor signs. On testnet this mints self-issued
 // USDC; on mainnet the SAME rebalance seam drives a real CEX buy instead (the mint disappears with the issuer).
 
-import { Account, Address, Contract, nativeToScVal, TransactionBuilder } from '@stellar/stellar-base';
+import {
+  Account,
+  Address,
+  Contract,
+  nativeToScVal,
+  TransactionBuilder,
+} from '@stellar/stellar-base';
 import type { UnpreparedTx } from './ports.js';
 import { BuildError } from './errors.js';
 
@@ -38,7 +44,9 @@ export function buildSacMintTransaction(p: SacMintParams): UnpreparedTx {
     p.maxTime <= 0 ||
     p.maxTime <= p.minTime
   ) {
-    throw new BuildError('timebounds must be integers with 0 <= minTime < maxTime (never TimeoutInfinite)');
+    throw new BuildError(
+      'timebounds must be integers with 0 <= minTime < maxTime (never TimeoutInfinite)',
+    );
   }
   if (p.amount <= 0n) throw new BuildError('mint amount must be > 0');
 

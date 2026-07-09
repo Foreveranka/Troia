@@ -7,7 +7,11 @@ import { AMOUNT, intentBody, makeHttpHarness } from './http-harness.js';
 describe('POST /intent — money-first ① order start', () => {
   it('reserves the pool, returns the hosted direct-sale checkout, and registers it as pending', async () => {
     const h = makeHttpHarness();
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
 
     expect(res.statusCode).toBe(200);
     // money-first response: backend-issued token + hosted form + the SERVER-computed price + low-water flag
@@ -36,7 +40,12 @@ describe('POST /intent — money-first ① order start', () => {
   it('prices the order SERVER-SIDE and IGNORES a client-supplied price AND currency (zero-trust)', async () => {
     const h = makeHttpHarness();
     // a client tries to dictate a cheap price AND a foreign currency — the backend must ignore both
-    const tampered = { ...intentBody('order-1'), paidPriceTry: '0.01', appliedRateStroops: '1', currency: 'USD' };
+    const tampered = {
+      ...intentBody('order-1'),
+      paidPriceTry: '0.01',
+      appliedRateStroops: '1',
+      currency: 'USD',
+    };
     const res = await h.app.inject({ method: 'POST', url: '/intent', payload: tampered });
 
     expect(res.statusCode).toBe(200);
@@ -49,9 +58,15 @@ describe('POST /intent — money-first ① order start', () => {
 
   it('surfaces the iyzico hosted payment page URL on a fresh intent', async () => {
     const h = makeHttpHarness();
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1' });
+    expect(res.json()).toMatchObject({
+      paymentPageUrl: 'https://sandbox-cpp.iyzipay.com/?token=tok-1',
+    });
   });
 
   it('GET /receipt exposes the settlement tx hash (null until it lands) + the TRY charged', async () => {
@@ -59,7 +74,12 @@ describe('POST /intent — money-first ① order start', () => {
     await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
     const res = await h.app.inject({ method: 'GET', url: '/receipt/order-1' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ orderId: 'order-1', status: 'pending', txHash: null, paidPriceTry: '41.42' });
+    expect(res.json()).toEqual({
+      orderId: 'order-1',
+      status: 'pending',
+      txHash: null,
+      paidPriceTry: '41.42',
+    });
     const missing = await h.app.inject({ method: 'GET', url: '/receipt/nope' });
     expect(missing.statusCode).toBe(404);
   });
@@ -74,10 +94,18 @@ describe('POST /intent — money-first ① order start', () => {
 
   it('is idempotent: a duplicate /intent preserves the persisted token (never resets it to null)', async () => {
     const h = makeHttpHarness();
-    const first = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const first = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(first.json()).toMatchObject({ orderId: 'order-1', token: 'tok-1' });
 
-    const second = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const second = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(second.statusCode).toBe(200);
     // the duplicate re-presents the SAME hosted form (paymentPageUrl carried through) so a re-click reopens it
     expect(second.json()).toMatchObject({
@@ -112,7 +140,11 @@ describe('POST /intent — money-first ① order start', () => {
 
   it('circuit-breaker: 409 PoolInsufficient when the pool cannot cover the amount (no seq, no order, no charge)', async () => {
     const h = makeHttpHarness(0n); // empty pool: availableStroops() (0) < amount
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'PoolInsufficient' });
     // fail-closed ①: the HARD gate fires BEFORE createIfAbsent/reserve/allocate — nothing leaked, nothing charged
@@ -126,7 +158,11 @@ describe('POST /intent — money-first ① order start', () => {
   it('returns 503 CheckoutUnavailable when the hosted form init malforms (fail-closed: reserved but never charged)', async () => {
     const h = makeHttpHarness();
     h.psp.init = TIMEOUT; // init malforms -> checkoutInitFailed -> FailedClean, no checkout form issued
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: 'CheckoutUnavailable' });
     // the form init WAS attempted, but the irreversible USDC leg was NEVER submitted (money-first: charge is last)
@@ -136,7 +172,11 @@ describe('POST /intent — money-first ① order start', () => {
 
   it('rejects a non-numeric amount (400 BadAmount)', async () => {
     const h = makeHttpHarness();
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: { ...intentBody('order-1'), amountStroops: 'abc' } });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: { ...intentBody('order-1'), amountStroops: 'abc' },
+    });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'BadAmount' });
   });
@@ -153,7 +193,11 @@ describe('POST /intent — money-first ① order start', () => {
 
   it('rejects an unallowlisted issuer (400 IssuerNotAllowlisted)', async () => {
     const h = makeHttpHarness();
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: { ...intentBody('order-1'), assetIssuer: 'GNOTALLOWED' } });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: { ...intentBody('order-1'), assetIssuer: 'GNOTALLOWED' },
+    });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'IssuerNotAllowlisted' });
   });
@@ -163,7 +207,11 @@ describe('POST /intent — money-first ① order start', () => {
       throw new Error('rate source down');
     };
     const h = makeHttpHarness(100n, failing);
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(res.statusCode).toBe(502);
     expect(res.json()).toEqual({ error: 'PriceUnavailable' });
     expect(h.registry.getByOrderId('order-1')).toBeUndefined(); // priced BEFORE any seq/order -> nothing leaked
@@ -175,7 +223,11 @@ describe('POST /intent — money-first ① order start', () => {
     h.stellar.loadDestinationSnapshot = async () => {
       throw new Error('network down');
     };
-    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/intent',
+      payload: intentBody('order-1'),
+    });
     expect(res.statusCode).toBe(502);
     expect(res.json()).toEqual({ error: 'SnapshotUnavailable' });
   });

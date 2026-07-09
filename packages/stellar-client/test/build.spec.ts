@@ -62,8 +62,8 @@ describe('buildPayTransaction — deterministic, correctly-shaped pay() builder'
     expect(() => buildPayTransaction({ ...buildParams, minTime: 2000, maxTime: 1000 })).toThrow(
       BuildError,
     );
-    expect(() => buildPayTransaction({ ...buildParams, maxTime: Number.POSITIVE_INFINITY })).toThrow(
-      BuildError,
-    );
+    expect(() =>
+      buildPayTransaction({ ...buildParams, maxTime: Number.POSITIVE_INFINITY }),
+    ).toThrow(BuildError);
   });
 });

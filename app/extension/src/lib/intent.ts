@@ -17,7 +17,11 @@ export interface IntentBody {
 
 export type BuildIntentResult =
   | { readonly ok: true; readonly body: IntentBody }
-  | { readonly ok: false; readonly reason: 'not-payable' | 'no-order-ref' | 'bad-order-ref' | 'no-issuer' | 'bad-amount' };
+  | {
+      readonly ok: false;
+      readonly reason:
+        'not-payable' | 'no-order-ref' | 'bad-order-ref' | 'no-issuer' | 'bad-amount';
+    };
 
 /** The coarse public status the backend exposes on GET /status/:orderId (never the internal crypto state). */
 export type PublicStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'review';
@@ -51,14 +55,26 @@ export function intentUiAction(response: IntentResponse): IntentUiAction {
   }
   if (response.alreadyStarted === true) {
     // a duplicate intent for an order already in progress — no new form opens; the first tab holds it
-    return { kind: 'already', text: 'This order is already in progress — continue in your card form tab.', poll: true };
+    return {
+      kind: 'already',
+      text: 'This order is already in progress — continue in your card form tab.',
+      poll: true,
+    };
   }
   // success but no hosted page to open — never claim a form is opening
-  return { kind: 'error', text: "Couldn't open the card form — you were not charged.", poll: false };
+  return {
+    kind: 'error',
+    text: "Couldn't open the card form — you were not charged.",
+    poll: false,
+  };
 }
 
 /** User-facing copy for a coarse public status, plus whether polling should stop (terminal state). */
-export function statusCopy(status: PublicStatus): { text: string; kind: 'info' | 'error'; terminal: boolean } {
+export function statusCopy(status: PublicStatus): {
+  text: string;
+  kind: 'info' | 'error';
+  terminal: boolean;
+} {
   switch (status) {
     case 'pending':
       return { text: 'Waiting for your card payment…', kind: 'info', terminal: false };

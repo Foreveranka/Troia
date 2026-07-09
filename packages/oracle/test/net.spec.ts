@@ -66,9 +66,9 @@ describe('fetchJsonWithRetry — bounded timeout + retry for live oracle reads',
     const fetch: FetchLike = async () => {
       throw new Error('always down');
     };
-    await expect(fetchJsonWithRetry('https://x', fetch, { timeoutMs: 1000, retries: 2 })).rejects.toThrow(
-      'always down',
-    );
+    await expect(
+      fetchJsonWithRetry('https://x', fetch, { timeoutMs: 1000, retries: 2 }),
+    ).rejects.toThrow('always down');
   });
 
   it('DEFAULT_NET_POLICY is a sane bounded default (a positive timeout and at least one retry)', () => {

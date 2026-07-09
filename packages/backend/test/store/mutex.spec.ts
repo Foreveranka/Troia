@@ -12,7 +12,11 @@ describe('Mutex', () => {
     };
     process.on('unhandledRejection', onUnhandled);
 
-    await expect(m.run(async () => { throw new Error('boom'); })).rejects.toThrow('boom');
+    await expect(
+      m.run(async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
     // the lock must still work — the next fn runs and its OWN result comes back (not 'boom')
     await expect(m.run(async () => 42)).resolves.toBe(42);
 
@@ -69,8 +73,12 @@ describe('KeyedMutex', () => {
     let a = 0;
     let b = 0;
     await Promise.all([
-      km.run('a', async () => { a = 1; }),
-      km.run('b', async () => { b = 1; }),
+      km.run('a', async () => {
+        a = 1;
+      }),
+      km.run('b', async () => {
+        b = 1;
+      }),
     ]);
     expect([a, b]).toEqual([1, 1]);
     expect(km.size()).toBe(0);
@@ -78,7 +86,11 @@ describe('KeyedMutex', () => {
 
   it('a throwing section on one key does not wedge that key', async () => {
     const km = new KeyedMutex();
-    await expect(km.run('k', async () => { throw new Error('x'); })).rejects.toThrow('x');
+    await expect(
+      km.run('k', async () => {
+        throw new Error('x');
+      }),
+    ).rejects.toThrow('x');
     await expect(km.run('k', async () => 7)).resolves.toBe(7);
     expect(km.size()).toBe(0);
   });

@@ -20,7 +20,8 @@ export type RawIyzicoResult =
 
 /** Projected happy-path fields for the NEXT step (adapter success path). A projector returns `malformed`
  *  rather than fabricating a field, so a missing/mistyped value can never masquerade as a real one. */
-export type Projection<T> = ({ readonly kind: 'ok' } & T) | { readonly kind: 'malformed'; readonly reason: string };
+export type Projection<T> =
+  ({ readonly kind: 'ok' } & T) | { readonly kind: 'malformed'; readonly reason: string };
 
 export interface CheckoutFormInitFields {
   readonly token: string;

@@ -85,7 +85,11 @@ describe('PayoutIntent.build — one leaf per BuildError', () => {
     expectError(makeRaw({ orderId: 'ab\uD83D' }), makeCtx(), 'OrderIdMalformed'));
   it('OrderIdEmpty', () => expectError(makeRaw({ orderId: '' }), makeCtx(), 'OrderIdEmpty'));
   it('AddressInvalidChecksum', () =>
-    expectError(makeRaw({ destination: DEST_G.toLowerCase() }), makeCtx(), 'AddressInvalidChecksum'));
+    expectError(
+      makeRaw({ destination: DEST_G.toLowerCase() }),
+      makeCtx(),
+      'AddressInvalidChecksum',
+    ));
   it('MemoMissing', () => expectError(makeRaw({ memo: null }), makeCtx(), 'MemoMissing'));
   it('MemoWrongLength', () => expectError(makeRaw({ memo: 'dead' }), makeCtx(), 'MemoWrongLength'));
   it('MemoZero', () => expectError(makeRaw({ memo: '0'.repeat(64) }), makeCtx(), 'MemoZero'));
@@ -104,9 +108,17 @@ describe('PayoutIntent.build — one leaf per BuildError', () => {
       'IssuerNotAllowlisted',
     ));
   it('TrustlineMissing (no matching trustline)', () =>
-    expectError(makeRaw(), makeCtx({ snapshot: { exists: true, trustlines: [] } }), 'TrustlineMissing'));
+    expectError(
+      makeRaw(),
+      makeCtx({ snapshot: { exists: true, trustlines: [] } }),
+      'TrustlineMissing',
+    ));
   it('TrustlineMissing (account does not exist)', () =>
-    expectError(makeRaw(), makeCtx({ snapshot: { exists: false, trustlines: [] } }), 'TrustlineMissing'));
+    expectError(
+      makeRaw(),
+      makeCtx({ snapshot: { exists: false, trustlines: [] } }),
+      'TrustlineMissing',
+    ));
 });
 
 describe('PayoutIntent.build — deterministic control order (multi-violation input)', () => {
@@ -133,7 +145,11 @@ describe('PayoutIntent.build — deterministic control order (multi-violation in
     );
   });
   it('MemoMissing wins over amount/issuer/trustline', () => {
-    expectError(makeRaw({ memo: null, amount: 0n, assetIssuer: OTHER_ISSUER }), brokenCtx, 'MemoMissing');
+    expectError(
+      makeRaw({ memo: null, amount: 0n, assetIssuer: OTHER_ISSUER }),
+      brokenCtx,
+      'MemoMissing',
+    );
   });
   it('AmountNonPositive wins over issuer/trustline', () => {
     expectError(makeRaw({ amount: 0n, assetIssuer: OTHER_ISSUER }), brokenCtx, 'AmountNonPositive');
@@ -147,7 +163,9 @@ describe('PayoutIntent.build — deterministic control order (multi-violation in
   });
 
   it('buildErrorRank reflects the documented control order', () => {
-    expect(buildErrorRank('OrderIdMalformed')).toBeLessThan(buildErrorRank('AddressInvalidChecksum'));
+    expect(buildErrorRank('OrderIdMalformed')).toBeLessThan(
+      buildErrorRank('AddressInvalidChecksum'),
+    );
     expect(buildErrorRank('MemoMismatch')).toBeLessThan(buildErrorRank('AmountNonPositive'));
     expect(buildErrorRank('IssuerNotAllowlisted')).toBeLessThan(buildErrorRank('TrustlineMissing'));
   });

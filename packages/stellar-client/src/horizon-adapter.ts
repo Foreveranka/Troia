@@ -26,7 +26,11 @@ export class HorizonAdapter implements HorizonPort {
 
   async loadAccountSnapshot(destination: string): Promise<AccountSnapshotJson | null> {
     try {
-      const account = await withTimeout(this.server.loadAccount(destination), this.timeoutMs, 'horizon.loadAccount');
+      const account = await withTimeout(
+        this.server.loadAccount(destination),
+        this.timeoutMs,
+        'horizon.loadAccount',
+      );
       return { balances: account.balances };
     } catch (e) {
       if (isNotFound(e)) return null;

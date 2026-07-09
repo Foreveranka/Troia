@@ -15,7 +15,9 @@ describe('isValidStellarPublicKey', () => {
 
   it('rejects a corrupted checksum (one payload character changed)', () => {
     const swapped = MERCHANT[10] === 'A' ? 'B' : 'A';
-    expect(isValidStellarPublicKey(MERCHANT.slice(0, 10) + swapped + MERCHANT.slice(11))).toBe(false);
+    expect(isValidStellarPublicKey(MERCHANT.slice(0, 10) + swapped + MERCHANT.slice(11))).toBe(
+      false,
+    );
   });
 
   it('rejects wrong length (truncated or extended)', () => {

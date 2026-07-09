@@ -12,15 +12,31 @@ import { PspBuildError } from '../src/errors.js';
 import type { Address, BasketItem, Buyer, PaymentCard } from '../src/types.js';
 
 const BUYER: Buyer = {
-  id: 'b1', name: 'Ada', surname: 'Lovelace', identityNumber: '11111111111',
-  email: 'a@b.co', registrationAddress: 'Addr 1', city: 'Istanbul', country: 'Turkey', ip: '1.2.3.4',
+  id: 'b1',
+  name: 'Ada',
+  surname: 'Lovelace',
+  identityNumber: '11111111111',
+  email: 'a@b.co',
+  registrationAddress: 'Addr 1',
+  city: 'Istanbul',
+  country: 'Turkey',
+  ip: '1.2.3.4',
 };
-const ADDR: Address = { contactName: 'Ada Lovelace', city: 'Istanbul', country: 'Turkey', address: 'Addr 1' };
+const ADDR: Address = {
+  contactName: 'Ada Lovelace',
+  city: 'Istanbul',
+  country: 'Turkey',
+  address: 'Addr 1',
+};
 const ITEMS: BasketItem[] = [
   { id: 'i1', name: 'Item', category1: 'General', itemType: 'VIRTUAL', price: 10 },
 ];
 const CARD: PaymentCard = {
-  cardHolderName: 'Ada Lovelace', cardNumber: '5528790000000008', expireMonth: '12', expireYear: '2030', cvc: '123',
+  cardHolderName: 'Ada Lovelace',
+  cardNumber: '5528790000000008',
+  expireMonth: '12',
+  expireYear: '2030',
+  cvc: '123',
 };
 
 describe('formatPrice — matches the SDK on valid numbers, fails closed on invalid', () => {
@@ -42,24 +58,60 @@ describe('formatPrice — matches the SDK on valid numbers, fails closed on inva
 
   it('fails closed on partial-numeric / non-decimal strings (no parseFloat prefix-salvage / truncation)', () => {
     // parseFloat would silently salvage these to a WRONG amount; the canonical guard rejects them.
-    for (const bad of ['10abc', '12.34.56', '1,5', '10 50', '0x10', '5 TRY', '-5', '.5', '1e3', '1_000']) {
-      expect(() => formatPrice(bad), `formatPrice(${JSON.stringify(bad)}) must throw`).toThrow(PspBuildError);
+    for (const bad of [
+      '10abc',
+      '12.34.56',
+      '1,5',
+      '10 50',
+      '0x10',
+      '5 TRY',
+      '-5',
+      '.5',
+      '1e3',
+      '1_000',
+    ]) {
+      expect(() => formatPrice(bad), `formatPrice(${JSON.stringify(bad)}) must throw`).toThrow(
+        PspBuildError,
+      );
     }
   });
 });
 
 describe('builders reject an empty conversationId (the dedupe key)', () => {
   it('throws PspBuildError on an empty/blank conversationId', () => {
-    expect(() => buildPostAuthRequest({ conversationId: '', paymentId: 'p1', paidPrice: 10, currency: 'TRY', ip: '1.2.3.4' })).toThrow(PspBuildError);
-    expect(() => buildCancelRequest({ conversationId: '  ', paymentId: 'p1', ip: '1.2.3.4' })).toThrow(PspBuildError);
+    expect(() =>
+      buildPostAuthRequest({
+        conversationId: '',
+        paymentId: 'p1',
+        paidPrice: 10,
+        currency: 'TRY',
+        ip: '1.2.3.4',
+      }),
+    ).toThrow(PspBuildError);
+    expect(() =>
+      buildCancelRequest({ conversationId: '  ', paymentId: 'p1', ip: '1.2.3.4' }),
+    ).toThrow(PspBuildError);
   });
 });
 
 describe('request builders — golden shape + sign-the-sent-string', () => {
   it('buildPostAuthRequest: exact body, path, formatPrice, and json === JSON.stringify(body)', () => {
-    const req = buildPostAuthRequest({ conversationId: 'c1', paymentId: 'p1', paidPrice: 10, currency: 'TRY', ip: '1.2.3.4' });
+    const req = buildPostAuthRequest({
+      conversationId: 'c1',
+      paymentId: 'p1',
+      paidPrice: 10,
+      currency: 'TRY',
+      ip: '1.2.3.4',
+    });
     expect(req.path).toBe('/payment/postauth');
-    expect(req.body).toEqual({ locale: 'tr', conversationId: 'c1', paymentId: 'p1', paidPrice: '10.0', currency: 'TRY', ip: '1.2.3.4' });
+    expect(req.body).toEqual({
+      locale: 'tr',
+      conversationId: 'c1',
+      paymentId: 'p1',
+      paidPrice: '10.0',
+      currency: 'TRY',
+      ip: '1.2.3.4',
+    });
     expect(req.json).toBe(JSON.stringify(req.body));
   });
 
@@ -69,7 +121,13 @@ describe('request builders — golden shape + sign-the-sent-string', () => {
     expect(cancel.body).toHaveProperty('paymentId', 'pay-1');
     expect(cancel.body).not.toHaveProperty('paymentTransactionId');
 
-    const refund = buildRefundRequest({ conversationId: 'c1', paymentTransactionId: 'txn-9', price: 5, currency: 'TRY', ip: '1.2.3.4' });
+    const refund = buildRefundRequest({
+      conversationId: 'c1',
+      paymentTransactionId: 'txn-9',
+      price: 5,
+      currency: 'TRY',
+      ip: '1.2.3.4',
+    });
     expect(refund.path).toBe('/payment/refund');
     expect(refund.body).toHaveProperty('paymentTransactionId', 'txn-9');
     expect(refund.body).not.toHaveProperty('paymentId');
@@ -78,8 +136,17 @@ describe('request builders — golden shape + sign-the-sent-string', () => {
 
   it('checkout initialize uses the DIRECT-SALE (immediate-capture) path, not the preauth (block) path', () => {
     const init = buildInitializeCheckoutFormRequest({
-      conversationId: 'c1', price: 10, paidPrice: 10, currency: 'TRY', basketId: 'B1', paymentGroup: 'PRODUCT',
-      callbackUrl: 'https://x/cb', buyer: BUYER, shippingAddress: ADDR, billingAddress: ADDR, basketItems: ITEMS,
+      conversationId: 'c1',
+      price: 10,
+      paidPrice: 10,
+      currency: 'TRY',
+      basketId: 'B1',
+      paymentGroup: 'PRODUCT',
+      callbackUrl: 'https://x/cb',
+      buyer: BUYER,
+      shippingAddress: ADDR,
+      billingAddress: ADDR,
+      basketItems: ITEMS,
     });
     expect(init.path).toBe('/payment/iyzipos/checkoutform/initialize/ecom');
     expect(init.body).toHaveProperty('price', '10.0');
@@ -94,8 +161,18 @@ describe('request builders — golden shape + sign-the-sent-string', () => {
     expect(retrieve.json).toBe(JSON.stringify(retrieve.body));
 
     const preauth = buildPreAuthRequest({
-      conversationId: 'c1', price: 10, paidPrice: 10, currency: 'TRY', installment: 1, basketId: 'B1',
-      paymentGroup: 'PRODUCT', paymentCard: CARD, buyer: BUYER, shippingAddress: ADDR, billingAddress: ADDR, basketItems: ITEMS,
+      conversationId: 'c1',
+      price: 10,
+      paidPrice: 10,
+      currency: 'TRY',
+      installment: 1,
+      basketId: 'B1',
+      paymentGroup: 'PRODUCT',
+      paymentCard: CARD,
+      buyer: BUYER,
+      shippingAddress: ADDR,
+      billingAddress: ADDR,
+      basketItems: ITEMS,
     });
     expect(preauth.path).toBe('/payment/preauth');
     expect(preauth.body).toHaveProperty('paymentCard');

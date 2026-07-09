@@ -12,7 +12,12 @@ export { buildStellarPort } from './build-stellar-port.js';
 export type { BuildStellarPortOptions } from './build-stellar-port.js';
 
 export { buildTestnetServerDeps, DEFAULT_TESTNET_MERCHANT } from './testnet-deps.js';
-export type { TestnetSecrets, TestnetServerConfig, MerchantTemplate, BootstrapReads } from './testnet-deps.js';
+export type {
+  TestnetSecrets,
+  TestnetServerConfig,
+  MerchantTemplate,
+  BootstrapReads,
+} from './testnet-deps.js';
 
 export { runPreflight, buildPreflightProbes } from './preflight.js';
 export type {

@@ -43,7 +43,11 @@ import type { PspCost } from './psp-cost.js';
 export { applyPspPassthrough } from './psp-cost.js';
 export type { PspCost, PspPassthrough } from './psp-cost.js';
 
-export function priceUsdc(usdcStroops: bigint, oracleMidE7: bigint, spreadBps: number): PriceBreakdown {
+export function priceUsdc(
+  usdcStroops: bigint,
+  oracleMidE7: bigint,
+  spreadBps: number,
+): PriceBreakdown {
   if (usdcStroops <= 0n) throw new RangeError('usdcStroops must be > 0');
   if (oracleMidE7 <= 0n) throw new RangeError('oracleMidE7 must be > 0');
   const appliedRateE7 = applySpread(oracleMidE7, spreadBps);

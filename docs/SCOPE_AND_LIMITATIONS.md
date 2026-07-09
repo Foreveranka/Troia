@@ -5,8 +5,8 @@
 
 Troia is a **custodial TRY→USDC settlement bridge on Stellar**, delivered as a **testnet proof-of-concept**. A
 Turkish user pays TRY with a Troy card via iyzico; the operator settles the merchant in USDC from a pre-funded
-Stellar pool; the FX spread is the revenue. Positioning: *a settlement layer that makes every lira accountable
-hash-by-hash — it never silently loses money, and the one irreversible loss bucket is surfaced, never hidden.*
+Stellar pool; the FX spread is the revenue. Positioning: _a settlement layer that makes every lira accountable
+hash-by-hash — it never silently loses money, and the one irreversible loss bucket is surfaced, never hidden._
 
 ---
 
@@ -14,7 +14,7 @@ hash-by-hash — it never silently loses money, and the one irreversible loss bu
 
 We build **inside-out**: the money-safety core and the reviewer-verifiable reconciler first (on fixtures), then
 the real rails, then the storefront. This is a sequencing choice, not a hedge — the reconciliation/proof layer
-is hardened *before* real money moves, so the guarantees are demonstrable rather than asserted.
+is hardened _before_ real money moves, so the guarantees are demonstrable rather than asserted.
 
 Testnet is where those guarantees are exercised end-to-end with **zero real-money risk** (the USDC is
 self-minted; see §3). The mathematics, the double-pay shields, the solvency mechanism, the price-lock, and the
@@ -36,7 +36,7 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
 - **Zero-trust pricing** — the ₺ price is computed **server-side** as four legible lines: the FX oracle **mid**,
   the **FX-risk commission** (μ·n + z·σ·√n + margin, with n = the real iyzico settlement valör ~21 days), and a
   **PSP cost pass-through** grossed up `÷(1−rate)+fixed` so the net still covers mid+FX+margin after the
-  provider's cut. A client-supplied price *or currency* is ignored; the same frozen price is what the form charges.
+  provider's cut. A client-supplied price _or currency_ is ignored; the same frozen price is what the form charges.
 - **Deterministic FX oracle** — median / distinct-source quorum / symmetric staleness band / fail-closed on
   disagreement, all on injected quotes (no AI, no live network in the tested path).
 - **Reconciler + `just verify`** — the self-verifying evidence artifact, offline and network-blocked. See
@@ -57,24 +57,24 @@ acceptance bar for every change.
 ## 3. Testnet boundaries (deliberate, documented)
 
 - **Self-minted USDC.** The pool is funded with our own testnet USDC (own issuer + SAC, unlimited mint). This
-  means the **solvency *mechanism*** (reservation + contract guard) is fully exercised, but **economic solvency**
+  means the **solvency _mechanism_** (reservation + contract guard) is fully exercised, but **economic solvency**
   — real inventory adequacy, i.e. actually having bought the USDC — is deferred. `SimulatedRebalance` (testnet
   mint) is a built + tested `packages/rebalance`; only the real-CEX buy that actually acquires the USDC (economic
   solvency) is Phase-2. The token is valueless; the ledger, solvency mechanism, and reconciliation logic are real.
 - **`signed ≠ settled`.** We prove what we signed (cryptographically, reset-proof) and what settled (only while
   the chain remembers it). A wiped testnet or a never-landed tx surfaces as `UNSETTLED`, never as a false match.
-- **The one residual loss window is named, not hidden.** In the narrow case *USDC sent → the reversible TRY leg
-  cannot be unwound*, the order lands in `LossReview` (customer-facing `review`) — surfaced with an evidence
+- **The one residual loss window is named, not hidden.** In the narrow case _USDC sent → the reversible TRY leg
+  cannot be unwound_, the order lands in `LossReview` (customer-facing `review`) — surfaced with an evidence
   flag, never silently absorbed. On testnet no real value is at stake; the path is demonstrated as a maturity
   signal.
 - **iyzico is the sandbox.** The fiat leg runs against iyzico's sandbox with Troy test cards; a real direct-sale
-  charge is proven (`paymentId 36418597`). The real settlement **valör** (iyzico blocking, 2–21 days, *not* the
+  charge is proven (`paymentId 36418597`). The real settlement **valör** (iyzico blocking, 2–21 days, _not_ the
   marketed T+1) **cannot be measured in the sandbox**, so the FX-risk window uses the researched conservative 21
   days. The `classifyIyzicoResult` success shape and closed terminal-decline `errorCode` set **are** calibrated
   against the sandbox — a real charge plus iyzico's published taxonomy and its declining test cards.
 - **Demo valör is compressed.** The real settlement valör (~21 days, above) is **compressed** for the demo to
   `DEMO_VALOR_SECS` (default **30s**, min 1) so the automatic TRY-driven rebalance bot refills the pool within the
-  demo window. This is purely demo time-compression of the *settlement clock*; it is **separate** from the FX-risk
+  demo window. This is purely demo time-compression of the _settlement clock_; it is **separate** from the FX-risk
   pricing knob (`valorDays` = 21) that sizes the commission, which still uses the real ~21-day figure.
 - **Unit economics are disclosed, not assumed.** The pricing model is complete and never loses money by
   construction (the PSP cut is grossed up, the FX-risk buffer is sized to the real valör). But the resulting
@@ -104,7 +104,7 @@ The remaining honest limitations are operational, not "unrun":
   rather than wedging the poller or freezing a checkout) and gated by a **readiness preflight** (`just preflight`).
   Concurrent-load behavior (the SPIKE-3 solvency race under many simultaneous webhooks) is unit-proven offline but
   not yet exercised against live rails.
-- **The revert-code read path is exercised only by fakes.** A *successful* live `pay()` is proven (above), but a
+- **The revert-code read path is exercised only by fakes.** A _successful_ live `pay()` is proven (above), but a
   landed-and-**reverted** `pay()`'s diagnostic events (the input to the revert-code read) are the one shape only a
   live failing tx confirms — `scripts/probe-revert.mjs` is the check for it once such a tx exists on testnet.
 - **`InMemoryStore` / `InMemoryJournal` are single-process.** Correct for the PoC live-smoke (one process, no
@@ -117,7 +117,7 @@ The remaining honest limitations are operational, not "unrun":
   persisted with that seq. A crash in that window is **money-safe** (the `Processed(tx_id)` guard, derived from order_id, + the
   single-use sequence shield both cap USDC delivery at one per order) and, for a completed charge, **self-heals**
   (recovery re-retrieves the same sale → `chargeOk` again → idempotent `allocate` returns the same seq →
-  submit). The only residual is a *theoretical* liveness stranding of that seq, and it is **not reachable in the
+  submit). The only residual is a _theoretical_ liveness stranding of that seq, and it is **not reachable in the
   PoC**: the in-memory sequence store is wiped by the very crash, so on restart the allocator re-bootstraps from
   the live on-chain sequence. A durable sequence store (Phase 2) closes it by reconciling the order's seq from
   `activeSeqFor(orderId)` on recovery.
@@ -133,9 +133,9 @@ hardening (load/soak, the reverted-tx read path) — not "unrun."
   background settlement worker (`settleTick`) arms every money-good order and, after the settlement valör
   (demo-compressed to ~30s, see §3), refills the pool from that order's collected TRY at the live oracle rate by
   minting real issuer-signed USDC (`SimulatedRebalance` → `createSacMintClient`). The **only** deferred piece is
-  the real-exchange buy+withdraw that *economically acquires* the USDC (e.g. Binance/Bybit/OKX, the venues the
+  the real-exchange buy+withdraw that _economically acquires_ the USDC (e.g. Binance/Bybit/OKX, the venues the
   oracle reads; async finality — invariant ③b). The system is seamed for a future **agent + on/off-ramp service**
-  (the agent owns the *decision*, the on/off-ramp owns the real fiat↔USDC *execution*); on mainnet that seam
+  (the agent owns the _decision_, the on/off-ramp owns the real fiat↔USDC _execution_); on mainnet that seam
   replaces the testnet SAC mint with no change to the backend or the money-first core. The `poolLowWatermarkStroops`
   low-water mark only **warns** (`/intent → poolLow:true`) — it is **not** the trigger. See the treasury cash-flow
   cycle + timing (rebalance runs on iyzico's valör cadence, not pool drainage) in **ARCHITECTURE §5a**.

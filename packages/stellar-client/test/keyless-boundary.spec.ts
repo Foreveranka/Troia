@@ -41,7 +41,14 @@ describe('keyless / dirty separation guards', () => {
   });
 
   it('no file in the package reads secrets from process.env (secrets are injected at the composition root)', () => {
-    for (const f of [...PURE_CORE, 'client.ts', 'index.ts', 'signer.ts', 'rpc-adapter.ts', 'horizon-adapter.ts']) {
+    for (const f of [
+      ...PURE_CORE,
+      'client.ts',
+      'index.ts',
+      'signer.ts',
+      'rpc-adapter.ts',
+      'horizon-adapter.ts',
+    ]) {
       expect(read(f), `${f} must not read process.env`).not.toContain('process.env');
     }
   });

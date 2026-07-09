@@ -28,7 +28,8 @@ describe('client.submitPay — write-ahead ordering (persist before send)', () =
         return fakeSimResult(TROY_POOL, MERCHANT);
       },
       async send(signedXdr: string): Promise<SendOutcome> {
-        if (!persisted.has(signedXdr)) throw new Error('SEND BEFORE PERSIST — write-ahead violated');
+        if (!persisted.has(signedXdr))
+          throw new Error('SEND BEFORE PERSIST — write-ahead violated');
         log.push('send');
         return { kind: 'PENDING', hashHex: 'ab' };
       },

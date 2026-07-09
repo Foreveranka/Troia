@@ -39,8 +39,10 @@ export function verifyReport(report: ReconReport): VerifyResult {
   for (const o of report.orders) {
     const gt = resolveGroundTruth(o.business_intent, o.ledger_evidence, o.chain_evidence, op, pass);
     const tag = o.order_id;
-    if (gt.verdict !== o.verdict) failures.push(`${tag}: verdict ${o.verdict} != recomputed ${gt.verdict}`);
-    if (gt.status !== o.status) failures.push(`${tag}: status ${o.status} != recomputed ${gt.status}`);
+    if (gt.verdict !== o.verdict)
+      failures.push(`${tag}: verdict ${o.verdict} != recomputed ${gt.verdict}`);
+    if (gt.status !== o.status)
+      failures.push(`${tag}: status ${o.status} != recomputed ${gt.status}`);
     if (gt.signature_valid !== o.signature_valid) failures.push(`${tag}: signature_valid mismatch`);
     if (gt.hash_consistent !== o.hash_consistent) failures.push(`${tag}: hash_consistent mismatch`);
     if (gt.chain_bound !== o.chain_bound) failures.push(`${tag}: chain_bound mismatch`);

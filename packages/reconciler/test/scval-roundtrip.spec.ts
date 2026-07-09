@@ -32,7 +32,9 @@ describe('reconciler — stellar-base build/sign/hash/decode roundtrip (foundati
     expect(dec.recomputedHash).toBe(built.hash);
 
     // the doc shorthand is WRONG: sha256(envelope bytes) is NOT the tx hash
-    const blobSha = createHash('sha256').update(Buffer.from(built.signed_xdr, 'base64')).digest('hex');
+    const blobSha = createHash('sha256')
+      .update(Buffer.from(built.signed_xdr, 'base64'))
+      .digest('hex');
     expect(blobSha).not.toBe(built.hash);
 
     // pay() args decode cleanly and with the expected native types

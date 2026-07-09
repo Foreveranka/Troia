@@ -45,7 +45,9 @@ const probes = buildPreflightProbes({
     webhookSigningSecret: process.env.WEBHOOK_SIGNING_SECRET?.trim() || iyzicoSecretKey,
   },
   // The same settlement-rate policy `just serve` uses (0.5% band, genuine 3-source majority).
-  spotOracle: new LiveCexOracle({ policy: { maxAgeMs: 60_000, deviationThresholdBps: 50, minQuorum: 3 } }),
+  spotOracle: new LiveCexOracle({
+    policy: { maxAgeMs: 60_000, deviationThresholdBps: 50, minQuorum: 3 },
+  }),
   history: new YahooUsdTryHistory(),
 });
 
@@ -56,7 +58,9 @@ const checks = [
   {
     name: 'operator key matches deployment',
     ok: keyOk,
-    detail: keyOk ? derivedOperator : `env derives ${derivedOperator} != deployment ${network.operatorPublic}`,
+    detail: keyOk
+      ? derivedOperator
+      : `env derives ${derivedOperator} != deployment ${network.operatorPublic}`,
   },
   ...report.checks,
 ];

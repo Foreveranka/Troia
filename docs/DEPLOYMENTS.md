@@ -9,10 +9,10 @@ G-addresses, contract C-addresses, tx hashes); the three signing secrets live on
 
 ## Accounts (classic `G…`)
 
-| Role | Address | Explorer |
-|---|---|---|
-| admin | `GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ` | [account](https://stellar.expert/explorer/testnet/account/GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ) |
-| operator | `GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S` | [account](https://stellar.expert/explorer/testnet/account/GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S) |
+| Role          | Address                                                    | Explorer                                                                                                            |
+| ------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| admin         | `GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ` | [account](https://stellar.expert/explorer/testnet/account/GBNPLKNNSAR6JZRYQLDFJKZ5WY73S42BDDPWVHNLDMNHIQHLZYOJ2QDZ) |
+| operator      | `GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S` | [account](https://stellar.expert/explorer/testnet/account/GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S) |
 | issuer (USDC) | `GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W` | [account](https://stellar.expert/explorer/testnet/account/GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W) |
 
 Three separate keypairs even on testnet (no collapse) — admin (pause/upgrade/rotate), operator (signs `pay()`),
@@ -20,8 +20,8 @@ issuer (USDC SAC mint authority). See ARCHITECTURE §9.
 
 ## Contracts (`C…`)
 
-| Contract | Address | Explorer |
-|---|---|---|
+| Contract | Address                                                    | Explorer                                                                                                              |
+| -------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | USDC SAC | `CCOAUUKWWPSVFZUPIVZECTV3PIVFRTVFKWWF2PQY5Q5CN3JBCDXGNCMB` | [contract](https://stellar.expert/explorer/testnet/contract/CCOAUUKWWPSVFZUPIVZECTV3PIVFRTVFKWWF2PQY5Q5CN3JBCDXGNCMB) |
 | TroyPool | `CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ` | [contract](https://stellar.expert/explorer/testnet/contract/CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ) |
 
@@ -32,11 +32,11 @@ issuer (USDC SAC mint authority). See ARCHITECTURE §9.
 
 ## Bootstrap transactions
 
-| Step | Tx | Explorer |
-|---|---|---|
-| Deploy USDC SAC | `4c73b7fae52b4850435dff931ad841b1cf51e2453950637091bfc956f71e4adc` | [tx](https://stellar.expert/explorer/testnet/tx/4c73b7fae52b4850435dff931ad841b1cf51e2453950637091bfc956f71e4adc) |
-| Deploy TroyPool | `9f66a87bf20c920146c861ac1db3582d99a23243c24a157fdeab2675485c6fe0` | [tx](https://stellar.expert/explorer/testnet/tx/9f66a87bf20c920146c861ac1db3582d99a23243c24a157fdeab2675485c6fe0) |
-| Mint 1000 USDC → pool (initial) | `03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609` | [tx](https://stellar.expert/explorer/testnet/tx/03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609) |
+| Step                                        | Tx                                                                 | Explorer                                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Deploy USDC SAC                             | `4c73b7fae52b4850435dff931ad841b1cf51e2453950637091bfc956f71e4adc` | [tx](https://stellar.expert/explorer/testnet/tx/4c73b7fae52b4850435dff931ad841b1cf51e2453950637091bfc956f71e4adc) |
+| Deploy TroyPool                             | `9f66a87bf20c920146c861ac1db3582d99a23243c24a157fdeab2675485c6fe0` | [tx](https://stellar.expert/explorer/testnet/tx/9f66a87bf20c920146c861ac1db3582d99a23243c24a157fdeab2675485c6fe0) |
+| Mint 1000 USDC → pool (initial)             | `03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609` | [tx](https://stellar.expert/explorer/testnet/tx/03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609) |
 | Mint +99,000 USDC → pool (top-up → 100,000) | `5f224b9b0d02ad40b6aa42e8527aa836e0daa95b8d97aa796e77ec06984fc8e4` | [tx](https://stellar.expert/explorer/testnet/tx/5f224b9b0d02ad40b6aa42e8527aa836e0daa95b8d97aa796e77ec06984fc8e4) |
 
 > The two mints above are a one-time historical seeding of this deploy; a fresh `just fund` today seeds the full
@@ -65,13 +65,13 @@ An operator-signed `pay()` moved USDC from the pool to a merchant end-to-end, us
   - `tx_id = fdce630a4557f4bb37a6d7c1d3e011f0749b1f2e0de54be336e8d4ee789876cf`
   - `memo  = 6115721c3f246433a851a959ba9b0bc8c3de9bc486f5da2cdd0f022bad30c5a9`
 
-| Check | Result |
-|---|---|
+| Check                            | Result                                                                                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pay()` payout (operator-signed) | [tx `5a3d60cc…`](https://stellar.expert/explorer/testnet/tx/5a3d60cc25fc82025560d1c13b74f63b619393e194ada43cc6b8317637d64f13) — emits `PaymentMade` with the derived `tx_id`/`memo` |
-| Pool balance | 100,000 → **99,999 USDC** (`999990000000`) |
-| Merchant balance | 0 → **1 USDC** (`10000000`) |
-| Replay guard | `is_processed(tx_id) = true` |
-| **Double-pay shield** | a second `pay()` with the same `tx_id` **reverts** `AlreadyProcessed` (`Error(Contract, #1)`); the pool balance is unchanged |
+| Pool balance                     | 100,000 → **99,999 USDC** (`999990000000`)                                                                                                                                          |
+| Merchant balance                 | 0 → **1 USDC** (`10000000`)                                                                                                                                                         |
+| Replay guard                     | `is_processed(tx_id) = true`                                                                                                                                                        |
+| **Double-pay shield**            | a second `pay()` with the same `tx_id` **reverts** `AlreadyProcessed` (`Error(Contract, #1)`); the pool balance is unchanged                                                        |
 
 The double-pay revert is the on-chain half of invariant ② (the operator sequence is the primary shield; the
 contract's `Processed(tx_id)` guard is the second): the irreversible USDC leg can never pay one order twice.

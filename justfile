@@ -128,3 +128,10 @@ verify-live:
     node --import ./packages/reconciler/bin/block-net.mjs \
          ./packages/reconciler/bin/verify.mjs \
          ./packages/reconciler/test/fixtures/recon-report.live.json
+
+# Forges the honest report in a temp file and proves the verifier catches it by RE-DERIVATION (verify exit 1),
+# not by failing to read it (verify exit 2). Writes nothing into the repo, so it runs on a bare clone in any order.
+# The NEGATIVE half of the offline proof: a lie cannot pass.
+verify-tampered:
+    pnpm --filter @troia/reconciler build
+    node scripts/tamper-check.mjs

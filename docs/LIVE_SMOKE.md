@@ -3,10 +3,12 @@
 > **✅ Executed.** This run has been driven end-to-end: a real Troy sandbox card charge automatically drove a real
 > on-chain `TroyPool.pay()` (74 USDC pool → merchant, tx
 > [`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded);
-> see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). This doc remains the runbook for reproducing it.
+> see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). The executed run used the now-built **storefront + Chrome extension**
+> path (not just `scripts/intent.mjs`), and `just serve` now also runs the **TRY-driven rebalance bot** (Step 4).
+> This doc remains the runbook for reproducing it.
 >
 > This is the operational script for the Phase-4.5 live step: a real iyzico charge automatically driving a real
-> on-chain `TroyPool.pay()`, behind a public webhook tunnel on testnet. Everything the run needs is wired +
+> on-chain `TroyPool.pay()`, behind a public callback/return tunnel on testnet. Everything the run needs is wired +
 > offline-tested (see [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4); this doc is how a human actually
 > drives it. Honest boundary: **`signed ≠ settled`** — we prove what we signed cryptographically and what settled
 > while the chain remembers it.
@@ -22,8 +24,10 @@ The network-facing halves are type-checked and exercised by fakes offline, but a
 hit a real RPC / the real sandbox. This run smokes:
 
 1. **The dirty Stellar adapters** — `readSacBalance` (pool balance), the `pay()` submit + poll (`getTransaction`,
-   `getLedgerEntries`, `getLatestLedger`), and destination trustline load (Horizon).
-2. **The iyzico HTTP client** — a real hosted-form init, a real webhook, a real signed callback.
+   `getLedgerEntries`, `getLatestLedger`), destination trustline load (Horizon), and — new — the **issuer-signed
+   USDC SAC mint** (`createSacMintClient` / `sac-mint`) that the rebalance bot uses to refill the pool.
+2. **The iyzico HTTP client** — a real hosted-form init and a real signed callback (settlement itself is the poll
+   worker's authenticated pull, not a configured server-to-server webhook).
 3. **The live oracle inputs** — the CEX spot mid (Binance/Bybit/OKX) and the Yahoo daily-close history, now behind
    per-attempt timeouts + bounded retry (a hung source drops fail-closed, a transient blip retries).
 4. **The revert-read shape** (optional, flag-1) — whether a landed-and-reverted `pay()` carries the diagnostic
@@ -40,6 +44,8 @@ hit a real RPC / the real sandbox. This run smokes:
 - **A public tunnel** — e.g. `cloudflared` (`brew install cloudflared`), `ngrok`, or any https reverse tunnel to
   `localhost`. iyzico must be able to POST the webhook to a public URL.
 - `.env` filled from `.env.example` (see the secret list there). `.env` + `deployment.testnet.json` are git-ignored.
+- **`just serve` also requires `TROIA_ISSUER_SECRET`** — the USDC-SAC admin key that signs the rebalance mint,
+  **separate from the operator payout key**; boot fails **closed** without it.
 
 ---
 
@@ -62,6 +68,8 @@ This smokes every live dependency **in isolation** and prints a green/red report
 fix the reds first. It checks: the operator key matches the deployment, the operator has XLM for fees, the pool
 holds USDC (`readSacBalance`), the CEX spot oracle returns a mid, the Yahoo history returns closes, and iyzico is
 reachable with your creds (a no-charge probe — it creates no checkout form). **Do not proceed until this is green.**
+Note: preflight does **not** yet verify `TROIA_ISSUER_SECRET` or the issuer's XLM for fees — a missing/wrong issuer
+key surfaces only when the rebalance bot first mints.
 
 ## Step 3 — Open the tunnel, set the callback URL
 
@@ -85,12 +93,18 @@ just serve
 ```
 
 The backend reads `.env` + `deployment.testnet.json`, **seeds the pool balance + operator sequence from the chain**
-(two live reads), stands up Fastify, and starts the poll/recovery worker. It logs `listening ... webhook -> <url>`.
-A bad env value fails the boot **closed** (never a silent degrade). Leave it running.
+(two live reads), stands up Fastify, and starts the poll/recovery worker **and the TRY-driven rebalance bot** —
+`settleTick`, scheduled on `SETTLEMENT_TICK_MS` (default 5s); it logs `troia rebalance bot armed — demo valör 30s,
+tick 5000ms`. After a money-good order's demo valör (the real iyzico valör is ~21 days, **compressed to
+`DEMO_VALOR_SECS`, default 30s**, so the refill is visible in the demo) the bot refills the pool from that order's
+collected TRY at the live oracle rate via a **real issuer-signed USDC SAC mint** (signed by the separate issuer
+key). On mainnet the same seam becomes a real CEX buy driven by a future agent + on/off-ramp service. It logs
+`listening ... webhook -> <url>`. A bad env value fails the boot **closed** (never a silent degrade). Leave it running.
 
 ## Step 5 — Drive one real charge
 
-The storefront (5.1) is the eventual driver; until then, `scripts/intent.mjs` stands in — it ensures a demo
+The built storefront + Chrome "Pay with Troy card" extension are the primary driver (they drove the proven run);
+`scripts/intent.mjs` is the headless CLI alternative for a browserless run — it ensures a demo
 merchant with a USDC trustline, derives the order memo exactly as the backend does, and POSTs `/intent`:
 
 ```bash

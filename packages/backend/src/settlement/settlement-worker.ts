@@ -6,7 +6,7 @@
 // Two phases per tick:
 //   A) ARM: scan orders in {UsdcConfirmed, Reconciled} — the only states where the pool was truly drained AND
 //      the charge can never be reversed — and record ONE pending settlement each, due at now + the compressed
-//      demo valör (45s). recordIfAbsent is per-canonical-order idempotent, so re-discovery never re-arms.
+//      demo valör (default 30s). recordIfAbsent is per-canonical-order idempotent, so re-discovery never re-arms.
 //   B) SETTLE: for each due record, RE-READ the order (a record whose order is no longer money-good is voided,
 //      never minted), win the single-writer claim() CAS, then refill EXACTLY the collected TRY converted to USDC
 //      at the LIVE rate: topUp (mint, idempotent per `topup:<orderId>` ref) -> recordTopUp (book) -> creditPool

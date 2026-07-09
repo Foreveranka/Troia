@@ -35,7 +35,7 @@ payoff — the same money-first flow from Act 3, now moving real testnet USDC th
 
 ```bash
 just build      # all TypeScript packages compile (tsc, strict)
-just test       # 554 TypeScript tests across 77 files
+just test       # 581 TypeScript tests across 81 files
 just lint       # ESLint clean
 cargo test      # 14 Soroban contract tests (unit + integration + fuzz conservation)
 ```
@@ -130,9 +130,16 @@ loaded unpacked, a public webhook tunnel so iyzico can reach `/webhook`.
 5. **Order settled + verifiable.** The storefront shows the confirmation and "My Orders" with a **settlement tx
    link**. Open it: this is a real on-chain `pay()` moving USDC pool → merchant. In the proven run it was **74
    USDC**, tx `cd643d71…`.
+6. **The pool refills itself.** ~30s later — the real iyzico valör is ~21 days, **compressed to `DEMO_VALOR_SECS`**
+   for the demo — a background `settleTick` worker automatically refills the USDC pool from *this order's* collected
+   TRY, converted at the live CEX oracle rate, via a real issuer-signed SAC mint, so the pool grows by the
+   commission. Say: *"On mainnet that same seam becomes a real CEX buy driven by an agent + on/off-ramp service —
+   the backend doesn't change."*
 
 Say, pointing at the explorer: *"The customer paid a lira price with a Troy card. On-chain, the merchant received
 USDC — and neither of them had to see the other's world. That's the whole product in one screen."*
+
+Optional trust beat: *"And if anything stalls, the banner never lies about money — a pre-payment timeout says 'you were not charged'; a post-payment delay says 'settlement is taking a little longer, you can safely close this'; and a double Pay click is a no-op."*
 
 > Honest note for the reviewer: this is a single manual live smoke on **testnet** with iyzico **sandbox** (no real
 > money). If recording without the stack up, narrate it over the confirmation screenshots + the explorer tx — do
@@ -151,6 +158,7 @@ USDC — and neither of them had to see the other's world. That's the whole prod
 | Live storefront (`app/storefront`, SEP-7 pay URI) | ✅ built (Phase 5.1) |
 | "Pay with Troy card" extension → real charge → real `pay()` | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run |
 | `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done (Phase 4.4 + 5.2) |
+| Automatic TRY-driven pool rebalance (`settleTick` + issuer-signed mint) | ✅ built (compressed valör 30s; real-CEX buy is Phase-2) |
 
 Acts 1–3 run today with zero setup; Act 2 (the offline, zero-trust proof) is the reproducible centerpiece. Act 4
 is proven — a real Troy sandbox card charge auto-drove a real on-chain `pay()` (74 USDC, tx `cd643d71…`) — but

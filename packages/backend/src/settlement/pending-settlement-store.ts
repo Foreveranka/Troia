@@ -1,7 +1,7 @@
 // Demo-valör settlement simulation (TRY-driven rebalance). On testnet there is no real iyzico bank
 // settlement, so this store models it: when an order's USDC is delivered and irreversible (state enters
 // {UsdcConfirmed, Reconciled}), a settlement-sim worker records ONE pending settlement whose settlesAt is
-// confirmedAt + the compressed demo valör (45s). When the clock passes settlesAt, the worker converts the
+// confirmedAt + the compressed demo valör (default 30s). When the clock passes settlesAt, the worker converts the
 // collected TRY to USDC at the LIVE rate and tops up the pool. This store is the pure bookkeeping half:
 // one record per order (ever), a monotone status, and a single-winner claim() — it holds NO clock and NO
 // I/O (the worker passes nowUnix; the InMemoryStore/mutex serialize the worker's mutations), mirroring

@@ -43,6 +43,11 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   [`RECONCILIATION.md`](RECONCILIATION.md). This is the reviewer centerpiece and it works today.
 - **Soroban `TroyPool` contract** — `pay` with atomic check-and-transfer (no TOCTOU), replay guard, pause,
   role-gated admin/upgrade; unit + integration + fuzz (conservation) tests green.
+- **Chrome MV3 "Pay with Troy card" extension** — the demo's actual money-path entry point, proven live e2e
+  (tx `cd643d71…`) and hardened: per-request fetch timeouts (15s intent / 8s poll), a phase-aware poll budget with
+  honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo
+  parity pinned to core's golden vectors (malformed order ids fail closed), and an amount gate aligned with
+  `toStroops` — ~105 tests across 10 spec files. Holds no keys, signs nothing.
 
 The full gate — TypeScript suite, Rust contract tests, lint, type-check, and the offline `just verify` — is the
 acceptance bar for every change.
@@ -67,6 +72,10 @@ acceptance bar for every change.
   marketed T+1) **cannot be measured in the sandbox**, so the FX-risk window uses the researched conservative 21
   days. The `classifyIyzicoResult` success shape and closed terminal-decline `errorCode` set **are** calibrated
   against the sandbox — a real charge plus iyzico's published taxonomy and its declining test cards.
+- **Demo valör is compressed.** The real settlement valör (~21 days, above) is **compressed** for the demo to
+  `DEMO_VALOR_SECS` (default **30s**, min 1) so the automatic TRY-driven rebalance bot refills the pool within the
+  demo window. This is purely demo time-compression of the *settlement clock*; it is **separate** from the FX-risk
+  pricing knob (`valorDays` = 21) that sizes the commission, which still uses the real ~21-day figure.
 - **Unit economics are disclosed, not assumed.** The pricing model is complete and never loses money by
   construction (the PSP cut is grossed up, the FX-risk buffer is sized to the real valör). But the resulting
   all-in markup is **rail-dependent** — at current (calm) volatility ~7.8% on iyzico credit (4.29%), ~3.7% on a
@@ -105,7 +114,7 @@ The remaining honest limitations are operational, not "unrun":
 - **Late sequence allocation, two-store crash window (durable-store only).** The operator sequence is allocated
   late — on `chargeOk`, the first step of the USDC leg — so an abandoned checkout consumes no sequence (a
   gap-free operator account). `allocate()` persists the sequence snapshot one effect before the `OrderRow` is
-  persisted with that seq. A crash in that window is **money-safe** (the `Processed(order_id)` guard + the
+  persisted with that seq. A crash in that window is **money-safe** (the `Processed(tx_id)` guard, derived from order_id, + the
   single-use sequence shield both cap USDC delivery at one per order) and, for a completed charge, **self-heals**
   (recovery re-retrieves the same sale → `chargeOk` again → idempotent `allocate` returns the same seq →
   submit). The only residual is a *theoretical* liveness stranding of that seq, and it is **not reachable in the
@@ -120,21 +129,27 @@ hardening (load/soak, the reverted-tx read path) — not "unrun."
 
 ## 5. Explicitly out of scope for this PoC (Phase-2, boundary only)
 
-- **Real CEX rebalance + the automatic top-up trigger** — the `topUp` interface + `SimulatedRebalance` (testnet
-  mint) are built + tested, but (a) the real-exchange buy+withdraw that actually *acquires* the USDC (e.g.
-  Binance/Bybit/OKX, the venues the oracle reads; async finality) and (b) any automatic trigger are deferred —
-  the pool is pre-seeded and re-funded manually today, and the low-water mark only warns. See the treasury
-  cash-flow cycle + timing (rebalance runs on iyzico's valör cadence, not pool drainage) in **ARCHITECTURE §5a**.
+- **Real CEX rebalance (inventory acquisition only).** The automatic top-up trigger **is built and running**: a
+  background settlement worker (`settleTick`) arms every money-good order and, after the settlement valör
+  (demo-compressed to ~30s, see §3), refills the pool from that order's collected TRY at the live oracle rate by
+  minting real issuer-signed USDC (`SimulatedRebalance` → `createSacMintClient`). The **only** deferred piece is
+  the real-exchange buy+withdraw that *economically acquires* the USDC (e.g. Binance/Bybit/OKX, the venues the
+  oracle reads; async finality — invariant ③b). The system is seamed for a future **agent + on/off-ramp service**
+  (the agent owns the *decision*, the on/off-ramp owns the real fiat↔USDC *execution*); on mainnet that seam
+  replaces the testnet SAC mint with no change to the backend or the money-first core. The `poolLowWatermarkStroops`
+  low-water mark only **warns** (`/intent → poolLow:true`) — it is **not** the trigger. See the treasury cash-flow
+  cycle + timing (rebalance runs on iyzico's valör cadence, not pool drainage) in **ARCHITECTURE §5a**.
 - **KYC** (a designed boundary, no-op on testnet; not yet a package).
 - **HSM / multisig real thresholds** (the `Signer` boundary already exists in `stellar-client`; testnet
   threshold = 1, same flow shape).
 - **Channel accounts for concurrency** (the single-writer sequence allocator is today's seam; a channel pool is
   Phase-2 with the allocator interface unchanged).
 - **StellarPay / Beans extension adapters** (bonus rail; the demo storefront does not depend on them).
-- **Extension origin scope.** The browser extension is deliberately scoped to the demo storefront's origins (a
-  narrow `matches`/`host_permissions` allowlist), not `<all_urls>`. This keeps the reviewer's Chrome permission
-  prompt honest and the attack surface small. A production build widens the allowlist to any storefront emitting a
-  USDC SEP-7 — the DOM-scan mechanism is unchanged; only the manifest match patterns change.
+- **Extension origin scope.** The browser extension is deliberately scoped to **localhost / 127.0.0.1 on any
+  port** (port-less `matches`/`host_permissions`), not `<all_urls>` and not a specific storefront origin. This
+  keeps the reviewer's Chrome permission prompt honest and the attack surface small. A production build widens the
+  allowlist to any storefront emitting a USDC SEP-7 — the DOM-scan mechanism is unchanged; only the manifest match
+  patterns change.
 - **Mainnet.** Mainnet is a **separate, regulated phase**. Turkish regulatory engagement (MASAK) is a deliberate
   post-code step, handled with counsel — it is future work, never an excuse for a gap in what is claimed here.
 

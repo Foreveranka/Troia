@@ -39,6 +39,9 @@ issuer (USDC SAC mint authority). See ARCHITECTURE §9.
 | Mint 1000 USDC → pool (initial) | `03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609` | [tx](https://stellar.expert/explorer/testnet/tx/03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609) |
 | Mint +99,000 USDC → pool (top-up → 100,000) | `5f224b9b0d02ad40b6aa42e8527aa836e0daa95b8d97aa796e77ec06984fc8e4` | [tx](https://stellar.expert/explorer/testnet/tx/5f224b9b0d02ad40b6aa42e8527aa836e0daa95b8d97aa796e77ec06984fc8e4) |
 
+> The two mints above are a one-time historical seeding of this deploy; a fresh `just fund` today seeds the full
+> 100,000 USDC in a **single** mint, so re-running produces one mint tx, not this pair.
+
 ## Verified on-chain state
 
 After the pool seed, reading the TroyPool views directly:
@@ -84,7 +87,7 @@ chain remembers it (`signed ≠ settled`). See [`RECONCILIATION.md`](RECONCILIAT
 
 The payout above (`5a3d60cc…`) was a direct `pay()` call proving the on-chain leg in isolation. Phase 4.5/5.2
 then drove the **whole stack live**: the demo storefront emitted a SEP-7 pay URI, the **browser extension**
-detected it and opened iyzico's hosted form, a real **Troy sandbox card** paid TRY, and — only after the charge
+detected it and opened iyzico's hosted form **in a new browser tab**, a real **Troy sandbox card** paid TRY, and — only after the charge
 confirmed — the backend submitted the irreversible USDC leg automatically. No step was hand-run.
 
 - **Order:** a storefront checkout; settlement amount **74 USDC** (`740000000` stroops).
@@ -96,6 +99,15 @@ confirmed — the backend submitted the irreversible USDC leg automatically. No 
 This is the money-first ordering realized end-to-end over the network: **reversible TRY charge first, irreversible
 USDC last** (`signed ≠ settled`). It is the first run that exercises the live SDK/RPC/iyzico adapters — the halves
 that were type-checked-only before. See [`LIVE_SMOKE.md`](LIVE_SMOKE.md) for the runbook this executed.
+
+## Automatic pool refill (rebalance bot)
+
+A live rebalance loop now refills the pool from the TRY collected. On every testnet boot `settleTick` arms each
+money-good order and, after the compressed demo valör (`DEMO_VALOR_SECS`, default **30s**; the real iyzico valör is
+**~21 days**), mints USDC into the pool from that order's collected TRY at the live oracle rate by signing a **real
+USDC-SAC mint with the issuer key** (`SimulatedRebalance` → `createSacMintClient`). This exercises the issuer-signed
+mint path automatically — no dedicated rebalance-mint tx hash is recorded here. The system is seamed for a future
+**agent + on/off-ramp service**; on mainnet the same seam becomes a real CEX buy. See **ARCHITECTURE §5a**.
 
 ## Reproduce
 

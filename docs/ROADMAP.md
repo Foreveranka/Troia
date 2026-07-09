@@ -40,7 +40,7 @@ This is where the design earns its keep. Everything here is pure/deterministic a
 - **1.3 `SequenceAllocator`** — DB-authoritative single-writer. Tests: `allocate(order_id)` idempotent
   per-order (same order → same seq), `confirmBurned`, `reuseOnDead`, `release` precondition, `reallocate`.
   This is the zero-blocker starting point Elliot flagged. Locks ②.
-- **1.4 State machine** — the 15-state, 18-row transition table as a pure reducer. Tests: property test that
+- **1.4 State machine** — the 12-state, 22-event transition table as a pure reducer (reshaped for money-first / late-seq ordering in 4.6). Tests: property test that
   only table-listed transitions are reachable; write-ahead ordering; `UsdcDead` vs `UsdcReverted` seq inverse;
   terminal states accept no events. Strongest GO signal. Locks §3.
 - **1.5 `pricing` + `oracle` (pure parts)** — median/quorum/deviation math with injected quotes (no live CEX
@@ -140,6 +140,14 @@ Now connect the core to the outside world, one provider at a time, behind interf
   the revert-read shape). **✅ The live run is done** — `just serve` behind a public webhook tunnel drove a real
   Troy sandbox card charge that auto-submitted a real `pay()` (74 USDC settled, tx `cd643d71…`; see
   [`DEPLOYMENTS.md`](DEPLOYMENTS.md)), live-smoking the SDK/network adapters for the first time.
+- **4.7 Automatic TRY-driven rebalance loop** — **✅ built**: a background settlement worker (`settleAndRebalance`,
+  scheduled as `settleTick` on `SETTLEMENT_TICK_MS`, default 5s) arms every money-good order (`UsdcConfirmed`/
+  `Reconciled`), records one pending settlement per order due at `now + demoValorSecs`, and — after the demo valör
+  (the real iyzico valör is ~21 days, **compressed to `DEMO_VALOR_SECS`, default 30s**, so the refill is visible in
+  the demo) — mints real issuer-signed USDC into the pool at the live oracle rate (`TryDrivenRebalancePolicy`,
+  Model-B: converts the whole collected TRY, truncated down), books it in the ledger, and `creditPool`s the
+  `/intent` gate. Seamed for a future **agent + on/off-ramp service** (agent = the *decision*, on/off-ramp = the
+  real fiat↔USDC *execution*); on mainnet that seam replaces the SAC mint with a real CEX buy, backend unchanged.
 
 **Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches. ✅
 
@@ -157,7 +165,7 @@ Showcase, not proof — comes last on purpose.
   worker (the only holder of the backend host permission) posts `/intent` and opens iyzico's hosted card page, then
   polls coarse status and hands the settlement receipt (tx hash + TRY charged) back to the storefront. Holds no
   keys, signs nothing, allowlisted origins only. **Proven live end-to-end** (Troy sandbox card → 74 USDC settled,
-  tx `cd643d71…`). 72 extension tests green.
+  tx `cd643d71…`). 105 extension tests green (10 spec files). Hardened for the live money path: per-request fetch timeouts (intent 15s / polls 8s), a phase-aware poll budget with honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo parity pinned to core's golden vectors with malformed-order-id rejection (fail-closed `bad-order-ref`), and an amount gate aligned with `toStroops`.
 - **5.3 Proof docs** — `RECONCILIATION.md`, `DEPLOYMENTS.md`, `SCOPE_AND_LIMITATIONS.md`, `DEMO_SCRIPT.md` ✅;
   `just verify` offline proof ✅. Remaining: a public shareable deploy (storefront → Vercel, backend → Render) and
   a 3–5 min proof video.
@@ -169,7 +177,7 @@ video remain.
 
 ## Deferred — Phase-2, boundary only (NOT built now) ⏸
 
-- Real Binance rebalance (interface + async signature designed; impl later).
+- Real CEX rebalance **inventory buy** — only the real exchange buy+withdraw that *economically acquires* the USDC is deferred (invariant ③b); the automatic trigger + the testnet SAC-mint top-up are **built** (4.7). The future **agent + on/off-ramp service** plugs into the existing `RebalancePolicy` (decision) + `RebalanceProvider` (execution) seams.
 - KYC (interface now, testnet no-op).
 - HSM/multisig real thresholds (Signer boundary now, threshold=1 same flow).
 - Channel accounts for concurrency (`SequenceProvider` seam now).

@@ -1,7 +1,7 @@
 # Troia
 
 Custodial TRY→USDC settlement bridge on Stellar (testnet PoC). A Turkish user pays TRY with a Troy card;
-the operator settles the merchant in USDC from a pre-funded Stellar pool. The spread is revenue.
+the operator settles the merchant in USDC from a Stellar pool that is pre-funded and automatically topped up from the collected TRY. The spread is revenue.
 
 > *"A settlement layer that makes every lira accountable hash-by-hash — it never silently loses money;
 > the one irreversible loss bucket (`LOSS_REVIEW`) is surfaced, never hidden."* Honest proof boundary:
@@ -70,8 +70,17 @@ form, and — after a real Troy **sandbox card** charge confirms — the backend
 leg. This was proven live: **74 USDC** settled pool → merchant, tx
 [`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded)
 (see [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)). The extension holds no keys and signs nothing; it is scoped to
-the storefront's origins and fails closed. The money-first ordering — reversible TRY charge first, irreversible
+localhost / 127.0.0.1 on any port and fails closed. The money-first ordering — reversible TRY charge first, irreversible
 USDC last — held over the live network.
+
+The pool is now **automatically topped up** from the TRY collected. A background settlement worker (`settleTick`,
+on `SETTLEMENT_TICK_MS`, default 5s) arms every money-good order and, after the settlement valör — the real iyzico
+valör is **~21 days**, **compressed to `DEMO_VALOR_SECS` (default 30s)** for the demo so the refill is visible —
+refills the pool from that order's collected TRY at the live oracle rate by minting real issuer-signed USDC into
+the pool, so the pool grows by the commission. The system is seamed for a future **agent + on/off-ramp service**:
+the agent owns the *decision* (when / how much), an on/off-ramp provider owns the real fiat↔USDC *execution*; on
+mainnet that seam becomes a real CEX buy with the backend unchanged. On testnet the refill is a self-issued SAC
+mint, so the only Phase-2 piece is the real exchange buy that *economically acquires* the USDC.
 
 Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend → Render) so the demo runs without
 a local machine, and a 3–5 min proof video. The live run was a single manual smoke, not a load/soak test. See

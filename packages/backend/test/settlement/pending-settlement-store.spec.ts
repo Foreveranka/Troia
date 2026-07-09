@@ -5,7 +5,7 @@ import type { PendingSettlementInput } from '../../src/settlement/pending-settle
 const USDC = 10_000_000n; // 1 USDC @ 7 decimals
 const RATE = 340_000_000n; // 34.0 TRY/USDC @ 7 decimals
 
-// A settled order's arm-time facts. settlesAt = confirmedAt + 45s (the compressed demo valor).
+// A settled order's arm-time facts. settlesAt = confirmedAt + the compressed demo valor (default 30s).
 function input(overrides: Partial<PendingSettlementInput> = {}): PendingSettlementInput {
   const confirmedAtUnix = overrides.confirmedAtUnix ?? 1_000;
   return {

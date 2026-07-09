@@ -130,7 +130,7 @@ was never reached, computed purely from the embedded data.
 `verifyReport` ignores the report's own `verdict` / `summary` fields and **recomputes** each from the embedded
 evidence, then asserts the stored values equal the recomputation. A single mismatch fails the whole report. To
 see the failure mode, run it against the tampered fixture (`recon-report.tampered.json`, which flips `ord-003`'s
-stored verdict to `MATCHED`):
+stored verdict *and* status to `MATCHED` and the summary to `{matched:3, mismatch:0}`):
 
 ```bash
 node --import ./packages/reconciler/bin/block-net.mjs \
@@ -146,6 +146,17 @@ Observed output (exit code `1`):
 
 A report that lies about its own outcome cannot pass. That is the whole point.
 
+### The strongest proof: reconcile a real on-chain payout, offline
+
+```bash
+just verify-live   # re-derives the verdict, no network, from a REAL landed testnet payout's embedded evidence
+```
+
+`recon-report.live.json` captures a real operator-signed `pay()` that landed on testnet (tx `5a3d60cc…`, `TroyPool`
+`CCVNY6H…`); `just verify-live` re-verifies it **MATCHED** offline (`networkAttempts:0`) — same model, real chain
+evidence. `just demo` runs the full loop end-to-end: N real testnet `pay()`s → a fresh `recon-report.json` → the
+offline verify above (one order is a deliberate `CORRUPT_LOCAL` the reconciler catches).
+
 ---
 
 ## 6. Reset-proof and honest about it
@@ -156,9 +167,10 @@ A report that lies about its own outcome cannot pass. That is the whole point.
 - The **chain-observed part is only as durable as the chain's memory.** If the chain record is gone (testnet
   reset, or the tx never landed), the order resolves to `UNSETTLED` — signed proven, settlement not. We never
   claim "settlement is provable after reset."
-- The current fixture tx is a **real, decodable Soroban `pay()` invocation with no execution footprint**, so it
-  is genuinely verifiable but not itself network-submittable. Phase 4's `stellar-client` produces the
-  submittable XDR that lands on testnet; the reconciler model is identical either way.
+- The committed demo fixture tx is a **real, decodable Soroban `pay()` invocation with no execution footprint**,
+  so it is genuinely verifiable but not itself network-submittable. A **real operator-signed `pay()` has already
+  landed on testnet** (tx `5a3d60cc…d64f13`, `TroyPool` `CCVNY6H…ATRKZ`), captured verbatim as
+  `recon-report.live.json` and re-verified reset-proof with `just verify-live` — same model, real chain evidence.
 
 **Bottom line for a reviewer:** clone the repo, run `just verify`, watch it pass on the honest report and fail
 on the tampered one — offline, in seconds, without trusting a word we wrote.

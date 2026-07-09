@@ -28,7 +28,9 @@ All code, comments, commit messages, and log strings are **English only**.
 - **Troia** sits in the middle, owns the FX conversion and the settlement risk.
 
 The pool is **pre-funded**, so the merchant is paid instantly and does not wait for TRY→USDC rebalancing.
-The user *does* wait (~10–45s) while the settlement chain completes.
+The user *does* wait (~10–45s) while the on-chain settlement chain completes — this is the finality wait
+(timebounds ~45s), distinct from the compressed rebalance valör (now 30s), which the user never waits for since
+the merchant is paid from the pre-funded pool.
 
 ---
 
@@ -196,11 +198,30 @@ has actually paid us the held TRY** (we have no fiat to buy USDC with until then
   later at an unknown one, the commission's `z·σ·√n` term (n = the valör) is sized to that drift (invariant ⑤,
   `packages/pricing`). The "when" (~21 days) is therefore **priced in before the top-up ever runs**.
 
-**Status (PoC).** `SimulatedRebalance.topUp` is built + tested (`packages/rebalance`) but is **NOT wired to an
-automatic trigger** — no rebalance loop runs. The pool is pre-seeded and re-funded **manually** (`just fund`);
-the `poolLowWatermarkStroops` low-water mark only **warns** (`/intent → poolLow:true`), it does not top up. An
-automatic trigger (watermark → `topUp`) and the real-CEX buy that actually *acquires* the USDC are **Phase-2**
-(invariant ③b — economic solvency; testnet mints infinitely, so real inventory adequacy is deferred).
+**Status (PoC).** The automatic TRY-driven rebalance loop is **built and running**. A background settlement
+worker (`settleTick`, on its own `SETTLEMENT_TICK_MS` interval, default 5s) runs alongside the poll worker: each
+tick **arms** every money-good order (`UsdcConfirmed`/`Reconciled`) and, after the settlement valör, refills the
+pool from *exactly that order's* collected TRY — converted to USDC at the live oracle rate — by minting real
+issuer-signed USDC into the pool (a `SimulatedRebalance` wrapping `createSacMintClient`, the SAC-admin mint: the
+programmatic form of `just fund`'s mint step); `store.creditPool` then lifts the `/intent` solvency gate. The
+trigger is **time/valör-driven per order**, *not* watermark→`topUp`; the `poolLowWatermarkStroops` low-water mark
+still only **warns** (`/intent → poolLow:true`). `just fund` now only **seeds** the pool at boot — ongoing refill
+is automatic.
+
+**Valör (demo).** The real iyzico settlement valör is **~21 days**; for the demo it is **compressed** to
+`DEMO_VALOR_SECS` (default **30s**) so the automatic rebalance is visible within the demo window. This is demo
+time-compression of the *settlement clock* only — separate from the FX-risk pricing knob (`valorDays` = 21) that
+sizes the commission, which still uses the real ~21-day figure.
+
+**Designed for what comes next.** The rebalance system is deliberately seamed for a future **agent + on/off-ramp
+service**: a policy/agent owns the *decision* (when and how much to rebalance — the `RebalancePolicy` seam), and
+an on/off-ramp provider owns the *execution* (the real fiat↔USDC conversion — the `RebalanceProvider`/mint-port
+seam). On testnet the execution is a self-issued SAC mint; on mainnet the **same seam** becomes a real CEX buy +
+withdrawal driven by the agent — the backend and the money-first core do not change.
+
+**Still Phase-2:** only the real inventory-acquiring CEX buy that *economically* acquires the USDC (invariant ③b;
+testnet mints self-issued USDC without limit) and a durable cross-restart pending-settlement store + mint
+idempotency (in-memory in the PoC) remain deferred.
 
 ---
 
@@ -260,15 +281,15 @@ troia/
     ├── psp/                    # PaymentProvider (iyzico direct-sale: sandbox → prod)
     ├── stellar-client/         # SDK wrapper: SAC transfer, submit + poll, snapshot loader, Signer boundary
     ├── reconciler/             # keyless three-artifact reconciler + offline `just verify`
-    ├── backend/                # the heart: state machine driver, HTTP, webhook, solvency, poll-worker
+    ├── backend/                # the heart: state machine driver, HTTP, webhook, solvency, poll-worker, TRY-driven rebalance worker (settlement/: settleAndRebalance, pending store, policy, creditPool)
     ├── composition/            # Phase-4.5 root: real adapters + PSP-inclusive quote → ServerDeps; `just serve`
     └── integration/            # cross-package composition smoke tests
 
 Built (Phase 5): app/storefront (5.1, the demo store emitting a USDC SEP-7) and app/extension (5.2, the MV3
 "Pay with Troy card" bridge) — both proven live end-to-end (a Troy sandbox card charge auto-drove a real
 `pay()`, 74 USDC settled, tx `cd643d71…`; see DEPLOYMENTS.md). Deferred, not yet built: packages/kyc (Phase-2
-boundary). packages/rebalance IS built (SimulatedRebalance, tested); only the real-CEX economic-solvency impl
-is Phase-2. The Signer abstraction currently lives in stellar-client (LocalKey → KMS/HSM+multisig is the
+boundary). packages/rebalance IS built and now wired to the automatic `settleTick` rebalance loop (§5a); only
+the real-CEX economic-solvency impl is Phase-2. The Signer abstraction currently lives in stellar-client (LocalKey → KMS/HSM+multisig is the
 Phase-2 path).
 ```
 

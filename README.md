@@ -11,6 +11,22 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design contract and [
 for the phased build plan. For the reviewer-verifiable proof story, see [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md),
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md), and [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 
+## Verify it yourself
+
+You do not have to trust this repo. Clone it, `pnpm install`, and run three checks that need **no keys, no
+network, and no live services** — the network is patched to throw and the attempt count is asserted to be zero:
+
+```bash
+just verify           # an honest reconciliation report re-derives from its embedded evidence
+just verify-live      # so does a report from a REAL testnet payout — even after a testnet reset
+just verify-tampered  # a forged report is caught by re-derivation, not merely rejected
+```
+
+The last one is the point: the verifier recomputes every verdict and ignores what the report claims, so a report
+that lies about its own outcome cannot pass. A real `pay()` settled **74 USDC** pool → merchant on testnet, tx
+[`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded).
+`just ci` runs the full gate — every suite this repo owns.
+
 ## Toolchain
 
 - Node 22, pnpm 11
@@ -19,13 +35,14 @@ for the phased build plan. For the reviewer-verifiable proof story, see [`docs/R
 
 ## Commands
 
-| Command               | What                                    |
-| --------------------- | --------------------------------------- |
-| `just build`          | Build all TypeScript packages           |
-| `just test`           | Run the test suite (Vitest)             |
-| `just lint`           | ESLint over the workspace               |
-| `just format`         | Prettier write                          |
-| `just contract-build` | `stellar contract build` (Soroban wasm) |
+| Command               | What                                                                  |
+| --------------------- | --------------------------------------------------------------------- |
+| `just ci`             | The full gate — every suite, nothing skipped (mirrors GitHub Actions) |
+| `just build`          | Build all TypeScript packages (this, not `just test`, typechecks)     |
+| `just test`           | The packages Vitest suite only — no typecheck, no extension, no Rust  |
+| `just lint`           | ESLint over the workspace                                             |
+| `just format`         | Prettier write                                                        |
+| `just contract-build` | `stellar contract build` (Soroban wasm)                               |
 
 `just verify` runs today (offline, network-blocked reconciliation proof — see
 [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)); `just fund` bootstraps the live testnet rails (see

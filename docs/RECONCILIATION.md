@@ -135,19 +135,21 @@ was never reached, computed purely from the embedded data.
 
 `verifyReport` ignores the report's own `verdict` / `summary` fields and **recomputes** each from the embedded
 evidence, then asserts the stored values equal the recomputation. A single mismatch fails the whole report. To
-see the failure mode, run it against the tampered fixture (`recon-report.tampered.json`, which flips `ord-003`'s
-stored verdict _and_ status to `MATCHED` and the summary to `{matched:3, mismatch:0}`):
+see the failure mode:
 
 ```bash
-node --import ./packages/reconciler/bin/block-net.mjs \
-     ./packages/reconciler/bin/verify.mjs \
-     ./packages/reconciler/test/fixtures/recon-report.tampered.json
+just verify-tampered
 ```
 
-Observed output (exit code `1`):
+It forges the honest report **in a temp file** — flipping `ord-003`'s stored verdict _and_ status to `MATCHED`
+and the summary to `{matched:3, mismatch:0}` — then runs the same network-blocked verifier over the forgery.
+Nothing is written into the repo, so this runs on a bare clone in any order. Observed output (exit code `0`,
+meaning _the tamper was caught_):
 
 ```json
 {
+  "tamperDetected": true,
+  "verifierExit": 1,
   "ok": false,
   "summary": { "total": 3, "matched": 3, "mismatch": 0, "unsettled": 0 },
   "ordersVerified": 3,
@@ -158,6 +160,10 @@ Observed output (exit code `1`):
   ]
 }
 ```
+
+`verifierExit: 1` is the load-bearing field. `bin/verify.mjs` exits `1` when it **read** the report and the
+recomputation disagreed, and `2` when it could not read the report at all. A check that accepted any non-zero
+exit would pass on a missing file while proving nothing, so `just verify-tampered` pins the distinction.
 
 A report that lies about its own outcome cannot pass. That is the whole point.
 

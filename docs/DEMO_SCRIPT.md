@@ -75,20 +75,19 @@ Narrate the three things that make the `0` exit code meaningful:
    both say 0.5. Verdict `CORRUPT_LOCAL`, and `signature_valid` is still `true` — so the evidence proves the
    error is in _our records_, and the chain is the authority.
 
-Then break it on purpose:
+Then break it on purpose — this forges the report in a temp file and re-verifies the forgery:
 
 ```bash
-node --import ./packages/reconciler/bin/block-net.mjs \
-     ./packages/reconciler/bin/verify.mjs \
-     ./packages/reconciler/test/fixtures/recon-report.tampered.json
+just verify-tampered
 ```
 
 ```json
-{"ok":false,...,"failures":["ord-003: verdict MATCHED != recomputed CORRUPT_LOCAL","ord-003: status matched != recomputed mismatch"]}
+{"tamperDetected":true,"verifierExit":1,"ok":false,...,"failures":["ord-003: verdict MATCHED != recomputed CORRUPT_LOCAL","ord-003: status matched != recomputed mismatch"]}
 ```
 
-Exit code `1`. Say: _"A report that lies about its own outcome cannot pass. That's the guarantee."_ Point to
-[`RECONCILIATION.md`](RECONCILIATION.md) for the full model.
+The verifier exited `1` — it _read_ the forged report and the recomputation disagreed. Say: _"A report that lies
+about its own outcome cannot pass. That's the guarantee."_ Point to [`RECONCILIATION.md`](RECONCILIATION.md) for
+the full model.
 
 ---
 

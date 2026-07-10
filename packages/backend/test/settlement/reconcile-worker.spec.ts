@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { reconcileOrders } from '../../src/settlement/reconcile-worker.js';
+import {
+  INITIAL_RECONCILE_ALARMS,
+  observeReconcile,
+  reconcileOrders,
+} from '../../src/settlement/reconcile-worker.js';
 import type {
   ChainEvidence,
   GroundTruth,
+  OrderAudit,
   ReconcileDeps,
+  ReconcileReport,
   ReconciledStore,
   Verdict,
 } from '../../src/settlement/reconcile-worker.js';
@@ -74,6 +80,9 @@ function observations(over: Partial<ChainObservationStore> = {}): ChainObservati
     settlementByTxId: () => observation(),
     outflowStroopsByTx: () => AMOUNT, // the token contract moved exactly what the pool announced
     upgrades: (): readonly PoolUpgrade[] => [],
+    // By default the tail has been watching since before time: absence of a settlement MEANS something.
+    recordCoverageStart: () => {},
+    coverageStartUnix: (): number | null => 0,
     ...over,
   };
 }
@@ -196,8 +205,11 @@ describe('reconcileOrders — the chain agrees, or the order does not move', () 
       }),
     );
     expect(r.reconciled).toEqual([]);
-    expect(r.problems[0]).toMatchObject({ kind: 'unobservable' });
     expect(advance).not.toHaveBeenCalled();
+    // We HOLD the pool's announcement — that is how we reached the liveness check at all. So this is not "the pool
+    // announced nothing"; it is "the chain will not hand the transaction back". Calling it `unobservable` would
+    // contradict our own observation log and page a human about a settlement we can see in our own records.
+    expect(r.problems[0]).toMatchObject({ kind: 'blind', reason: 'aged-out' });
   });
 
   it('an RPC it cannot reach is not a chain that says no — it retries, it never concludes', async () => {
@@ -238,6 +250,34 @@ describe('reconcileOrders — the chain agrees, or the order does not move', () 
     expect(r.problems[0]).toMatchObject({ kind: 'unobservable', ageSecs: 3600 });
   });
 
+  it('will not call a payout unobserved when it settled before the tail began watching', async () => {
+    // The evidence predates our coverage floor: those ledgers were never read. Reporting "the pool announced no
+    // settlement" would be reporting our own blind spot as the chain's silence — an accusation built from a gap.
+    const r = await reconcileOrders(
+      deps({
+        evidence: { rows: () => [row({ witnessedAtUnix: NOW - 3600 })] },
+        observations: observations({
+          settlementByTxId: () => undefined,
+          coverageStartUnix: () => NOW - 1800, // we started watching 30 min AFTER this payout
+        }),
+      }),
+    );
+    expect(r.problems[0]).toMatchObject({ kind: 'blind', reason: 'never-watched', ageSecs: 3600 });
+  });
+
+  it('still alarms for a payout that went unobserved INSIDE the window it was watching', async () => {
+    const r = await reconcileOrders(
+      deps({
+        evidence: { rows: () => [row({ witnessedAtUnix: NOW - 3600 })] },
+        observations: observations({
+          settlementByTxId: () => undefined,
+          coverageStartUnix: () => NOW - 7200, // watching for two hours; this payout is inside that
+        }),
+      }),
+    );
+    expect(r.problems[0]).toMatchObject({ kind: 'unobservable', ageSecs: 3600 });
+  });
+
   it('audits a pre-crash order it can no longer advance — the audit is the point, not the transition', async () => {
     const reconciled = new FakeReconciled();
     const r = await reconcileOrders(deps({ reconciled })); // no `advance` at all
@@ -261,5 +301,75 @@ describe('reconcileOrders — the chain agrees, or the order does not move', () 
     const r = await reconcileOrders(deps({ resolve: realisticResolve('CORRUPT_LOCAL') }));
     expect(r.problems[0]).toMatchObject({ kind: 'diverged', verdict: 'CORRUPT_LOCAL' });
     expect((r.problems[0] as { detail: string }).detail).toContain('signature_valid');
+  });
+});
+
+function report(
+  problems: readonly OrderAudit[],
+  reconciled: readonly string[] = [],
+): ReconcileReport {
+  return {
+    audited: problems.length,
+    reconciled,
+    problems,
+    waiting: 0,
+    unreachable: 0,
+    upgrades: [],
+  };
+}
+
+const DIVERGED: OrderAudit = {
+  kind: 'diverged',
+  orderId: 'ord-1',
+  verdict: 'CHAIN_DIVERGENCE',
+  detail: 'x',
+  fieldDiff: [],
+};
+const UNOBSERVABLE: OrderAudit = { kind: 'unobservable', orderId: 'ord-1', ageSecs: 9 };
+const UNREACHABLE: OrderAudit = { kind: 'unreachable', orderId: 'ord-1', reason: 'ETIMEDOUT' };
+
+describe('observeReconcile — a page repeated every tick is a page nobody reads', () => {
+  it('pages a problem once, then stays silent while it merely persists', () => {
+    const first = observeReconcile(INITIAL_RECONCILE_ALARMS, report([UNOBSERVABLE]));
+    expect(first.fresh).toHaveLength(1);
+    const second = observeReconcile(first.state, report([UNOBSERVABLE]));
+    expect(second.fresh).toEqual([]);
+    expect(second.resolved).toEqual([]);
+  });
+
+  it("pages again when the SAME order's problem changes character", () => {
+    const first = observeReconcile(INITIAL_RECONCILE_ALARMS, report([UNOBSERVABLE]));
+    const second = observeReconcile(first.state, report([DIVERGED]));
+    expect(second.fresh).toEqual([DIVERGED]); // silence that becomes a divergence is news
+    expect(second.resolved).toEqual([]);
+  });
+
+  it('clears the latch when the problem is gone, and says so once', () => {
+    const first = observeReconcile(INITIAL_RECONCILE_ALARMS, report([UNOBSERVABLE]));
+    const second = observeReconcile(first.state, report([], ['ord-1']));
+    expect(second.resolved).toEqual(['ord-1']);
+    expect(observeReconcile(second.state, report([])).resolved).toEqual([]); // and not again
+  });
+
+  it('a chain it cannot reach neither pages nor forges an all-clear', () => {
+    const first = observeReconcile(INITIAL_RECONCILE_ALARMS, report([UNOBSERVABLE]));
+    const blind = observeReconcile(first.state, report([UNREACHABLE]));
+    expect(blind.fresh).toEqual([]); // unreachable is never an alarm
+    expect(blind.resolved).toEqual([]); // and it must NOT clear the alarm it cannot see
+    // when the chain comes back and the problem is still there, it is still not re-paged
+    expect(observeReconcile(blind.state, report([UNOBSERVABLE])).fresh).toEqual([]);
+  });
+
+  it('a blind spot is latched per reason, so never-watched and aged-out are separate pages', () => {
+    const never: OrderAudit = {
+      kind: 'blind',
+      orderId: 'ord-1',
+      reason: 'never-watched',
+      ageSecs: 1,
+    };
+    const aged: OrderAudit = { kind: 'blind', orderId: 'ord-1', reason: 'aged-out', ageSecs: 2 };
+    const first = observeReconcile(INITIAL_RECONCILE_ALARMS, report([never]));
+    expect(first.fresh).toEqual([never]);
+    expect(observeReconcile(first.state, report([aged])).fresh).toEqual([aged]);
   });
 });

@@ -495,6 +495,20 @@ Four gates, all of which must pass before an order is marked `Reconciled`:
 An unreachable chain (`UNKNOWN`) **never concludes anything** — it re-polls. `reconciled.mark()` is written
 durably **before** the order advances, so a crash between the two re-marks rather than double-advances.
 
+**"We cannot see" is not "it is not there."** The tail durably records a **coverage floor**: the instant it began
+(or, after a retention re-anchor, resumed) watching. An order witnessed before that floor settled in ledgers
+nobody read, so its missing announcement is a fact about us. It is reported as `blind / never-watched`, never as
+`SETTLEMENT UNOBSERVABLE`. Likewise, when we hold the pool's announcement but the RPC will no longer return the
+transaction — retention, a reset, or it never landed; `NOT_FOUND` cannot tell them apart — that is
+`blind / aged-out`, not an accusation. Only silence **inside** the watched window, past the grace, is an alarm.
+Drift (§7b) remains the cover for value that actually went missing.
+
+**Alarms latch.** The audit re-derives every verdict each tick, so a stuck order would otherwise restate its
+problem forever, and a page repeated forever is a page nobody reads. `observeReconcile` (pure, mirroring
+`observeDrift` / `observeTailHealth`) pages each order **once per problem**, keyed on _what_ is wrong — so silence
+that becomes a divergence pages again — and logs one line when the problem clears. `unreachable` is deliberately
+neither: it cannot raise a page, and it cannot forge an all-clear for an alarm it was unable to re-check.
+
 RPC facts these loops are built on, measured against live testnet (protocol 27), not read from a doc: a topic
 filter with the wrong arity returns an **empty page with no error** (a silent all-clear — hence contract-id-only
 filters); `-32600` means **both** "below retention" and "ahead of head", so the range is probed **structurally**

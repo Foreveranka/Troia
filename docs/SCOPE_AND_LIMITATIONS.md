@@ -49,7 +49,10 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   outflow whose hash is missing from the durable write-ahead journal a **rogue payout** (it could not have landed
   otherwise), plus a live reconciler that finds each order's settlement through the contract-indexed `tx_id` and
   refuses to mark it `Reconciled` unless the pool's code was never replaced, the announced amount equals what the
-  token contract moved, and the tx is still live. ARCHITECTURE §8a.
+  token contract moved, and the tx is still live. It distinguishes **"we cannot see"** from **"it is not there"**:
+  a payout that predates the tail's durable coverage floor, or whose transaction the RPC no longer returns, is
+  reported as a blind spot rather than accused, and every alarm pages once per problem rather than every tick.
+  ARCHITECTURE §8a.
 - **Soroban `TroyPool` contract** — `pay` with atomic check-and-transfer (no TOCTOU), replay guard, pause,
   role-gated admin/upgrade; unit + integration + fuzz (conservation) tests green.
 - **Chrome MV3 "Pay with Troy card" extension** — the demo's actual money-path entry point, proven live e2e

@@ -90,6 +90,20 @@ export type OrderAudit =
       readonly fieldDiff: readonly FieldDiff[];
     }
   | { readonly kind: 'unobservable'; readonly orderId: string; readonly ageSecs: number }
+  /**
+   * We cannot conclude, and the reason is us, not the chain. Distinct from `unobservable`, which says the pool
+   * announced nothing where we were watching. Here we were not watching, or the chain has since forgotten:
+   *   never-watched — the payout predates the ledger where the tail began; those events were never read.
+   *   aged-out      — we hold the announcement, but the transaction is no longer retrievable, so it cannot be
+   *                   re-confirmed. Indistinguishable from a testnet reset or a tx that never landed.
+   * Neither is an accusation. Drift remains the cover for value that actually went missing.
+   */
+  | {
+      readonly kind: 'blind';
+      readonly orderId: string;
+      readonly reason: 'never-watched' | 'aged-out';
+      readonly ageSecs: number;
+    }
   | { readonly kind: 'waiting'; readonly orderId: string }
   | { readonly kind: 'unreachable'; readonly orderId: string; readonly reason: string };
 
@@ -171,10 +185,14 @@ export async function reconcileOrders(deps: ReconcileDeps): Promise<ReconcileRep
 
     const obs = deps.observations.settlementByTxId(deps.deriveTxIdHex(row));
     if (obs === undefined) {
-      // Silence is not evidence of anything. But a payout that was witnessed on chain and whose settlement we
-      // have never seen announced, long after it should have been, is a question somebody has to answer.
       const ageSecs = deps.nowUnix() - row.record.witnessedAtUnix;
-      if (ageSecs >= deps.unsettledGraceSecs) {
+      // Absence only means something where we were looking. A payout witnessed before the tail began watching sits
+      // in ledgers nobody read; accusing the pool of announcing nothing there would be accusing it of our own gap.
+      const coverage = deps.observations.coverageStartUnix();
+      if (coverage !== null && row.record.witnessedAtUnix < coverage) {
+        problems.push({ kind: 'blind', orderId: row.orderId, reason: 'never-watched', ageSecs });
+      } else if (ageSecs >= deps.unsettledGraceSecs) {
+        // Inside our coverage, long past the grace, and still no announcement. Somebody has to answer for that.
         problems.push({ kind: 'unobservable', orderId: row.orderId, ageSecs });
       } else {
         waiting += 1;
@@ -234,9 +252,14 @@ export async function reconcileOrders(deps: ReconcileDeps): Promise<ReconcileRep
       continue;
     }
     if (gt.verdict === 'UNSETTLED') {
+      // We HOLD the pool's announcement for this order — it is in our observations, which is how we got here. The
+      // chain simply will not hand the transaction back any more (retention, or a reset, or it never landed; the
+      // RPC's NOT_FOUND cannot tell those apart). So this is a limit of what we can re-confirm, not a claim that
+      // the settlement did not happen. Saying "the pool announced nothing" here would contradict our own log.
       problems.push({
-        kind: 'unobservable',
+        kind: 'blind',
         orderId: row.orderId,
+        reason: 'aged-out',
         ageSecs: deps.nowUnix() - row.record.witnessedAtUnix,
       });
       continue;
@@ -256,4 +279,64 @@ export async function reconcileOrders(deps: ReconcileDeps): Promise<ReconcileRep
   }
 
   return { audited, reconciled, problems, waiting, unreachable, upgrades };
+}
+
+// An audit re-derives its verdict from scratch on every tick, so a stuck order restates its problem forever. Paging
+// forever is the same as paging never: the operator stops reading. Latch each order's problem and page it once —
+// but key the latch on WHAT is wrong, not merely on which order, so a problem that changes character (silence that
+// becomes a divergence) pages again. `unreachable` is deliberately not an alarm; it holds an existing latch open
+// rather than clearing it, so a chain we cannot reach can neither raise a page nor forge an all-clear.
+
+export interface ReconcileAlarmState {
+  /** orderId → the identity of the problem last paged for it. */
+  readonly alarmed: ReadonlyMap<string, string>;
+}
+
+export const INITIAL_RECONCILE_ALARMS: ReconcileAlarmState = { alarmed: new Map() };
+
+/** What makes two problems "the same problem". `null` for anything that must never page. */
+export function alarmKey(p: OrderAudit): string | null {
+  if (p.kind === 'diverged') return `diverged:${p.verdict}`;
+  if (p.kind === 'unobservable') return 'unobservable';
+  if (p.kind === 'blind') return `blind:${p.reason}`;
+  return null; // reconciled · waiting · unreachable
+}
+
+export interface ReconcileObservation {
+  readonly state: ReconcileAlarmState;
+  /** Page exactly these. Empty on a tick that restates only what was already paged. */
+  readonly fresh: readonly OrderAudit[];
+  /** Orders whose problem is gone. Worth one line each: an alarm that never clears is not an alarm. */
+  readonly resolved: readonly string[];
+}
+
+export function observeReconcile(
+  prev: ReconcileAlarmState,
+  report: ReconcileReport,
+): ReconcileObservation {
+  const current = new Map<string, string>();
+  const fresh: OrderAudit[] = [];
+  const unreachable = new Set<string>();
+
+  for (const p of report.problems) {
+    if (p.kind === 'unreachable') {
+      unreachable.add(p.orderId);
+      continue;
+    }
+    const key = alarmKey(p);
+    if (key === null) continue;
+    current.set(p.orderId, key);
+    if (prev.alarmed.get(p.orderId) !== key) fresh.push(p);
+  }
+
+  // Hold the latch open for an order we merely could not look at this tick, so it does not "resolve" and re-page.
+  const alarmed = new Map(current);
+  for (const [orderId, key] of prev.alarmed) {
+    if (!alarmed.has(orderId) && unreachable.has(orderId)) alarmed.set(orderId, key);
+  }
+
+  const resolved: string[] = [];
+  for (const orderId of prev.alarmed.keys()) if (!alarmed.has(orderId)) resolved.push(orderId);
+
+  return { state: { alarmed }, fresh, resolved };
 }

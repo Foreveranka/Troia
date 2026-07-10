@@ -154,8 +154,10 @@ function page(events: readonly OutflowEvent[], closeUnix = 2000, cursor = 'C1'):
   };
 }
 
-/** The tail persists what it sees; these tests are about the verdict, so the store is inert. */
+/** The tail persists what it sees; these tests are about the verdict, so the store is inert — except for the
+ *  coverage floor, which the tail itself writes and which the tests below assert on. */
 function noopObservations(): OutflowTailDeps['observations'] {
+  let coverage: number | null = null;
   return {
     recordOutflow: () => {},
     recordSettlement: () => {},
@@ -163,6 +165,10 @@ function noopObservations(): OutflowTailDeps['observations'] {
     settlementByTxId: (): SettlementObservation | undefined => undefined,
     outflowStroopsByTx: (): bigint => 0n,
     upgrades: (): readonly PoolUpgrade[] => [],
+    recordCoverageStart: (u: number) => {
+      if (coverage === null || u > coverage) coverage = u;
+    },
+    coverageStartUnix: (): number | null => coverage,
   };
 }
 
@@ -180,8 +186,47 @@ function deps(over: Partial<OutflowTailDeps> & { page?: PoolActivityPage }): Out
     authorized: over.authorized ?? { has: (h: string) => h === OURS },
     graceSecs: over.graceSecs ?? GRACE,
     coldStartMarginLedgers: over.coldStartMarginLedgers ?? 60,
+    nowUnix: over.nowUnix ?? ((): number => 9_000),
   };
 }
+
+describe('tailOutflows — coverage says where our knowledge begins', () => {
+  it('records the coverage floor on a cold start, before it acts on anything it read', async () => {
+    const observations = noopObservations();
+    const d = deps({ observations, cursor: new FakeCursor(null), nowUnix: () => 12_345 });
+    expect(observations.coverageStartUnix()).toBeNull();
+    await tailOutflows(d);
+    expect(observations.coverageStartUnix()).toBe(12_345);
+  });
+
+  it('does not re-record coverage once a cursor exists — a warm start already knows where it began', async () => {
+    const observations = noopObservations();
+    await tailOutflows(deps({ observations, cursor: new FakeCursor(null), nowUnix: () => 100 }));
+    await tailOutflows(deps({ observations, cursor: new FakeCursor('C0'), nowUnix: () => 900 }));
+    expect(observations.coverageStartUnix()).toBe(100);
+  });
+
+  it('moves the floor forward when the retention window scrolls past the cursor', async () => {
+    // Events between the old cursor and the new floor are gone for everyone. No order witnessed before now may be
+    // accused of having no settlement, so coverage must restart here.
+    const observations = noopObservations();
+    await tailOutflows(deps({ observations, cursor: new FakeCursor(null), nowUnix: () => 100 }));
+    const d = deps({
+      observations,
+      cursor: new FakeCursor('C0'),
+      nowUnix: () => 5_000,
+      page: {
+        kind: 'CURSOR_BELOW_RETENTION',
+        cursorLedger: 10,
+        oldestLedger: 400,
+        latestLedger: 500,
+      },
+    });
+    const r = await tailOutflows(d);
+    expect(r.kind).toBe('blindSpot');
+    expect(observations.coverageStartUnix()).toBe(5_000);
+  });
+});
 
 describe('tailOutflows — the durable ordering IS the crash contract', () => {
   it('records a suspect BEFORE the cursor advances past its page', async () => {

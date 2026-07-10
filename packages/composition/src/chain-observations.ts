@@ -9,6 +9,8 @@
 //   out — USDC left the pool in this transaction (the token contract's own account of what moved).
 //   set — the pool announced a settlement for this order (`payment_made`, indexed by the order's tx_id).
 //   upg — the pool's code was replaced. After this, its announcements are claims, not proofs.
+//   cov — the instant we began watching. Only forward: a re-anchor after a retention gap moves it. Everything
+//         before it was never scanned, so its absence from `set` is a fact about us and not about the chain.
 //
 // The observations are a CACHE of the chain, not a substitute for it: the reconciler re-confirms a settlement is
 // still on chain before it will call an order reconciled. A testnet reset must not be reconciled away.
@@ -31,7 +33,8 @@ export class ObservationCodecError extends Error {
 type Record_ =
   | { readonly t: 'out'; readonly o: OutflowEvent }
   | { readonly t: 'set'; readonly s: SettlementObservation }
-  | { readonly t: 'upg'; readonly u: PoolUpgrade };
+  | { readonly t: 'upg'; readonly u: PoolUpgrade }
+  | { readonly t: 'cov'; readonly u: number };
 
 function encode(r: Record_): string {
   if (r.t === 'out') {
@@ -44,6 +47,9 @@ function encode(r: Record_): string {
       to: r.o.to,
       amountStroops: String(r.o.amountStroops),
     });
+  }
+  if (r.t === 'cov') {
+    return JSON.stringify({ v: RECORD_VERSION, t: 'cov', unix: r.u });
   }
   if (r.t === 'upg') {
     return JSON.stringify({
@@ -106,6 +112,11 @@ function decode(payload: string): Record_ {
       },
     };
   }
+  if (r.t === 'cov') {
+    const u = int(r.unix, 'unix');
+    if (u < 0) throw new ObservationCodecError('bad unix');
+    return { t: 'cov', u };
+  }
   if (r.t === 'upg') {
     return {
       t: 'upg',
@@ -140,6 +151,7 @@ export class FileChainObservationStore implements ChainObservationStore {
   private readonly setByTxId = new Map<string, SettlementObservation>();
   private readonly seenOutflow = new Set<string>();
   private readonly upgraded: PoolUpgrade[] = [];
+  private coverageStart: number | null = null;
   readonly warnings: readonly string[];
 
   constructor(dataDir: string) {
@@ -156,6 +168,12 @@ export class FileChainObservationStore implements ChainObservationStore {
   }
 
   private index(r: Record_): void {
+    if (r.t === 'cov') {
+      // The floor only ever rises. Taking the max (rather than the last record) means no ordering assumption about
+      // the log: an earlier start can never claim we scanned ledgers we did not.
+      if (this.coverageStart === null || r.u > this.coverageStart) this.coverageStart = r.u;
+      return;
+    }
     if (r.t === 'out') {
       // One transaction can move USDC more than once. Sum them, and dedupe on a re-read of the same page.
       const key = `${r.o.txHash}:${r.o.ledger}:${r.o.to}:${r.o.amountStroops}`;
@@ -190,6 +208,18 @@ export class FileChainObservationStore implements ChainObservationStore {
     if (this.upgraded.some((x) => x.txHash === u.txHash)) return;
     this.log.append(encode({ t: 'upg', u }));
     this.index({ t: 'upg', u });
+  }
+
+  recordCoverageStart(unix: number): void {
+    // Nothing new to say — do not grow the log. This is thrift, not safety: the floor's correctness lives in the
+    // max fold in `index`, which holds even for a log whose records arrive out of order.
+    if (this.coverageStart !== null && unix <= this.coverageStart) return;
+    this.log.append(encode({ t: 'cov', u: unix }));
+    this.index({ t: 'cov', u: unix });
+  }
+
+  coverageStartUnix(): number | null {
+    return this.coverageStart;
   }
 
   settlementByTxId(txIdHex: string): SettlementObservation | undefined {

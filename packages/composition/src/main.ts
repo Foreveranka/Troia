@@ -10,9 +10,11 @@ import { join } from 'node:path';
 import { createServer } from '@troia/backend';
 import {
   INITIAL_DRIFT_STATE,
+  INITIAL_RECONCILE_ALARMS,
   INITIAL_TAIL_HEALTH,
   isDurableLogFailure,
   observeDrift,
+  observeReconcile,
   observeTailHealth,
 } from '@troia/backend';
 import { LiveCexOracle, YahooUsdTryHistory } from '@troia/oracle';
@@ -243,6 +245,7 @@ async function main(): Promise<void> {
   const reconcileTick = server.reconcileTick;
   if (reconcileTick !== undefined) {
     let upgradeAlarmed = false;
+    let alarms = INITIAL_RECONCILE_ALARMS;
     let auditing = false;
     setInterval(() => {
       if (auditing) return;
@@ -260,7 +263,14 @@ async function main(): Promise<void> {
           for (const orderId of r.reconciled) {
             console.log(`[reconcile] ${orderId}: the chain agrees — reconciled`);
           }
-          for (const p of r.problems) {
+          // The audit restates every open problem on every tick. Page each one once, when it appears or when it
+          // changes character; a wall of identical alarms is read as noise and then not read at all.
+          const observed = observeReconcile(alarms, r);
+          alarms = observed.state;
+          for (const orderId of observed.resolved) {
+            console.log(`[reconcile] ${orderId}: the earlier alarm no longer holds — cleared`);
+          }
+          for (const p of observed.fresh) {
             if (p.kind === 'diverged') {
               console.error(
                 `RECONCILIATION FAILED for ${p.orderId}: ${p.verdict} — ${p.detail}` +
@@ -270,13 +280,26 @@ async function main(): Promise<void> {
               );
             } else if (p.kind === 'unobservable') {
               console.error(
-                `SETTLEMENT UNOBSERVABLE for ${p.orderId}: its pay() was witnessed ${p.ageSecs}s ago and the pool ` +
-                  `has still announced no settlement for it on chain. It may have settled inside a retention blind ` +
-                  `spot, or not at all. The solvency drift tripwire is the only remaining cover.`,
+                `SETTLEMENT UNOBSERVABLE for ${p.orderId}: its pay() was witnessed ${p.ageSecs}s ago, inside the ` +
+                  `window the payout tail has been watching, and the pool has still announced no settlement for it ` +
+                  `on chain. The solvency drift tripwire is the only remaining cover.`,
               );
-            } else if (p.kind === 'unreachable') {
-              console.warn(`[reconcile] ${p.orderId}: could not reach the chain (${p.reason})`);
+            } else if (p.kind === 'blind') {
+              console.warn(
+                p.reason === 'never-watched'
+                  ? `[reconcile] ${p.orderId}: its pay() was witnessed ${p.ageSecs}s ago, before the payout tail ` +
+                      `began watching, so its settlement was never scanned. Nothing can be concluded about it here; ` +
+                      `drift is the cover. Not an accusation.`
+                  : `[reconcile] ${p.orderId}: the pool's settlement announcement is in our log, but the chain will ` +
+                      `no longer return the transaction (retention, a reset, or it never landed — RPC cannot tell ` +
+                      `them apart), so it can never be re-confirmed. Not an accusation.`,
+              );
             }
+          }
+          for (const p of r.problems) {
+            // Deliberately unlatched and never an alarm: a chain we cannot reach must not page, and must not clear.
+            if (p.kind === 'unreachable')
+              console.warn(`[reconcile] ${p.orderId}: could not reach the chain (${p.reason})`);
           }
           if (r.waiting > 0)
             console.log(`[reconcile] ${r.waiting} payout(s) awaiting their settlement on chain`);

@@ -118,6 +118,13 @@ export interface ChainObservationStore {
   outflowStroopsByTx(txHash: string): bigint;
   /** Every time the pool's code was replaced. After the first one, its announcements prove nothing. */
   upgrades(): readonly PoolUpgrade[];
+  /**
+   * The instant the tail began (or resumed) watching. Nothing before it was ever scanned, so the ABSENCE of an
+   * observation before this point is a statement about us, not about the chain. Monotonic: a later start wins,
+   * because a re-anchor after a retention gap moves the floor forward.
+   */
+  recordCoverageStart(unix: number): void;
+  coverageStartUnix(): number | null;
 }
 
 /** Last-wins checkpoint. Written AFTER everything on the page is durably accounted for. */
@@ -147,6 +154,12 @@ export interface OutflowTailDeps {
   readonly graceSecs: number;
   /** How far back a cold start anchors. Small: everything before it is an acknowledged, logged blind spot. */
   readonly coldStartMarginLedgers: number;
+  /**
+   * The same clock the evidence rows are stamped with. Used ONLY to record where our coverage begins, never to
+   * judge an outflow — that is ledger close time. The reconciler compares an evidence row's stamp against this
+   * one, so both must come from the same clock or the comparison is meaningless.
+   */
+  readonly nowUnix: () => number;
 }
 
 export type OutflowTickReport =
@@ -183,6 +196,11 @@ export async function tailOutflows(deps: OutflowTailDeps): Promise<OutflowTickRe
   if (saved === null) {
     const head = await deps.tail.latestLedger();
     coldStartFromLedger = Math.max(1, head - deps.coldStartMarginLedgers);
+    // Say where our knowledge begins BEFORE we act on any of it. A payout witnessed before this instant settled in
+    // ledgers we never read, so its absence from our observations means nothing and must never be reported as the
+    // pool having announced nothing. Recorded conservatively (the anchor is a few minutes older than `now`), which
+    // can only widen the "we never looked" window — never narrow it into a false accusation.
+    deps.observations.recordCoverageStart(deps.nowUnix());
     req = { startLedger: coldStartFromLedger };
   } else {
     req = { cursor: saved };
@@ -197,6 +215,9 @@ export async function tailOutflows(deps: OutflowTailDeps): Promise<OutflowTickRe
   if (page.kind === 'CURSOR_BELOW_RETENTION') {
     // The window scrolled past us. Those events are unreachable, by anyone, forever. Re-anchor so the next tick
     // resumes AT head (a cursor resumes strictly after its ledger, so anchor one before), and say so out loud.
+    // Coverage restarts here too: a settlement inside the lost window can never be observed, so no order witnessed
+    // before now may be accused of having no settlement. Recorded before the cursor, like everything else.
+    deps.observations.recordCoverageStart(deps.nowUnix());
     deps.cursor.save(toidAtLedger(Math.max(1, page.latestLedger - 1)));
     return {
       kind: 'blindSpot',

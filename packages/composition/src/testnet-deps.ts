@@ -328,6 +328,7 @@ export async function buildTestnetServerDeps(
           graceSecs: cfg.outflowGraceSecs ?? DEFAULT_OUTFLOW_GRACE_SECS,
           coldStartMarginLedgers:
             cfg.outflowColdStartMarginLedgers ?? DEFAULT_COLD_START_MARGIN_LEDGERS,
+          nowUnix: () => Math.floor(Date.now() / 1000),
         };
 
   // The live audit. It finds each order's settlement by the identifier the CONTRACT indexes, not by the

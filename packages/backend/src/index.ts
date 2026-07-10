@@ -125,8 +125,15 @@ export type {
   TailHealthObservation,
 } from './settlement/outflow-worker.js';
 
-export { reconcileOrders } from './settlement/reconcile-worker.js';
+export {
+  reconcileOrders,
+  observeReconcile,
+  alarmKey,
+  INITIAL_RECONCILE_ALARMS,
+} from './settlement/reconcile-worker.js';
 export type {
+  ReconcileAlarmState,
+  ReconcileObservation,
   ReconcileDeps,
   ReconcileReport,
   ReconciledStore,

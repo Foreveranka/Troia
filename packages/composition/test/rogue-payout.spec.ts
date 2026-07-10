@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { tailOutflows, toidAtLedger } from '@troia/backend';
@@ -8,6 +8,7 @@ import type { OutflowEvent, PoolActivityPage, PoolFetch } from '@troia/stellar-c
 import { FileWriteAheadJournal } from '../src/file-journal.js';
 import { FileCursorStore, FileSuspectStore } from '../src/outflow-stores.js';
 import { FileChainObservationStore } from '../src/chain-observations.js';
+import { FileAppendLog } from '../src/file-append-log.js';
 
 // The whole point of step 3, end to end, over real files.
 //
@@ -75,6 +76,7 @@ function boot(dir: string, events: readonly OutflowEvent[], nowCloseUnix: number
       authorized: journal.authorizedTxHashes(),
       graceSecs: GRACE,
       coldStartMarginLedgers: 60,
+      nowUnix: (): number => nowCloseUnix,
     },
   };
 }
@@ -158,5 +160,51 @@ describe('the rogue-payout alarm, end to end', () => {
     expect(r.rogue).toEqual([]);
     expect(r.cleared).toBe(1);
     expect(new FileSuspectStore(dir).all()).toEqual([]);
+  });
+});
+
+describe('the coverage floor, over real files', () => {
+  it('survives a restart, so a fresh process does not re-declare its knowledge older than it is', () => {
+    const dir = tmp();
+    new FileChainObservationStore(dir).recordCoverageStart(1_700_000_000);
+    expect(new FileChainObservationStore(dir).coverageStartUnix()).toBe(1_700_000_000);
+  });
+
+  it('replays to the LATEST floor even from a log whose records are out of order', () => {
+    // The correctness guard is the max fold, so prove it where a max is the only thing that can save you: a log
+    // that already contains an older record AFTER a newer one. Written straight to the file, past the writer.
+    const dir = tmp();
+    const raw = new FileAppendLog(dir, 'chain-observations.log');
+    raw.append(JSON.stringify({ v: 1, t: 'cov', unix: 1_700_000_000 }));
+    raw.append(JSON.stringify({ v: 1, t: 'cov', unix: 1_600_000_000 }));
+    expect(new FileChainObservationStore(dir).coverageStartUnix()).toBe(1_700_000_000);
+  });
+
+  it('does not append a floor it already knows — an equal or older claim writes nothing', () => {
+    const dir = tmp();
+    const s = new FileChainObservationStore(dir);
+    s.recordCoverageStart(1_700_000_000);
+    const after = () => readFileSync(join(dir, 'chain-observations.log')).length;
+    const bytes = after();
+    s.recordCoverageStart(1_700_000_000); // equal
+    s.recordCoverageStart(1_600_000_000); // older
+    expect(after()).toBe(bytes);
+    expect(s.coverageStartUnix()).toBe(1_700_000_000);
+  });
+
+  it('moves forward, and the forward move is what a retention re-anchor persists', () => {
+    const dir = tmp();
+    const s = new FileChainObservationStore(dir);
+    s.recordCoverageStart(1_700_000_000);
+    s.recordCoverageStart(1_800_000_000);
+    expect(new FileChainObservationStore(dir).coverageStartUnix()).toBe(1_800_000_000);
+  });
+
+  it('a cold-started tail leaves its floor on disk, next to the observations it made', async () => {
+    const dir = tmp();
+    const { deps } = boot(dir, [], 1_000);
+    await tailOutflows(deps);
+    expect(deps.observations.coverageStartUnix()).toBe(1_000);
+    expect(new FileChainObservationStore(dir).coverageStartUnix()).toBe(1_000);
   });
 });

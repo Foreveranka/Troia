@@ -2,11 +2,14 @@
 // MERCHANT. The crypto checkout mimics a real gateway (choose coin -> choose network -> pay to an address), and
 // when the shopper picks USDC on Stellar it renders a standard SEP-7 request that a browser extension can act on.
 
+import { USDC_ISSUER } from './deployment.generated';
+
 export const STORE = {
   name: 'STORE',
+  // This shop's own payee. Troia never records it: the shop declares its destination in the SEP-7 request.
   merchant: 'GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX',
   usdcCode: 'USDC',
-  usdcIssuer: 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W',
+  usdcIssuer: USDC_ISSUER,
 } as const;
 
 /** A short, human order reference — used as the on-chain payment memo. */

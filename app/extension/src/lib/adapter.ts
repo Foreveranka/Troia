@@ -1,12 +1,14 @@
 // The demo-storefront adapter: it locates a SEP-7 request in the page DOM and scores it against a set of
-// checks. The banner is offered ONLY when every REQUIRED check passes (fail-closed) — the soft "known
-// merchant" check just raises the confidence number. This is deliberately per-gateway: another store would
-// get its own adapter with its own DOM locator, while the money-safety checks below stay the same.
+// checks. Every check is REQUIRED, so the banner is offered only when all of them pass (fail-closed). There is
+// no merchant check: which shop is being paid is the shop's business, and the shop declares its destination in
+// the request. The one on-chain identity pinned here is Troia's USDC issuer. This is deliberately per-gateway:
+// another store would get its own adapter with its own DOM locator, while the money-safety checks below stay
+// the same.
 
 import { parseSep7, type Sep7Pay } from './sep7';
 import { isValidStellarPublicKey } from './strkey';
 import { toStroops } from './amount';
-import { USDC_ASSET_CODE, USDC_ISSUER_ALLOWLIST, DEMO_MERCHANT } from './config';
+import { USDC_ASSET_CODE, USDC_ISSUER_ALLOWLIST } from './config';
 
 export interface DetectionCheck {
   readonly id: string;
@@ -65,12 +67,6 @@ export function evaluate(uri: string): Detection | null {
       label: 'Payment reference present',
       pass: sep7.memo !== null && sep7.memo.length > 0,
       required: true,
-    },
-    {
-      id: 'merchant',
-      label: 'Known merchant',
-      pass: sep7.destination === DEMO_MERCHANT,
-      required: false,
     },
   ];
 

@@ -27,10 +27,14 @@ const FORBIDDEN_LITERALS: readonly string[] = [
 const STELLAR_ADDRESS = /\b[GC][A-Z2-7]{55}\b/;
 
 // The designated config module of each deployable — the ONE place a network literal is allowed. Everything
-// else under the scanned roots must be clean. (packages/config is excluded wholesale below.)
+// else under the scanned roots must be clean. (packages/config is excluded wholesale below.) For the two apps
+// this is the GENERATED file `just fund` rewrites, not the hand-written `config.ts`: an address typed by a human
+// is exactly what made a clone's extension reject the clone's own issuer.
 const CONFIG_MODULES: readonly string[] = [
+  join(appDir, 'storefront', 'src', 'deployment.generated.ts'),
+  join(appDir, 'extension', 'src', 'lib', 'deployment.generated.ts'),
+  // The demo shop's own payee. It is the SHOP's identity, not Troia's, and Troia records it nowhere.
   join(appDir, 'storefront', 'src', 'config.ts'),
-  join(appDir, 'extension', 'src', 'lib', 'config.ts'),
 ];
 
 function collectSourceFiles(dir: string): string[] {

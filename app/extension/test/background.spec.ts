@@ -35,6 +35,83 @@ async function loadRouter() {
   return stub.onMessageListener();
 }
 
+// The background worker is the only component holding the backend host permission, so it is the only one that can
+// reach /intent. The manifest's match pattern is port-less — `http://localhost/*` lets the content script run on
+// ANY localhost port — so any other local dev server could host a page that looks like the storefront. The exact
+// origin allowlist is what makes that not enough, and a `sender` with no origin at all is not a content script.
+const SENDER = { origin: 'http://localhost:5173' };
+const FOREIGN = { origin: 'http://localhost:9999' };
+
+describe('background message router — who may speak to it', () => {
+  it('refuses a message from an origin outside the allowlist, and never reaches the backend', async () => {
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    const kept = handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, FOREIGN, sendResponse);
+
+    expect(postIntent).not.toHaveBeenCalled();
+    expect(stub.tabsCreate).not.toHaveBeenCalled();
+    expect(kept).toBe(false); // nothing async to wait for
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: false,
+      status: null,
+      error: 'forbidden_origin',
+    });
+  });
+
+  // Chrome sets `origin` for content scripts, but not every surface does. The fallback derives it from `url`,
+  // and `new URL(...).origin` drops the path — so a page deep inside the storefront is still the storefront.
+  it('accepts a sender that carries only a url, deriving the origin from it', async () => {
+    getStatus.mockResolvedValue({ ok: true, status: 'processing' });
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler(
+      { type: 'TROIA_STATUS', orderId: 'o1' },
+      { url: 'http://localhost:5173/checkout?x=1' },
+      sendResponse,
+    );
+    await flush();
+
+    expect(getStatus).toHaveBeenCalledWith('o1'); // the path and query are not part of the origin
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true, status: 'processing' });
+  });
+
+  it('refuses a url-only sender from a foreign origin', async () => {
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler(
+      { type: 'TROIA_STATUS', orderId: 'o1' },
+      { url: 'http://localhost:9999/evil' },
+      sendResponse,
+    );
+
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'forbidden_origin' });
+  });
+
+  it('refuses a sender whose url is not parseable', async () => {
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler({ type: 'TROIA_STATUS', orderId: 'o1' }, { url: 'not a url' }, sendResponse);
+
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'forbidden_origin' });
+  });
+
+  it('refuses a sender with no origin — that is not a content script', async () => {
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler({ type: 'TROIA_STATUS', orderId: 'o1' }, {}, sendResponse);
+
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'forbidden_origin' });
+  });
+});
+
 describe('background message router', () => {
   it('opens the hosted-form tab and replies when POST /intent returns a paymentPageUrl', async () => {
     const response = {
@@ -47,7 +124,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    const kept = handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, {}, sendResponse);
+    const kept = handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, SENDER, sendResponse);
     expect(kept).toBe(true); // async reply — channel kept open
     await flush();
 
@@ -69,7 +146,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, {}, sendResponse);
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, SENDER, sendResponse);
     await flush();
 
     expect(stub.tabsCreate).toHaveBeenCalledTimes(1);
@@ -86,7 +163,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, {}, sendResponse);
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, SENDER, sendResponse);
     await flush();
 
     expect(stub.tabsCreate).not.toHaveBeenCalled();
@@ -99,7 +176,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, {}, sendResponse);
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, SENDER, sendResponse);
     await flush();
 
     expect(stub.tabsCreate).not.toHaveBeenCalled();
@@ -111,7 +188,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, {}, sendResponse);
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, SENDER, sendResponse);
     await flush();
 
     expect(stub.tabsCreate).not.toHaveBeenCalled();
@@ -123,7 +200,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    const kept = handler({ type: 'TROIA_STATUS', orderId: 'o1' }, {}, sendResponse);
+    const kept = handler({ type: 'TROIA_STATUS', orderId: 'o1' }, SENDER, sendResponse);
     expect(kept).toBe(true);
     await flush();
 
@@ -136,7 +213,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    handler({ type: 'TROIA_STATUS', orderId: 'o1' }, {}, sendResponse);
+    handler({ type: 'TROIA_STATUS', orderId: 'o1' }, SENDER, sendResponse);
     await flush();
 
     expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'internal' });
@@ -147,7 +224,7 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    handler({ type: 'TROIA_RECEIPT', orderId: 'o1' }, {}, sendResponse);
+    handler({ type: 'TROIA_RECEIPT', orderId: 'o1' }, SENDER, sendResponse);
     await flush();
 
     expect(getReceipt).toHaveBeenCalledWith('o1');
@@ -158,8 +235,8 @@ describe('background message router', () => {
     const handler = await loadRouter();
     const sendResponse = vi.fn();
 
-    expect(handler({ type: 'NOPE' }, {}, sendResponse)).toBe(false);
-    expect(handler({ type: 'TROIA_INTENT' }, {}, sendResponse)).toBe(false); // missing body
+    expect(handler({ type: 'NOPE' }, SENDER, sendResponse)).toBe(false);
+    expect(handler({ type: 'TROIA_INTENT' }, SENDER, sendResponse)).toBe(false); // missing body
     expect(sendResponse).not.toHaveBeenCalled();
     expect(postIntent).not.toHaveBeenCalled();
     expect(stub.tabsCreate).not.toHaveBeenCalled();

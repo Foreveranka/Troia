@@ -92,11 +92,19 @@ jobs:
         run: pnpm prettier --check .
 
       # The extension is a standalone npm project outside the pnpm workspace, so it needs its own install.
-      - name: Extension test suite
+      # `npm test` runs vitest under esbuild, which STRIPS types without checking them. The extension lives
+      # outside the pnpm workspace, so `pnpm -r run build` never reaches it either — its `tsc -b` runs nowhere
+      # unless it runs here. Without this, a type error in the origin allowlist or the manifest generator ships
+      # on a green badge.
+      - name: Extension typecheck and build
         working-directory: app/extension
         run: |
           npm ci
-          npm test
+          npm run build
+
+      - name: Extension test suite
+        working-directory: app/extension
+        run: npm test
 
       - name: Storefront build and lint
         working-directory: app/storefront

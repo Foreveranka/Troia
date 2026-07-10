@@ -5,6 +5,7 @@
 // opens iyzico's hosted card page in a new tab; it also proxies status polls. It holds no keys and signs nothing.
 
 import { postIntent, getStatus, getReceipt } from './lib/backend';
+import { ALLOWED_ORIGINS } from './lib/config';
 import type { ExtensionMessage } from './lib/messages';
 
 export {}; // make this a module service worker
@@ -13,8 +14,36 @@ chrome.runtime.onInstalled.addListener(() => {
   console.info('[troia] background service worker installed');
 });
 
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+/**
+ * The manifest's match pattern carries no port, so `http://localhost/*` lets the content script run on ANY local
+ * port — any other dev server on this machine could serve a page that looks like the storefront. The exact-origin
+ * allowlist is what makes that not enough. A sender with no origin is not a content script at all.
+ */
+function isAllowedSender(sender: chrome.runtime.MessageSender): boolean {
+  const origin = sender.origin ?? (sender.url === undefined ? undefined : safeOrigin(sender.url));
+  return origin !== undefined && (ALLOWED_ORIGINS as readonly string[]).includes(origin);
+}
+
+function safeOrigin(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   const msg = message as Partial<ExtensionMessage> | null;
+
+  if (!isAllowedSender(sender)) {
+    // Shape the refusal like the message it answers, so the banner reports a failure rather than hanging.
+    sendResponse(
+      msg?.type === 'TROIA_INTENT'
+        ? { ok: false, status: null, error: 'forbidden_origin' }
+        : { ok: false, error: 'forbidden_origin' },
+    );
+    return false;
+  }
 
   if (msg?.type === 'TROIA_INTENT' && msg.body !== undefined) {
     postIntent(msg.body).then(

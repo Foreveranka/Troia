@@ -84,11 +84,14 @@ describe('evaluate', () => {
     expect(d.checks.find((c) => c.id === 'destination')!.pass).toBe(false);
   });
 
-  it('is payable for a valid but unknown merchant (soft check), with confidence < 1', () => {
+  // The extension pins Troia's USDC issuer, never a merchant. Which shop is being paid is the SHOP's business,
+  // and it says so in its own payment request — baking one address into the extension would mean a second store,
+  // or a reviewer's own deployment, scored worse for no reason a user could act on.
+  it('does not know or care which merchant is being paid — any valid destination scores full confidence', () => {
     const d = evaluate(sep7({ dest: OTHER_MERCHANT }))!;
     expect(d.payable).toBe(true);
-    expect(d.confidence).toBeLessThan(1);
-    expect(d.checks.find((c) => c.id === 'merchant')!.pass).toBe(false);
+    expect(d.confidence).toBe(1);
+    expect(d.checks.find((c) => c.id === 'merchant')).toBeUndefined();
   });
 
   it('returns null for a non-SEP-7 string', () => {

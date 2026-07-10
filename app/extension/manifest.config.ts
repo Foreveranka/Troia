@@ -1,4 +1,16 @@
 import { defineManifest } from '@crxjs/vite-plugin';
+import { BACKEND_BASE_URL, STOREFRONT_ORIGINS } from './src/lib/deployment.generated';
+
+// Chrome match patterns carry no port: `http://localhost/*` matches every port on that host, and a port-bearing
+// pattern matches none — which is why the content script once failed to run on 5174. So the manifest is
+// deliberately coarser than the exact-origin allowlist the background worker enforces. Both come from the same
+// deployment record, so pointing Troia at a public storefront is a change to that record, not to this file.
+const hostPattern = (origin: string): string => {
+  const u = new URL(origin);
+  return `${u.protocol}//${u.hostname}/*`;
+};
+const STOREFRONT_PATTERNS = [...new Set(STOREFRONT_ORIGINS.map(hostPattern))];
+const BACKEND_PATTERN = hostPattern(BACKEND_BASE_URL);
 
 // Typed MV3 manifest. Least privilege by design:
 //   - the content script runs ONLY on the allowlisted storefront origin (localhost dev for now),
@@ -22,14 +34,10 @@ export default defineManifest({
   },
   content_scripts: [
     {
-      // Port-less localhost patterns: extension match patterns match a host on ANY port, so this covers the
-      // storefront whether Vite serves it on 5173, 5174, … A port-bearing pattern (http://localhost:5173/*)
-      // does NOT match other ports — that was why the content script did not run on 5174.
-      matches: ['http://localhost/*', 'http://127.0.0.1/*'],
+      matches: STOREFRONT_PATTERNS,
       js: ['src/content.ts'],
       run_at: 'document_idle',
     },
   ],
-  // Also port-less so the background can reach the backend on any local port (default :3000).
-  host_permissions: ['http://localhost/*', 'http://127.0.0.1/*'],
+  host_permissions: [...new Set([...STOREFRONT_PATTERNS, BACKEND_PATTERN])],
 });

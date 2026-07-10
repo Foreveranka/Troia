@@ -4,7 +4,9 @@ target/
 .env
 .env.*
 !.env.example
-deployment.testnet.json
+# deployment.testnet.json is NOT ignored: it is Troia's fixed on-chain identity (issuer, SAC, pool, operator,
+# admin — all public, all published in docs/DEPLOYMENTS.md). Committing it is what makes "one pool, unchanging"
+# true for every clone instead of something each machine re-invents. Secrets stay in .env.
 demo/
 /data/
 *.wasm

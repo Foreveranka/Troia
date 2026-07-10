@@ -7,7 +7,7 @@ import { USDC_ISSUER } from './deployment.generated';
 export const STORE = {
   name: 'STORE',
   // This shop's own payee. Troia never records it: the shop declares its destination in the SEP-7 request.
-  merchant: 'GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX',
+  merchant: 'GBCUCFGEAJLHYFAZFPJZOSSFLMNXW6TCE4BFFEVMYYJX7LIMRYAMNYAE',
   usdcCode: 'USDC',
   usdcIssuer: USDC_ISSUER,
 } as const;

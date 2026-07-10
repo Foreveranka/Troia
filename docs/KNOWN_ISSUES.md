@@ -118,3 +118,22 @@ interleaving the runtime permits. **No network call runs inside the pool mutex**
 quote are fetched before `reserve()`, and the hosted checkout form is opened after it. A live burst would therefore
 exercise a narrower window than the test already does. What remains genuinely untested is throughput, not
 correctness — and the multi-process hazard in §3, which no single-process load test can find.
+
+## 9. `/intent` is unauthenticated; rate limiting is per-IP
+
+`POST /intent` takes no credential — anyone who can reach the backend can call it. That is **not a theft path**: the
+caller pays the TRY themselves (the backend prices the order server-side), and every field is re-validated
+fail-closed, so a forged call can neither misroute funds nor dictate a price. What a forged call can do is **cost** —
+each accepted intent reserves the pool and opens a hosted form.
+
+- **The mitigation in place.** A per-IP cap on `/intent` (`@fastify/rate-limit`, default 20/min). `GET /status` is
+  deliberately exempt, so the extension's 3-second poll is never throttled. This stops a naive single-source flood.
+- **What it does NOT stop, stated plainly.** The cap keys on `request.ip`. Two ways around it: a distributed or
+  rotating-IP caller spends a few requests per IP and never trips a per-IP cap, so it can still fill the pool with
+  reservations and make honest shoppers see `409 PoolInsufficient`; and under `trustProxy`, `request.ip` honors
+  `X-Forwarded-For`, so a directly-exposed backend with no sanitizing proxy in front lets a client spoof and rotate
+  the key. The counter is in-memory — per process, so a second backend keeps its own count (§3).
+- **Why it is safe today.** The PoC runs one process on the operator's own machine, iyzico is sandbox (no real charge
+  is possible), and the pool holds valueless testnet USDC. The exposure is availability, not loss.
+- **What closes it.** A reservation budget keyed on the order/session rather than the IP, and/or authenticating
+  `/intent` (a token the storefront mints). Both are public-deployment work, not correctness work.

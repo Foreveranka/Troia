@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "@troia/config": "workspace:*",
     "@troia/core": "workspace:*",
     "@troia/psp": "workspace:*",

@@ -9,7 +9,8 @@
 // (never the webhook-echoed one) plus the state===SolvencyReserved guard, never the webhook's status field.
 
 import Fastify from 'fastify';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
 import { canonicalizeOrderId, PayoutIntent } from '@troia/core';
 import { chargeEvent, projectCheckoutFormResult, verifyWebhookSignature } from '@troia/psp';
 import type { WebhookEvent } from '@troia/psp';
@@ -47,7 +48,21 @@ export interface AppDeps {
    *  worker so intent/webhook/poll serialize per order — without sharing, two overlapping drives of one order
    *  could double-submit a same-seq USDC replacement. Defaults to a private lock when omitted (standalone app). */
   readonly orderLocks?: KeyedMutex;
+  /** per-IP cap on POST /intent. Omitted -> DEFAULT_INTENT_RATE_LIMIT. Tests inject a tiny cap. */
+  readonly rateLimit?: IntentRateLimit;
 }
+
+/** A per-IP request cap for the one expensive money-path route, POST /intent. */
+export interface IntentRateLimit {
+  readonly max: number;
+  readonly timeWindowMs: number;
+}
+
+/** The public-deploy default: 20 intents per minute per IP. An honest checkout (with the extension's own
+ *  double-submit guard) stays well under it; a single-source flood is capped. NOT sized to stop a distributed
+ *  reservation-exhaustion DoS — rotating IPs each spend a few requests and never trip a per-IP cap; that hazard
+ *  is named in KNOWN_ISSUES and closed by a reservation budget, not by this. */
+export const DEFAULT_INTENT_RATE_LIMIT: IntentRateLimit = { max: 20, timeWindowMs: 60_000 };
 
 function optStr(o: Record<string, unknown>, k: string): string | undefined {
   const v = o[k];
@@ -97,6 +112,20 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // here carries no auth/money authority).
   const app = Fastify({ bodyLimit: 1024 * 1024, trustProxy: true });
 
+  // Rate limiting is opt-in per route (`global: false`), and only POST /intent opts in — it is the one route that
+  // reserves the pool and initializes a hosted charge, so it is the one worth defending; GET /status is polled every
+  // 3s by the extension and must never be throttled. The counter is in-memory, i.e. PER PROCESS — consistent with
+  // the single-backend-process constraint (KNOWN_ISSUES §3); a second process would keep its own count. The key is
+  // request.ip, which under trustProxy honors X-Forwarded-For: behind a proxy that sets and sanitizes XFF this is the
+  // real client, but on a direct public exposure a client can spoof XFF and rotate the key. So this bounds a naive
+  // single-source flood; it is not a defense against a distributed or XFF-spoofing attacker.
+  const intentLimit = deps.rateLimit ?? DEFAULT_INTENT_RATE_LIMIT;
+  app.register(rateLimit, {
+    global: false,
+    // keep the { error } shape the other routes return; statusCode is required here or the reply falls back to 500.
+    errorResponseBuilder: () => ({ statusCode: 429, error: 'RateLimited' }),
+  });
+
   // iyzico posts the customer's BROWSER to the checkout callbackUrl (the /return landing page below) as
   // application/x-www-form-urlencoded. Fastify has no default parser for that content type, so register a
   // permissive one (keep the raw string, never fail) — otherwise the browser redirect would 415. The landing page
@@ -110,7 +139,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   );
 
   // POST /intent — the fail-closed ① gate. A rejected intent consumes NO sequence and starts NO order.
-  app.post('/intent', async (request, reply) => {
+  const handleIntent = async (request: FastifyRequest, reply: FastifyReply) => {
     const raw = request.body;
     if (typeof raw !== 'object' || raw === null)
       return reply.code(400).send({ error: 'BadRequest' });
@@ -263,6 +292,18 @@ export function createApp(deps: AppDeps): FastifyInstance {
       spreadBps: quote.spreadBps, // the commission bps, for storefront transparency
       poolLow,
     });
+  };
+
+  // Register /intent inside after(): the rate-limit plugin installs its per-route hook when it LOADS, which — for a
+  // synchronous factory that does not await register — happens after this function returns. A route added before then
+  // is invisible to that hook and silently unlimited. after() defers this one registration until the plugin is ready;
+  // the routes below carry no limit, so they stay synchronous.
+  app.after(() => {
+    app.post(
+      '/intent',
+      { config: { rateLimit: { max: intentLimit.max, timeWindow: intentLimit.timeWindowMs } } },
+      handleIntent,
+    );
   });
 
   // GET /status/:orderId — coarse public status; NEVER the internal crypto state.

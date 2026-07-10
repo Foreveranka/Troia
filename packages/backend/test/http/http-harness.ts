@@ -7,7 +7,7 @@ import { deriveIds, deriveMemo } from '@troia/core';
 import type { FastifyInstance } from 'fastify';
 import { quoteUsdc } from '../../../pricing/src/index.js';
 import { createApp } from '../../src/http/app.js';
-import type { QuoteFn } from '../../src/http/app.js';
+import type { IntentRateLimit, QuoteFn } from '../../src/http/app.js';
 import { InMemoryOrderRegistry } from '../../src/http/order-registry.js';
 import { InMemoryStore } from '../../src/store/in-memory-store.js';
 import { FakeClock, FakePspPort, FakeStellarPort, makeConfig } from '../fakes/harness.js';
@@ -42,7 +42,16 @@ export interface HttpHarness {
   readonly trace: Trace;
 }
 
-export function makeHttpHarness(balanceUnits = 100n, quoteFn: QuoteFn = quote): HttpHarness {
+// Default the per-IP intent cap effectively off for the general suite (inject requests all share one IP, so the
+// production 20/min would eventually trip a test that fires many orders). The dedicated rate-limit test passes a
+// tiny cap to exercise the limit.
+const NO_LIMIT: IntentRateLimit = { max: 1_000_000, timeWindowMs: 60_000 };
+
+export function makeHttpHarness(
+  balanceUnits = 100n,
+  quoteFn: QuoteFn = quote,
+  rateLimit: IntentRateLimit = NO_LIMIT,
+): HttpHarness {
   const trace: Trace = [];
   const stellar = new FakeStellarPort(trace);
   const psp = new FakePspPort(trace);
@@ -55,6 +64,7 @@ export function makeHttpHarness(balanceUnits = 100n, quoteFn: QuoteFn = quote): 
     registry,
     quote: quoteFn,
     webhookSigningSecret: WEBHOOK_SECRET,
+    rateLimit,
   });
   return { app, store, stellar, psp, clock, registry, trace };
 }
@@ -80,6 +90,7 @@ export function restartHttpHarness(prev: HttpHarness, balanceUnits = 100n): Http
     registry,
     quote,
     webhookSigningSecret: WEBHOOK_SECRET,
+    rateLimit: NO_LIMIT,
   });
   return { app, store, stellar, psp, clock, registry, trace };
 }

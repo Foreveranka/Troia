@@ -190,6 +190,18 @@ video remain.
 ## Deferred — Phase-2, boundary only (NOT built now) ⏸
 
 - Real CEX rebalance **inventory buy** — only the real exchange buy+withdraw that _economically acquires_ the USDC is deferred (invariant ③b); the automatic trigger + the testnet SAC-mint top-up are **built** (4.7). The future **agent + on/off-ramp service** plugs into the existing `RebalancePolicy` (decision) + `RebalanceProvider` (execution) seams.
+- **SEP-7 request signing (`origin_domain` + `signature`)** — the prerequisite for running the extension on a store
+  we do not control. Today the adapter validates the payee's _shape_ (valid strkey, allowlisted USDC issuer) but
+  never its _authorship_, so a DOM injection on an allowlisted storefront origin could name any destination and all
+  six checks would still pass. Not exploitable now: the only allowlisted origins are the local demo storefront, and
+  an attacker who can inject there already owns the machine. It becomes real the moment a third-party origin joins
+  the allowlist — which is exactly what "works on any store" means. The fix keeps the no-registry design (Troia never
+  records a merchant): verify the request's `signature` against the `URI_REQUEST_SIGNING_KEY` published at
+  `https://<origin_domain>/.well-known/stellar.toml`, **and** require `origin_domain` to equal the origin of the page
+  the request was found on — `sender.origin` in the background worker is the unforgeable source. Both halves are
+  needed: a valid signature only proves the request came from the domain it _claims_, so signature alone would let an
+  injected request name an attacker's domain and sign under it. Prerequisite for the demo storefront: it must sign
+  server-side, since a browser bundle cannot hold the shop's signing key.
 - KYC (interface now, testnet no-op).
 - HSM/multisig real thresholds (Signer boundary now, threshold=1 same flow).
 - Channel accounts for concurrency (`SequenceProvider` seam now).

@@ -176,7 +176,8 @@ more than one copy. Those are engineering, and they are enumerated one by one in
   port** (port-less `matches`/`host_permissions`), not `<all_urls>` and not a specific storefront origin. This
   keeps the reviewer's Chrome permission prompt honest and the attack surface small. A production build widens the
   allowlist to any storefront emitting a USDC SEP-7 — the DOM-scan mechanism is unchanged; only the manifest match
-  patterns change.
+  patterns change. But widening it to a storefront we do not control first requires SEP-7 request signing (see
+  [`ROADMAP.md`](ROADMAP.md), Deferred): the adapter validates the payee's shape, never its authorship.
 - **Mainnet.** Mainnet is a **separate, regulated phase**. Turkish regulatory engagement (MASAK) is a deliberate
   post-code step, handled with counsel — it is future work, never an excuse for a gap in what is claimed here.
   **No regulator has been contacted yet.** The sequencing is intentional and, we think, the cheap order: prove the

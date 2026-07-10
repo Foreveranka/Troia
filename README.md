@@ -10,6 +10,8 @@ the operator settles the merchant in USDC from a Stellar pool that is pre-funded
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design contract and [`docs/ROADMAP.md`](docs/ROADMAP.md)
 for the phased build plan. For the reviewer-verifiable proof story, see [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md),
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md), and [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+What is unfinished in the code, and why each gap is money-safe, is enumerated in
+[`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
 
 ## Verify it yourself
 
@@ -45,7 +47,7 @@ that lies about its own outcome cannot pass. A real `pay()` settled **74 USDC** 
 | `just contract-build` | `stellar contract build` (Soroban wasm)                               |
 
 `just verify` runs today (offline, network-blocked reconciliation proof — see
-[`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)); `just fund` bootstraps the live testnet rails (see
+[`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)); `just fund` verifies the one deployed pool and wires the apps to it — `just bootstrap` is what deploys one (see
 [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)); `just demo` runs the full live demo — real testnet payouts →
 a recon-report → offline verify (one order is a deliberate mismatch the reconciler catches). `just preflight`
 smokes every live dependency (operator fees, pool USDC, oracle, iyzico) before a run, and `just serve` stands up
@@ -60,8 +62,10 @@ Visa `4111111111111129`. Full list: [iyzico test cards](https://docs.iyzico.com/
 
 ## Secret boundary
 
-Secrets live **only** in `.env` (git-ignored). The repo contains `.env.example` placeholders and nothing
-else. `NetworkConfig` (in `packages/config`) holds **non-secret** values only — RPC url, network passphrase,
+Secrets live **only** in `.env` (git-ignored); the repo carries `.env.example` placeholders and nothing else that
+is secret. It does carry `deployment.testnet.json` — the five **public** identifiers of the one deployment
+(issuer, USDC asset contract, `TroyPool`, operator, admin), the same five published in
+[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md). An offline test asserts it holds no secret seed. `NetworkConfig` (in `packages/config`) holds **non-secret** values only — RPC url, network passphrase,
 contract/SAC addresses, and public G-addresses. Any network-specific literal outside `packages/config` is a
 bug and is caught by a guard test.
 
@@ -73,7 +77,7 @@ pass-through**, sized to the real ~21-day iyzico valör), double-entry ledger, t
 the iyzico direct-sale adapter, and the reviewer-verifiable reconciler (`just verify` passes offline).
 Settlement is **money-first** — the reversible TRY charge is taken before the irreversible USDC payout.
 
-The live testnet rails are deployed — three keypairs, the USDC SAC, and a seeded `TroyPool` (`just fund`; see
+The live testnet rails are deployed — three keypairs, the USDC SAC, and a seeded `TroyPool` (`just bootstrap`; see
 [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md)) — and a real on-chain `pay()` money path is proven. The iyzico
 fiat leg is validated against the sandbox (a real charge; `classifyIyzicoResult` calibrated to iyzico's real
 success shape + decline codes).

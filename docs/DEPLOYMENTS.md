@@ -3,9 +3,14 @@
 Live Stellar **testnet** addresses for the current deploy. Everything here is **non-secret** (public
 G-addresses, contract C-addresses, tx hashes); the three signing secrets live only in `.env` (git-ignored).
 
-> **Testnet is ephemeral.** A network reset wipes these addresses and balances — that is the honest
-> `signed ≠ settled` boundary (see [`RECONCILIATION.md`](RECONCILIATION.md)). Regenerate a fresh deploy any
-> time with `just fund`, which rewrites `deployment.testnet.json` (git-ignored) with the new addresses.
+> **This pool is fixed.** Troia settles against the ONE `TroyPool` named below. `just fund` verifies it is still
+> on chain and re-points the apps at it; it never deploys another, because a second pool would orphan this one —
+> its balance, its explorer links, and every recon report that names it.
+>
+> **Testnet is ephemeral, though.** A network reset erases the contract without touching the address table. That
+> is the honest `signed ≠ settled` boundary (see [`RECONCILIATION.md`](RECONCILIATION.md)). Recovering from a
+> reset — or deploying the first pool — is `just bootstrap`, which refuses to run while a live pool is recorded
+> and tells you to update this page when it does run.
 
 ## Accounts (classic `G…`)
 
@@ -39,8 +44,8 @@ issuer (USDC SAC mint authority). See ARCHITECTURE §9.
 | Mint 1000 USDC → pool (initial)             | `03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609` | [tx](https://stellar.expert/explorer/testnet/tx/03e69a9552ae11dd9cebbf6e5d4fd947d2222f42eb6fc73451e7ea02cdd93609) |
 | Mint +99,000 USDC → pool (top-up → 100,000) | `5f224b9b0d02ad40b6aa42e8527aa836e0daa95b8d97aa796e77ec06984fc8e4` | [tx](https://stellar.expert/explorer/testnet/tx/5f224b9b0d02ad40b6aa42e8527aa836e0daa95b8d97aa796e77ec06984fc8e4) |
 
-> The two mints above are a one-time historical seeding of this deploy; a fresh `just fund` today seeds the full
-> 100,000 USDC in a **single** mint, so re-running produces one mint tx, not this pair.
+> The two mints above are a one-time historical seeding of this deploy; `just bootstrap` today seeds the full
+> 100,000 USDC in a **single** mint, so a fresh deployment produces one mint tx, not this pair.
 
 ## Verified on-chain state
 
@@ -152,12 +157,30 @@ real defect: `GET /status/<orderId>` answered `NotFound` after the restart, beca
 Both `/status` and `/receipt` now answer a **settled** order from the durable evidence log instead; an order still
 in flight is still an honest `404`. See [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4.
 
-## Reproduce
+## Working against this deployment
 
 ```bash
-just fund   # generates/funds the 3 keypairs (once), deploys the USDC SAC + a fresh TroyPool,
-            # mints the pool seed, and writes deployment.testnet.json + .env (both git-ignored)
+just fund   # asserts the pool above is still on chain, tops up fee XLM for keys this machine holds,
+            # and re-points the storefront + extension at it. Never deploys anything.
 ```
+
+`deployment.testnet.json` — the record of the five identities above — **is in the repository**: every value in it
+is public, and committing it is what makes "one pool, unchanging" true for every clone rather than something each
+machine re-invents. Moving money additionally needs the matching secrets in `.env`, and those never leave a
+machine. An offline test pins the two apps to this record, so a stale wiring fails the gate rather than the demo.
+
+## Deploying a pool (first time, or after a testnet reset)
+
+```bash
+just bootstrap   # generates/funds the 3 keypairs (once), deploys the USDC SAC + a TroyPool, mints the pool
+                 # seed, rewrites deployment.testnet.json (COMMIT the change), writes .env (git-ignored),
+                 # and wires the two apps
+```
+
+It **refuses** unless the chain proves the recorded pool is absent. A live pool refuses; a network it cannot see
+refuses too, because a guess is not proof and a second pool would silently abandon the first along with its
+balance. There is no override flag: abandoning a live pool means changing `deployment.testnet.json` in a reviewed
+commit, deliberately. When it does run, the table on this page is stale and must be rewritten.
 
 Stack: stellar CLI 26.0.0, `soroban-sdk 26.0.0`, USDC = 7 decimals. Network passphrase
 `Test SDF Network ; September 2015`.

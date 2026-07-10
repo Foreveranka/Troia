@@ -205,10 +205,10 @@ worker (`settleTick`, on its own `SETTLEMENT_TICK_MS` interval, default 5s) runs
 tick **arms** every money-good order (`UsdcConfirmed`/`Reconciled`) and, after the settlement valör, refills the
 pool from _exactly that order's_ collected TRY — converted to USDC at the live oracle rate — by minting real
 issuer-signed USDC into the pool (a `SimulatedRebalance` wrapping `createSacMintClient`, the SAC-admin mint: the
-programmatic form of `just fund`'s mint step); `store.creditPool` then lifts the `/intent` solvency gate. The
+programmatic form of `just bootstrap`'s mint step); `store.creditPool` then lifts the `/intent` solvency gate. The
 trigger is **time/valör-driven per order**, _not_ watermark→`topUp`; the `poolLowWatermarkStroops` low-water mark
-still only **warns** (`/intent → poolLow:true`). `just fund` now only **seeds** the pool at boot — ongoing refill
-is automatic.
+still only **warns** (`/intent → poolLow:true`). `just bootstrap` seeds the pool once, at deployment — ongoing refill
+is automatic, and `just fund` never mints.
 
 **Valör (demo).** The real iyzico settlement valör is **~21 days**; for the demo it is **compressed** to
 `DEMO_VALOR_SECS` (default **30s**) so the automatic rebalance is visible within the demo window. This is demo
@@ -524,7 +524,7 @@ Three separate keypairs even on testnet (no collapse): **admin** (`TROIA_ADMIN_S
 
 - `NetworkConfig` = non-secret, injected: RPC url, passphrase, `TroyPool` C-address, USDC SAC id, public
   G-addresses. Secrets = env only, git-ignored, `.env.example` placeholders in repo.
-- Phase-0 funding (`just fund`): friendbot funds XLM only; `stellar contract asset deploy` for USDC SAC;
+- One-time deployment (`just bootstrap`): friendbot funds XLM only; `stellar contract asset deploy` for USDC SAC;
   `mint(TroyPool_C, POOL_SEED)` directly to the contract C-address (no transfer/deposit step, no trustline).
 
 ---

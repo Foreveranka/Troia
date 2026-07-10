@@ -11,7 +11,7 @@
 > kill-and-restart — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 >
 > This is the operational script for the Phase-4.5 live step: a real iyzico charge automatically driving a real
-> on-chain `TroyPool.pay()`, behind a public callback/return tunnel on testnet. Everything the run needs is wired +
+> on-chain `TroyPool.pay()` on testnet. Everything the run needs is wired +
 > offline-tested (see [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4); this doc is how a human actually
 > drives it. Honest boundary: **`signed ≠ settled`** — we prove what we signed cryptographically and what settled
 > while the chain remembers it.
@@ -44,22 +44,41 @@ hit a real RPC / the real sandbox. This run smokes:
 - **iyzico sandbox account** — register free at `sandbox-merchant.iyzipay.com`, copy `apiKey` + `secretKey` into
   `.env`. (The signed server-to-server notification webhook is deferred — settlement is driven by the poll worker's
   authenticated pull, so no dashboard webhook config is needed for this run.)
-- **A public tunnel** — e.g. `cloudflared` (`brew install cloudflared`), `ngrok`, or any https reverse tunnel to
-  `localhost`. iyzico must be able to POST the webhook to a public URL.
-- `.env` filled from `.env.example` (see the secret list there). `.env` + `deployment.testnet.json` are git-ignored.
+- **A public tunnel — only if the browser and the backend are on different machines.** `TROIA_CALLBACK_URL` is the
+  hosted form's `callbackUrl`, and iyzico posts the **customer's browser** there after payment; iyzico's servers
+  never call it. `/return` verifies nothing and moves no money, so settlement does not depend on it at all. Both
+  proven runs used `cloudflared`, but the sandbox **accepts a plain `http://localhost:3000/return`** (measured:
+  `initializeCheckoutForm` returns `status: success`), so a same-machine run needs no tunnel.
+- `.env` filled from `.env.example` (see the secret list there). `.env` is git-ignored; `deployment.testnet.json`
+  is **committed** — it holds only public identifiers, and it is the one deployment everything settles against.
 - **`just serve` also requires `TROIA_ISSUER_SECRET`** — the USDC-SAC admin key that signs the rebalance mint,
   **separate from the operator payout key**; boot fails **closed** without it.
 
 ---
 
-## Step 1 — Deploy the rails (once)
+## Step 1 — Point at the deployed rails
 
-If there is no `deployment.testnet.json` yet (or the testnet was reset):
+Troia settles against ONE deployed `TroyPool` (see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). With its
+`deployment.testnet.json` and the matching secrets in `.env`:
 
 ```bash
-just fund     # generates/funds 3 keypairs, deploys the USDC SAC + a fresh TroyPool, mints the 100,000 USDC seed,
-              # writes deployment.testnet.json + .env (both git-ignored). See docs/DEPLOYMENTS.md.
+just fund     # asserts the pool is still on chain, tops up fee XLM, and points the storefront + the extension
+              # at it (`scripts/wire-apps.mjs`). It never deploys a pool.
 ```
+
+If there is no deployment at all — the first one ever, or the testnet was reset and erased the contract — then
+`just bootstrap` creates it. It refuses while a live pool is recorded, because a second pool orphans the first.
+
+Either way the last step rewrites `app/storefront/src/deployment.generated.ts` and
+`app/extension/src/lib/deployment.generated.ts` (committed files holding public identifiers only), so the apps
+follow the deployment rather than a hard-coded address. **Rebuild the extension afterwards** — its config is
+compiled in, and a stale build would reject the deployment's own USDC and never show the banner:
+
+```bash
+cd app/extension && npm run build   # then load app/extension/dist as an unpacked extension
+```
+
+Re-run `just wire` on its own if you ever change the deployment without re-funding.
 
 ## Step 2 — Preflight: is everything up? (readiness gate)
 
@@ -74,16 +93,23 @@ reachable with your creds (a no-charge probe — it creates no checkout form). *
 Note: preflight does **not** yet verify `TROIA_ISSUER_SECRET` or the issuer's XLM for fees — a missing/wrong issuer
 key surfaces only when the rebalance bot first mints.
 
-## Step 3 — Open the tunnel, set the callback URL
+## Step 3 — Set the callback URL
 
-In a dedicated terminal:
+iyzico redirects the customer's **browser** to this address after payment. The settlement itself is driven
+separately by the poll worker's server-side pull, so this is a landing page and nothing more.
+
+If the browser runs on the same machine as the backend — the usual local case — point it straight at localhost:
+
+```
+TROIA_CALLBACK_URL=http://localhost:3000/return
+```
+
+If the browser is elsewhere, open a tunnel in a dedicated terminal and use its https URL instead. Both proven runs
+did this:
 
 ```bash
 cloudflared tunnel --url http://localhost:3000     # prints a public https URL, e.g. https://abc-xyz.trycloudflare.com
 ```
-
-Put that URL + `/return` into `.env` (iyzico redirects the customer's browser here after payment; the actual
-settlement is driven separately by the poll worker's server-side pull, so this is just a friendly landing page):
 
 ```
 TROIA_CALLBACK_URL=https://abc-xyz.trycloudflare.com/return
@@ -162,7 +188,7 @@ diagnostics, the code sits on a different contractId (SAC vs TroyPool) or nested
 | Symptom                                 | Likely cause                                                                                                                                                                             |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `just serve` throws on boot             | a missing/blank env var, or the operator secret ≠ deployment operator (run `just preflight`)                                                                                             |
-| `/intent` → `409 PoolInsufficient`      | the pool cannot cover the amount — reduce it or re-`just fund`                                                                                                                           |
+| `/intent` → `409 PoolInsufficient`      | the pool cannot cover the amount — reduce it, or mint more USDC into it with the issuer key (`just fund` does not mint)                                                                  |
 | `/intent` → `502 PriceUnavailable`      | the live oracle/history is down — re-run `just preflight` to see which                                                                                                                   |
 | the browser shows an error after paying | the tunnel is down or `TROIA_CALLBACK_URL` is stale/not pointing at `/return` — settlement still proceeds via the poll worker regardless                                                 |
 | the charge succeeds but no `pay()`      | check the `just serve` logs; the poll worker re-retrieves the sale by token and drives it on each `POLL_INTERVAL_MS` tick (an `UNKNOWN` charge is re-driven, a declined one fails clean) |

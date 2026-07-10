@@ -120,7 +120,8 @@ settled while the chain remembers it. We never blur the two."_
 > "And here it is actually moving money. Same flow as Act 3 — now with a real card and a real testnet payout."
 
 Setup (before recording): `just serve` (backend on `:3000`), `npm run dev` in `app/storefront`, the extension
-loaded unpacked, a public webhook tunnel so iyzico can reach `/webhook`.
+loaded unpacked. No tunnel is needed when the browser and the backend share a machine: iyzico redirects the
+customer's browser to `TROIA_CALLBACK_URL`, and settlement is driven separately by the poll worker's pull.
 
 1. **Shop like a customer.** On the demo storefront, sign in, add items, pick a shipping tier, reach the payment
    step. The customer sees only a ₺ total — never USDC, never a wallet, never a memo.
@@ -159,7 +160,7 @@ Optional trust beat: _"And if anything stalls, the banner never lies about money
 | `just build` / `just test` / `cargo test` / `just lint`                 | ✅ **runs today** (zero setup)                                 |
 | `just verify` (offline reconciler proof + tampered-report failure)      | ✅ **runs today** (zero setup)                                 |
 | Money-first flow **narration** + public-status mapping                  | ✅ **runs today** (design + tests)                             |
-| `just fund` (friendbot + USDC SAC deploy + mint)                        | ✅ done (Phase 4.4)                                            |
+| `just bootstrap` (friendbot + USDC SAC deploy + mint)                   | ✅ done (Phase 4.4)                                            |
 | Live storefront (`app/storefront`, SEP-7 pay URI)                       | ✅ built (Phase 5.1)                                           |
 | "Pay with Troy card" extension → real charge → real `pay()`             | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run |
 | `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done (Phase 4.4 + 5.2)                                      |
@@ -167,7 +168,7 @@ Optional trust beat: _"And if anything stalls, the banner never lies about money
 
 Acts 1–3 run today with zero setup; Act 2 (the offline, zero-trust proof) is the reproducible centerpiece. Act 4
 is proven — a real Troy sandbox card charge auto-drove a real on-chain `pay()` (74 USDC, tx `cd643d71…`) — but
-re-running it live needs the stack up (`just serve` + storefront + extension + webhook tunnel). The remaining
+re-running it live needs the stack up (`just serve` + storefront + extension). The remaining
 polish is a public shareable deploy so Act 4 runs without a local machine.
 
 ---

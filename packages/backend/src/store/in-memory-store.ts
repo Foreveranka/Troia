@@ -229,8 +229,12 @@ export class InMemoryStore implements Store {
     return [...byOrder.values()];
   }
 
+  /** @see Store.settledEvidence — the row's existence pins the state to UsdcConfirmed | Reconciled. */
+  settledEvidence(orderId: string): EvidenceRow | undefined {
+    return this.evidence.find((r) => r.orderId === orderId);
+  }
+
   confirmedOrder(orderId: string): { orderId: string; order: OrderFacts } | undefined {
-    const row = this.evidence.find((r) => r.orderId === orderId);
-    return row === undefined ? undefined : { orderId: row.orderId, order: row.order };
+    return this.settledEvidence(orderId);
   }
 }

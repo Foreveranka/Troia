@@ -142,6 +142,16 @@ export interface Store {
   flagLoss(orderId: string, bucket: LossBucket, usdcTxHash: string | null): Promise<void>;
   markWebhookSeen(eventId: string, orderId: string, nowMs: number): Promise<'first' | 'duplicate'>;
   appendEvidence(orderId: string, record: EvidenceRecord, order: OrderFacts): Promise<void>;
+  /**
+   * The durable evidence row for an order, or undefined.
+   *
+   * Its EXISTENCE is a statement about the order's state, and a precise one. `handToReconciler` is the only
+   * effect that writes a row, and it fires on exactly the two transitions into `UsdcConfirmed` — from which the
+   * only exit is `Reconciled`. Both map to the public status `completed`. So a caller that has lost its in-memory
+   * order rows (a restart does) may still answer for a settled order from here, and cannot thereby claim more
+   * than it knows.
+   */
+  settledEvidence(orderId: string): EvidenceRow | undefined;
   /** Persisted deterministic retry counters; return the NEW (post-increment) value from 0. retriesRemaining
    *  is `newCount <= policy.max*Retries`, so recovery/replay re-reads the same counter and picks the same
    *  branch (never a timer). Atomic under withOrderLock. */

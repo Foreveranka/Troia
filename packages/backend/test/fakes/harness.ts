@@ -21,6 +21,7 @@ import type { EngineDeps } from '../../src/engine/events.js';
 import type {
   Clock,
   EvidenceRecord,
+  EvidenceRow,
   OrderFacts,
   InFlightPatch,
   LossBucket,
@@ -93,6 +94,9 @@ export class FakeStore implements Store {
   async appendEvidence(orderId: string, record: EvidenceRecord, order: OrderFacts): Promise<void> {
     this.trace.push('store.appendEvidence');
     this.evidence.push({ orderId, record, order });
+  }
+  settledEvidence(orderId: string): EvidenceRow | undefined {
+    return this.evidence.find((r) => r.orderId === orderId);
   }
   async bumpDeadRetries(orderId: string): Promise<number> {
     const n = (this.deadRetries.get(orderId) ?? 0) + 1;

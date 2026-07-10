@@ -59,6 +59,31 @@ export function makeHttpHarness(balanceUnits = 100n, quoteFn: QuoteFn = quote): 
   return { app, store, stellar, psp, clock, registry, trace };
 }
 
+/**
+ * A brand-new process against the same durable evidence. The order registry is memory and does not come back; the
+ * evidence log replays exactly as `buildDurableBundle` replays it at boot. Everything else is fresh.
+ */
+export function restartHttpHarness(prev: HttpHarness, balanceUnits = 100n): HttpHarness {
+  const trace: Trace = [];
+  const stellar = new FakeStellarPort(trace);
+  const psp = new FakePspPort(trace);
+  const clock = new FakeClock();
+  const config = makeConfig();
+  const store = new InMemoryStore({
+    balanceStroops: balanceUnits * UNIT,
+    baseSeq: 1000n,
+    seedEvidence: prev.store.evidenceRecords(),
+  });
+  const registry = new InMemoryOrderRegistry(); // the restart's whole point: this is empty
+  const app = createApp({
+    engine: { stellar, psp, store, clock, config },
+    registry,
+    quote,
+    webhookSigningSecret: WEBHOOK_SECRET,
+  });
+  return { app, store, stellar, psp, clock, registry, trace };
+}
+
 export function intentBody(orderId: string): Record<string, string> {
   // NOTE: no appliedRateStroops / paidPriceTry — the backend prices the order server-side (deps.quote).
   return {

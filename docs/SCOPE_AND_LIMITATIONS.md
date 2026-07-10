@@ -139,12 +139,15 @@ The remaining honest limitations are operational, not "unrun":
   is still armed — never toward a double payout. A real database (one transaction, all the rows) is the mainnet
   swap, behind the same `Store` / `DurableLog` interfaces. There is also **no log rotation**: boot refuses above
   2 GiB with an explanatory error rather than truncating.
-- **A restart makes a completed order look lost to the customer.** Because the order rows are volatile,
-  `GET /status/<orderId>` answers `NotFound` after a restart — even for an order whose payout settled, whose
-  evidence is on disk, and which the live audit has already marked `Reconciled`. Observed, not theorised, in the
-  `2026-07-10` run. The money is intact and provable; only the customer-facing status endpoint forgot. Closing it
-  needs a durable order-row log behind the existing `Store` interface — the evidence row already carries the
-  order's frozen facts — and it is the one gap here a reviewer can trip over in a demo.
+- **A restart still forgets an order that has not settled yet.** `GET /status/<orderId>` and `GET /receipt/<orderId>`
+  now fall back to the durable evidence log, so a **settled** order keeps answering `completed` — with its real tx
+  hash — across a restart (this was `NotFound` when first observed in the `2026-07-10` run). The fallback cannot
+  overstate the case: `handToReconciler` is the only writer of an evidence row and fires on exactly the two
+  transitions into `UsdcConfirmed`, whose only exit is `Reconciled`; both are `completed`. An order **still in
+  flight** has no row and still answers `404` — honestly, because with the order rows gone we genuinely no longer
+  know. So does an order that failed cleanly: failure leaves no durable record. Both would need durable order rows
+  behind the same `Store` interface, which would also let the recovery worker resume in-flight orders after a
+  restart — a change to the money path's crash semantics, and therefore deliberately not made here.
 - **Two known evidence gaps, named rather than papered over.** The `revertAlreadyProcessed → UsdcConfirmed` path
   writes no evidence row (the reverted hash must not become a witness), so such an order is not picked up by the
   durable work-list; and the webhook's idempotency key is burned before `advance()`, so a crash in that window

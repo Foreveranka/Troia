@@ -273,8 +273,14 @@ export function createApp(deps: AppDeps): FastifyInstance {
       return reply.code(400).send({ error: 'BadRequest' });
     const orderId = canonicalizeOrderId(rawOrderId); // key on the same canonical identity /intent registered under
     const rec = registry.getByOrderId(orderId);
-    if (rec === undefined) return reply.code(404).send({ error: 'NotFound' });
-    return reply.send({ orderId, status: toPublicStatus(rec.state) });
+    if (rec !== undefined) return reply.send({ orderId, status: toPublicStatus(rec.state) });
+    // The registry is memory, and a restart erases it. The evidence log is not. A row exists only for an order
+    // whose USDC leg was witnessed on chain (Store.settledEvidence), so answering from it cannot overstate the
+    // case. Derive the status from the map rather than writing 'completed' here, so the two never drift apart.
+    // An order still in flight has no row and is still an honest 404 — we genuinely no longer know.
+    if (engine.store.settledEvidence(orderId) !== undefined)
+      return reply.send({ orderId, status: toPublicStatus('UsdcConfirmed') });
+    return reply.code(404).send({ error: 'NotFound' });
   });
 
   // GET /receipt/:orderId — reviewer-facing PROOF: the settlement pay() tx hash + the TRY charged, once known.
@@ -287,12 +293,22 @@ export function createApp(deps: AppDeps): FastifyInstance {
       return reply.code(400).send({ error: 'BadRequest' });
     const orderId = canonicalizeOrderId(rawOrderId);
     const rec = registry.getByOrderId(orderId);
-    if (rec === undefined) return reply.code(404).send({ error: 'NotFound' });
+    if (rec !== undefined)
+      return reply.send({
+        orderId,
+        status: toPublicStatus(rec.state),
+        txHash: rec.ctx.hashHex, // the on-chain USDC pay() witness (null until it lands)
+        paidPriceTry: rec.ctx.paidPriceTry,
+      });
+    // Same reasoning as /status. This is the "verify it yourself" surface, so it is the one that must NOT vanish
+    // when the process does: the durable row carries the very hash a reviewer takes to the explorer.
+    const settled = engine.store.settledEvidence(orderId);
+    if (settled === undefined) return reply.code(404).send({ error: 'NotFound' });
     return reply.send({
       orderId,
-      status: toPublicStatus(rec.state),
-      txHash: rec.ctx.hashHex, // the on-chain USDC pay() witness (null until it lands)
-      paidPriceTry: rec.ctx.paidPriceTry,
+      status: toPublicStatus('UsdcConfirmed'),
+      txHash: settled.record.txHash,
+      paidPriceTry: settled.order.paidPriceTry,
     });
   });
 

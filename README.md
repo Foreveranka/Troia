@@ -125,6 +125,6 @@ See [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md).
 
 Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend → Render) so the demo runs without
 a local machine, and a 3–5 min proof video. The live runs are single manual smokes, not a load/soak test. Orders
-in flight (submitted, not yet landed) are still forgotten by a restart — safely, never toward a double pay — and a
-restart makes a completed order answer `NotFound` on `/status`, because the order rows are still in memory. See
+in flight (submitted, not yet landed) are still forgotten by a restart — safely, never toward a double pay. A
+**settled** order survives one: `/status` and `/receipt` answer it from the durable evidence log. See
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

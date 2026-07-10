@@ -147,9 +147,10 @@ L35,3499d6da|{"v":1,"t":"cov","unix":1783668512}
 
 **What this run did _not_ prove.** No unauthorized outflow was staged, so `ROGUE PAYOUT` has still never fired
 against a real thief — only the negative (an authorized payout is not accused) is demonstrated. `CHAIN_DIVERGENCE`
-and both blind-spot states (`never-watched`, `aged-out`) remain exercised by tests only. And the customer-facing
-`GET /status/<orderId>` returns `NotFound` after a restart: the order rows are still in memory. The money survived;
-the status endpoint did not. See [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4.
+and both blind-spot states (`never-watched`, `aged-out`) remain exercised by tests only. The run also surfaced a
+real defect: `GET /status/<orderId>` answered `NotFound` after the restart, because the order rows are in memory.
+Both `/status` and `/receipt` now answer a **settled** order from the durable evidence log instead; an order still
+in flight is still an honest `404`. See [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4.
 
 ## Reproduce
 

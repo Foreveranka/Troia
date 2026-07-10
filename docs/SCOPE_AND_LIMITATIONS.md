@@ -41,6 +41,15 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   disagreement, all on injected quotes (no AI, no live network in the tested path).
 - **Reconciler + `just verify`** — the self-verifying evidence artifact, offline and network-blocked. See
   [`RECONCILIATION.md`](RECONCILIATION.md). This is the reviewer centerpiece and it works today.
+- **Crash durability with a stated contract** — an append-only log whose first write failure poisons it forever,
+  so a partial write can only live in the physical tail; a torn tail is truncated and reported, and a damaged
+  record that was fully written is **fatal**, never silently dropped. Every writer appends before it believes.
+  Tested by injected crashes and by mutation (delete a guard, watch the test fail). ARCHITECTURE §7b.
+- **Chain-authoritative detection** — a payout tail that reads the USDC SAC's `transfer` events and calls any
+  outflow whose hash is missing from the durable write-ahead journal a **rogue payout** (it could not have landed
+  otherwise), plus a live reconciler that finds each order's settlement through the contract-indexed `tx_id` and
+  refuses to mark it `Reconciled` unless the pool's code was never replaced, the announced amount equals what the
+  token contract moved, and the tx is still live. ARCHITECTURE §8a.
 - **Soroban `TroyPool` contract** — `pay` with atomic check-and-transfer (no TOCTOU), replay guard, pause,
   role-gated admin/upgrade; unit + integration + fuzz (conservation) tests green.
 - **Chrome MV3 "Pay with Troy card" extension** — the demo's actual money-path entry point, proven live e2e
@@ -107,10 +116,22 @@ The remaining honest limitations are operational, not "unrun":
 - **The revert-code read path is exercised only by fakes.** A _successful_ live `pay()` is proven (above), but a
   landed-and-**reverted** `pay()`'s diagnostic events (the input to the revert-code read) are the one shape only a
   live failing tx confirms — `scripts/probe-revert.mjs` is the check for it once such a tx exists on testnet.
-- **`InMemoryStore` / `InMemoryJournal` are single-process.** Correct for the PoC live-smoke (one process, no
-  restart); a durable store is the mainnet swap behind the same interface. A restart loses the in-flight witness,
-  which fails **safe** — an unreadable revert code re-drives, and the on-chain `Processed(tx_id)` guard is the
-  real double-pay shield — never toward a double payout.
+- **Durability is a file log, not a database — and it does not cover everything.** Seven append-only logs under
+  `TROIA_DATA_DIR/<troyPool-id>/` now survive a crash: the double-entry journal, the evidence rows (which carry
+  each order's frozen facts and act as the settlement work-list), the write-ahead list of authorized `pay()`
+  hashes, the chain observations, the reconciled marks, and the payout tail's cursor + suspects. They have an
+  explicit crash contract (ARCHITECTURE §7b) and a durable-log failure exits the process rather than degrading
+  quietly. What is **still volatile**, deliberately: the `OrderRow`s themselves, the reservation ledger, the
+  pending-settlement store, and the operator sequence snapshot. So **an order that was submitted but had not yet
+  landed is forgotten by a restart.** That fails **safe** — the on-chain `Processed(tx_id)` guard and the
+  single-use sequence both cap USDC delivery at one per order, and the durable evidence row means the settlement
+  is still armed — never toward a double payout. A real database (one transaction, all the rows) is the mainnet
+  swap, behind the same `Store` / `DurableLog` interfaces. There is also **no log rotation**: boot refuses above
+  2 GiB with an explanatory error rather than truncating.
+- **Two known evidence gaps, named rather than papered over.** The `revertAlreadyProcessed → UsdcConfirmed` path
+  writes no evidence row (the reverted hash must not become a witness), so such an order is not picked up by the
+  durable work-list; and the webhook's idempotency key is burned before `advance()`, so a crash in that window
+  drops the webhook's drive (the poll worker re-drives it on the next tick).
 - **Late sequence allocation, two-store crash window (durable-store only).** The operator sequence is allocated
   late — on `chargeOk`, the first step of the USDC leg — so an abandoned checkout consumes no sequence (a
   gap-free operator account). `allocate()` persists the sequence snapshot one effect before the `OrderRow` is

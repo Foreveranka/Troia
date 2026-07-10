@@ -142,8 +142,13 @@ diagnostics, the code sits on a different contractId (SAC vs TroyPool) or nested
 
 ## Known limits (not blockers — see SCOPE §4)
 
-- **`InMemoryStore` / `InMemoryJournal` are single-process.** Correct for a one-process live-smoke; a restart loses
-  the in-flight witness, which fails **safe** (re-drive; never a double pay). A durable store is the mainnet swap.
+- **The order rows are single-process; the money facts are not.** Seven append-only logs under
+  `TROIA_DATA_DIR/<troyPool-id>/` survive a restart (ledger journal, evidence rows, authorized `pay()` hashes,
+  chain observations, reconciled marks, tail cursor + suspects). The `OrderRow`s, reservations, pending
+  settlements, and the operator sequence snapshot do **not** — so a restart forgets an order that was submitted
+  but had not yet landed. That fails **safe** (re-drive; the on-chain `Processed(tx_id)` guard and the single-use
+  sequence are the double-pay shields), and the durable evidence row keeps its settlement armed. A real database
+  is the mainnet swap. See SCOPE §4 and ARCHITECTURE §7b.
 - **Oracle quorum is 3-of-3 sources.** A CEX outage fails a quote **closed** (retry), the money-safe default. If a
   source is flaky during the demo, the bounded retry absorbs a blip; a sustained outage needs a retry/pause.
 - **The reversal (same-day void) path** is only exercised if a charge succeeds but the USDC leg cannot settle —

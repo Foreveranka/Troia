@@ -99,6 +99,21 @@ the agent owns the _decision_ (when / how much), an on/off-ramp provider owns th
 mainnet that seam becomes a real CEX buy with the backend unchanged. On testnet the refill is a self-issued SAC
 mint, so the only Phase-2 piece is the real exchange buy that _economically acquires_ the USDC.
 
+What the system knows about money now **survives a crash.** Seven append-only logs under `TROIA_DATA_DIR` (default
+`data/<troyPool-id>/`) hold the double-entry journal, the settlement evidence, the write-ahead list of authorized
+`pay()` hashes, the chain observations, the reconciled marks, and the payout tail's cursor + suspects. Each has an
+explicit crash contract — a torn tail heals and reports; a damaged record that was fully written is fatal, never
+silently dropped — and a durable-log failure stops the process rather than degrading quietly.
+
+The chain now **answers for itself.** A payout tail reads the USDC token contract's own `transfer` events and
+calls any outflow whose hash never reached the write-ahead journal a rogue payout — it could not have landed
+otherwise, so no grace period is needed to be sure. A live reconciler finds each order's settlement through the
+`tx_id` the _contract_ indexes (not the hash we recorded) and refuses to mark it reconciled unless the pool's code
+was never replaced, the announced amount equals what the token contract actually moved, and the transaction is
+still live on chain. Booked-vs-chain drift alarms after three consecutive readings, and throws rather than falling
+silent when it cannot read the balance.
+
 Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend → Render) so the demo runs without
-a local machine, and a 3–5 min proof video. The live run was a single manual smoke, not a load/soak test. See
+a local machine, and a 3–5 min proof video. The live run was a single manual smoke, not a load/soak test. Orders
+in flight (submitted, not yet landed) are still forgotten by a restart — safely, never toward a double pay. See
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

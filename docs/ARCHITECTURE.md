@@ -222,8 +222,10 @@ seam). On testnet the execution is a self-issued SAC mint; on mainnet the **same
 withdrawal driven by the agent — the backend and the money-first core do not change.
 
 **Still Phase-2:** only the real inventory-acquiring CEX buy that _economically_ acquires the USDC (invariant ③b;
-testnet mints self-issued USDC without limit) and a durable cross-restart pending-settlement store + mint
-idempotency (in-memory in the PoC) remain deferred.
+testnet mints self-issued USDC without limit) remains deferred. The cross-restart durability this paragraph once
+deferred is **built** (§7b): the settlement work-list is now the durable evidence log rather than an in-memory
+registry, and `ledger.hasRef(ref)` makes the top-up mint idempotent across a restart — a re-armed order cannot
+mint twice.
 
 ---
 
@@ -239,6 +241,9 @@ idempotency (in-memory in the PoC) remain deferred.
 | ⑤   | PRICE-LOCK — the ₺ is priced server-side and frozen at `/intent`; the hosted direct-sale form charges exactly that           | `packages/pricing` computes, `core` freezes |
 | ⑥   | CHARGE IDEMPOTENCY (TRY) — iyzico has no dedup → our DB-guard + backend-issued token + 3-valued retrieve on the webhook      | `packages/psp` + backend                    |
 | ⑦   | SALE VOID (TRY) — a USDC failure after the charge voids the completed sale via `iyzico.cancel` (same-day) → `ChargeReversed` | `packages/psp` + backend                    |
+| ⑧   | DURABLE-FIRST — a fact is appended to disk before it is believed in memory; a log failure exits the process                  | `composition` `FileAppendLog` (§7b)         |
+| ⑨   | AUTHORIZED-BEFORE-SUBMIT — a `pay()` hash reaches `authorized.log` before `send`, so an unlisted outflow is theft            | `composition` `FileWriteAheadJournal` (§8a) |
+| ⑩   | BOOKED OUTFLOW — the pool is credited when the payout is armed; booked-vs-chain drift alarms, never absorbs                  | `packages/ledger` + `checkDrift` (§7b)      |
 
 **`BuildError` (flat enum, deterministic control order):**
 `AddressInvalidChecksum → MemoMissing → MemoWrongLength → MemoZero → MemoMismatch → AmountNonPositive →
@@ -322,6 +327,69 @@ fixed-point bigint — no clock, no network.
 
 ---
 
+### 7b. Durability — one append-only log, one crash contract
+
+A fact the system uses to move money must survive the process that learned it. Every such fact is appended to a
+crash-safe log **before** it is believed in memory. `packages/composition` owns the only `fs` in the system
+(`file-append-log.ts`); `backend` and `ledger` still import no `node:` and no `@stellar/` module, so the money
+core stays testable without a disk.
+
+**The frame.** `L<payloadByteLen>,<crc32-8-hex>|<payload>\n`. Append = a write-all loop over `writeSync`
+(`writeSync` does **not** loop on its own) followed by `fdatasyncSync`. A payload may not contain a raw newline.
+
+**The crash contract** (three rules that make the tail the only place damage can live):
+
+1. **The first write failure poisons the log forever.** Nothing is appended after a failed append, so a partial
+   write can only ever be the _physical last_ bytes of the file. Without this rule, a later successful append
+   would bury a torn record in the middle, where it is indistinguishable from corruption.
+2. **A torn tail is healed and reported.** A record is a torn tail only if its frame **runs past end-of-file**.
+   It is truncated, `fdatasync`ed, and surfaced as `recovered: { droppedBytes, atOffset }`.
+3. **Anything else is fatal.** If the frame _fits_ inside the file, the append completed — so a bad CRC there
+   means the bytes were damaged **after** they were durable. That is `DurableLogCorruption`, and the process
+   refuses to boot rather than silently discard a committed record.
+
+The subtlety worth stating: the discriminator is **not** "is there a newline after this record?" The terminating
+newline is the one byte the payload CRC does not cover, so trusting it would let a single flipped byte convince
+the reader to truncate a fully-committed record. Only the frame length can be trusted.
+
+**Durable-first ordering (book-or-neither).** Every writer appends to disk before mutating memory. The fs calls
+are synchronous, so `Ledger.post()` and `Store.appendEvidence()` are atomic on the event loop — no lock, no
+`await` splitting the read-modify-write. A `DurableLogError` carries `code: 'DurableLogFailure'`; every worker
+lets it escape and `main.ts` exits the process. (Before this, a poisoned log was swallowed into `markFailed`,
+which re-minted USDC on every tick and never credited it.)
+
+**Seven logs, under `TROIA_DATA_DIR/<troyPool-id>/`** (scoped per pool, so two deployments never share state):
+
+| File                     | What survives                                                               | Replay policy                    |
+| ------------------------ | --------------------------------------------------------------------------- | -------------------------------- |
+| `ledger-journal.log`     | every double-entry posting                                                  | **fail-closed** — refuse to boot |
+| `evidence.log`           | `(orderId, txHash, signedXdr, seq, witnessedAt)` + the order's frozen facts | tolerant, deduped                |
+| `authorized.log`         | every tx hash written **before** submit                                     | tolerant                         |
+| `chain-observations.log` | pool outflows, settlements, `upgrade()`s seen on chain                      | tolerant                         |
+| `reconciled.log`         | orders whose four gates passed                                              | tolerant                         |
+| `outflow-cursor.log`     | how far the payout tail has read                                            | last-wins                        |
+| `outflow-suspects.log`   | unexplained outflows (`seen` / `alarmed` / `cleared`)                       | fold                             |
+
+The ledger replays fail-closed because a lost posting is a lost fact about money; the evidence log replays
+tolerantly because it is written at-least-once by design and dedupes on `(orderId, txHash)`.
+
+**The evidence log is the settlement work-list.** Each row carries the order's frozen facts (destination, amount,
+memo, applied rate, price, spread, fee), so a settlement interrupted by a crash is still armed after restart.
+Without this the payout stayed unbooked forever and the drift alarm below could never clear. Because a re-armed
+order would otherwise mint a second top-up, `ledger.hasRef(ref)` gates the mint — refs derive from the order, not
+from a counter, so replay is a no-op.
+
+**Outflow booking + drift.** `recordSettlement` credits `USDC_POOL` when the payout is armed, before it is marked
+pending, so the books never trail the chain. The pool's opening balance is booked once as **genesis** (valued at
+the live mid, fail-closed on a dead oracle) when the journal is empty. `checkDrift` then compares booked against
+observed and alarms only after **three consecutive** out-of-sync readings — booking lags reality, and one reading
+proves nothing. A read failure **throws**: an alarm that goes quiet when it cannot see is worse than no alarm.
+
+Not durable, deliberately: the operator sequence snapshot, the reservation ledger, the pending-settlement store,
+and the `OrderRow`s themselves. See SCOPE §4 for exactly what a restart therefore loses and why it fails safe.
+
+---
+
 ## 8. Reconciliation — the reviewer-verifiable centerpiece (three-artifact model)
 
 Per order, three independent records (`packages/reconciler`, keyless & buildless by construction — imports
@@ -382,6 +450,58 @@ submittable XDR); and a testnet reset erases chain history, surfaced per order a
 
 ---
 
+### 8a. The chain answers for itself — the payout tail and the live reconciler
+
+§8 is the artifact a reviewer verifies offline. This is the pair of loops the **running server** uses to notice,
+by itself, that the chain and the books disagree. Both read the chain; neither trusts what we announced.
+
+**The payout tail (`tailOutflows`, `OUTFLOW_INTERVAL_MS`, default 20s)** — attribution for money leaving the pool.
+
+- It watches the **USDC SAC's `transfer` events with `from == pool`**, not the pool's own `payment_made` event.
+  `upgrade()` lets replaced contract code drain the pool without ever emitting `payment_made`; the token contract
+  cannot be talked out of emitting `transfer`.
+- **Why it may accuse.** The write-ahead journal (`authorized.log`) is durable and is awaited **strictly before**
+  `send`. A `pay()` therefore cannot land — and so cannot emit an outflow — unless its hash was already on disk.
+  An outflow whose hash is absent was **never authorized**. Not "not yet witnessed", not "still settling". There
+  is no timing window to get wrong and no in-memory allowlist for a restart to erase.
+- Grace (chain **close time**, never the local clock; `outflowGraceSecs`, default **60s**) is a margin, not the
+  correctness mechanism. A suspect is re-judged each tick and pages exactly **once** (`ROGUE PAYOUT`). Do not
+  confuse it with the reconciler's `unsettledGraceSecs` (default 600s) below — that one bounds how long an
+  announced settlement may stay unobserved before `SETTLEMENT UNOBSERVABLE`.
+- **Durable order per tick:** record the observation → mark the suspect → tombstone the cleared → _save the cursor
+  last_. A crash mid-tick re-reads a page (harmless); a cursor advanced past an unrecorded suspect would lose a
+  theft forever.
+- It complements drift rather than replacing it. Drift is windowless and always right about the **total**, but
+  cannot name a transaction. The tail names it, and pays for that with a window: Soroban RPC retains events for a
+  rolling ~7 days **that moves**, so a tail down longer than the window has a gap. The gap is declared
+  (`TAIL BLIND SPOT` / `TAIL STALLED`), never hidden, and drift covers it.
+
+**The live reconciler (`reconcileOrders`, `RECONCILE_INTERVAL_MS`, default 30s)** — did each order's settlement
+actually happen, and was it the settlement we announced?
+
+An order finds its settlement through **`tx_id`** — the identifier the _contract_ indexes, a function of
+`order_id` **alone** (§4: `sha256(lp("troia.txid.v1") ‖ lp(order_id))`) — **not** through the transaction hash we
+recorded. Looking up by our own hash would only check our record against itself, which is what made
+`CHAIN_DIVERGENCE` unreachable in practice.
+
+Four gates, all of which must pass before an order is marked `Reconciled`:
+
+1. The pool's code was **never replaced** (`upgrade()` seen ⇒ `POOL CODE REPLACED`, latched: past announcements
+   stop being proofs).
+2. The **announced amount equals what the token contract actually moved** (`payment_made.amount` ⇄ Σ `transfer`).
+3. The transaction is **still live on chain** (`checkTxLiveness`; `ABSENT` ⇒ `UNSETTLED`).
+4. `resolveGroundTruth` (§8, the same cascade) returns `MATCHED`.
+
+An unreachable chain (`UNKNOWN`) **never concludes anything** — it re-polls. `reconciled.mark()` is written
+durably **before** the order advances, so a crash between the two re-marks rather than double-advances.
+
+RPC facts these loops are built on, measured against live testnet (protocol 27), not read from a doc: a topic
+filter with the wrong arity returns an **empty page with no error** (a silent all-clear — hence contract-id-only
+filters); `-32600` means **both** "below retention" and "ahead of head", so the range is probed **structurally**
+rather than matched against the message text; a cursor resumes **strictly after** its ledger.
+
+---
+
 ## 9. Keys & config boundary
 
 Three separate keypairs even on testnet (no collapse): **admin** (`TROIA_ADMIN_SECRET`), **operator**
@@ -436,3 +556,12 @@ The ADRs are summarized inline below (they are not split into separate `docs/adr
     `UNSETTLED`; keyless-&-buildless `packages/reconciler` (grep-provenance guard); offline `just verify` with
     a positive-armed network block; semantic amount compare guarded by a canonical-decimal regex so `''`/`0`
     are never conflated (adversarial fix). Fixture = real Soroban `pay()` (no footprint → not submittable).
+18. Durability = one append-only file log with an explicit crash contract (§7b), not a database. A poisoned log
+    confines every partial write to the physical tail; a torn tail heals and reports; a bad record whose frame
+    fits is fatal. Durable-first ordering makes "believed" imply "written". `packages/composition` owns the only
+    `fs`, so `backend`/`ledger` stay disk-free and unit-testable. A real database is the mainnet swap, behind the
+    same `DurableLog` / `Store` interfaces.
+19. Detection is **chain-authoritative** (§8a): watch the SAC's `transfer` (an `upgrade()`d pool can skip
+    `payment_made`), authorize by the durable write-ahead journal (so an unlisted outflow needs no grace period
+    to be called theft), and reconcile an order by the contract-indexed `tx_id` rather than by the hash we
+    recorded. Grace is measured in ledger close time; the local clock is never an input.

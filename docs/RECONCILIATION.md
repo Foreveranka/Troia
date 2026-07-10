@@ -180,7 +180,39 @@ offline verify above (one order is a deliberate `CORRUPT_LOCAL` the reconciler c
 
 ---
 
-## 6. Reset-proof and honest about it
+## 6. The other reconciliation: the one the server does to itself
+
+Everything above is the **artifact** a reviewer verifies offline, after the fact. The running server also
+reconciles **continuously, against the live chain**, and it does not trust anything it announced. Two loops
+(ARCHITECTURE §8a):
+
+**The payout tail** asks: _did money leave the pool that no order authorized?_ It reads the USDC SAC's `transfer`
+events with `from == pool` — not the pool's own `payment_made`, because an `upgrade()`d pool can drain itself
+without emitting that event, while the token contract cannot be talked out of emitting `transfer`. Every `pay()`
+hash is written to a durable write-ahead journal **before** the transaction is broadcast, so a transaction cannot
+land unless its hash was already on disk. An outflow whose hash is absent was therefore **never authorized** —
+not "not yet witnessed", not "still settling". That is why the `ROGUE PAYOUT` alarm needs no grace period to be
+correct, and why a restart cannot erase the allowlist.
+
+**The live reconciler** asks: _did each order's settlement actually happen, and was it the one we announced?_ It
+finds the settlement through **`tx_id`** — the identifier the _contract_ indexes, a function of `order_id` alone —
+not through the transaction hash we recorded, because looking up by our own hash only checks our record against
+itself. Four gates must all pass before `Reconciled`:
+
+1. the pool's code was never replaced (an `upgrade()` latches `POOL CODE REPLACED`; past announcements stop being
+   proofs);
+2. the announced amount equals what the token contract **actually moved**;
+3. the transaction is still live on chain;
+4. `resolveGroundTruth` — §3's exact cascade — returns `MATCHED`.
+
+An unreachable chain concludes **nothing** and re-polls. The two loops are complements, not duplicates: drift
+(ARCHITECTURE §7b) is windowless and always right about the **total** but cannot name a transaction; the tail
+names it and pays for that with the RPC's rolling ~7-day event window, whose gaps it declares (`TAIL BLIND SPOT`)
+rather than hides.
+
+---
+
+## 7. Reset-proof and honest about it
 
 - The **signed parts are self-verifying forever**: `signature_valid` and `hash_consistent` are recomputed from
   the embedded `signed_xdr` + pinned key + passphrase, with no dependency on any live service. A dead explorer

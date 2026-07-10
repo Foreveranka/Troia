@@ -149,6 +149,16 @@ Now connect the core to the outside world, one provider at a time, behind interf
   `/intent` gate. Seamed for a future **agent + on/off-ramp service** (agent = the _decision_, on/off-ramp = the
   real fiat↔USDC _execution_); on mainnet that seam replaces the SAC mint with a real CEX buy, backend unchanged.
 
+- **4.8 Durability + chain-authoritative detection** — **✅ built**: an append-only `FileAppendLog` with a stated
+  crash contract (poison-on-first-failure, torn-tail heal-and-report, fatal on a damaged committed record) backs
+  seven logs under `TROIA_DATA_DIR/<troyPool-id>/`; every writer appends before it believes, and a
+  `DurableLogFailure` exits the process. The ledger books the outflow when a payout is armed, genesis is booked
+  once, and `checkDrift` alarms after three consecutive out-of-sync readings (throwing, never silent, on a read
+  failure). `tailOutflows` (`OUTFLOW_INTERVAL_MS`, 20s) reads the USDC SAC's `transfer` events and pages
+  `ROGUE PAYOUT` for any outflow whose hash never reached the durable write-ahead journal; `reconcileOrders`
+  (`RECONCILE_INTERVAL_MS`, 30s) finds each settlement by the contract-indexed `tx_id` and gates `Reconciled` on
+  four checks. See ARCHITECTURE §7b + §8a.
+
 **Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches. ✅
 
 ---
@@ -189,7 +199,8 @@ video remain.
 ## Working agreement
 
 - **One step at a time.** Each step: write the failing test first, make it pass, refactor, then stop and review together.
-- **No pushes** without explicit confirmation. Final push = 20+ backdated commits, when everything is ready.
+- **No pushes** without explicit confirmation. The git history is **real** — commits are made as the work happens,
+  never backdated or reconstructed.
 - **Commits show only tamerarda**, no co-author attribution.
 - We start at **0.1** and do not skip ahead. If a step reveals a design gap, we fix the design (ARCHITECTURE.md
   / troia-olay-orgusu.md) before writing more code.

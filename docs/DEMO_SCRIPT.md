@@ -146,7 +146,7 @@ USDC — and neither of them had to see the other's world. That's the whole prod
 
 Optional trust beat: _"And if anything stalls, the banner never lies about money — a pre-payment timeout says 'you were not charged'; a post-payment delay says 'settlement is taking a little longer, you can safely close this'; and a double Pay click is a no-op."_
 
-> Honest note for the reviewer: this is a single manual live smoke on **testnet** with iyzico **sandbox** (no real
+> Honest note for the reviewer: this is a single manual live smoke (one of two such runs; see DEPLOYMENTS.md) on **testnet** with iyzico **sandbox** (no real
 > money). If recording without the stack up, narrate it over the confirmation screenshots + the explorer tx — do
 > not fake a charge.
 

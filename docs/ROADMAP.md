@@ -157,7 +157,9 @@ Now connect the core to the outside world, one provider at a time, behind interf
   failure). `tailOutflows` (`OUTFLOW_INTERVAL_MS`, 20s) reads the USDC SAC's `transfer` events and pages
   `ROGUE PAYOUT` for any outflow whose hash never reached the durable write-ahead journal; `reconcileOrders`
   (`RECONCILE_INTERVAL_MS`, 30s) finds each settlement by the contract-indexed `tx_id` and gates `Reconciled` on
-  four checks. See ARCHITECTURE §7b + §8a.
+  four checks. See ARCHITECTURE §7b + §8a. **Proven live** on 2026-07-10 (order `ST-7SRI0YDF`, 80 USDC, tx
+  `d47f7fb9…`), including a kill-and-restart: no double mint, no re-advance, no false theft accusation, zero alarms,
+  books == chain to the stroop. See DEPLOYMENTS.md.
 
 **Done when:** a full order runs end-to-end on testnet with real `pay()` + iyzico sandbox; recon report matches. ✅
 

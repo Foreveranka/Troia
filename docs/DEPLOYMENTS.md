@@ -109,6 +109,48 @@ USDC-SAC mint with the issuer key** (`SimulatedRebalance` → `createSacMintClie
 mint path automatically — no dedicated rebalance-mint tx hash is recorded here. The system is seamed for a future
 **agent + on/off-ramp service**; on mainnet the same seam becomes a real CEX buy. See **ARCHITECTURE §5a**.
 
+## Durable state + chain-authoritative detection, proven live
+
+A second full-stack run, `2026-07-10`, drove the same storefront → extension → iyzico → `pay()` path, but this time
+against the durable logs (ARCHITECTURE §7b) and the two chain-reading loops (§8a). It is the stronger proof, because
+nothing in it is asserted by the system about itself.
+
+- **Order `ST-7SRI0YDF`** — customer paid **4 019.46 TRY**; settlement **80 USDC** (`800000000` stroops).
+- **Operator-signed `pay()`:** [tx `d47f7fb9…`](https://stellar.expert/explorer/testnet/tx/d47f7fb92a149d61a6f576aa7f803d75e6d3b3dcb6b0119e5a12a7387683d1a5)
+  — ledger `3530567`, `2026-07-10T07:33:21Z`, merchant `GA4WBDAN…` credited 80 USDC.
+- **The audit found the settlement by the contract's own index, not by our record.** The pool announced it under
+  `tx_id = f11336a3e231fde6…`; `deriveIds('ST-7SRI0YDF').txIdHex` computes the same value independently. All four
+  gates passed (no `upgrade()`; announced amount == the amount the token contract moved; the tx still live;
+  `resolveGroundTruth → MATCHED`), and the order was marked `Reconciled`.
+- **The books equal the chain, to the stroop.** Ledger `USDC_POOL` = `991852840183`; `readSacBalance` on the pool =
+  `991852840183`. Genesis `991794691346` − payout `800000000` + refill `858148837`. Each of the three journal
+  entries balances in kuruş on both sides. The pool grew by the commission: **+5.8148837 USDC**.
+- **Our own payout was never mistaken for a theft.** The payout tail read the USDC SAC's `transfer` events, matched
+  the outflow's hash against the durable write-ahead journal, and created no suspect — `outflow-suspects.log` stayed
+  0 bytes. This held **across a restart**, when the in-memory order registry was gone and the durable
+  `authorized.log` — not that registry — was the only thing still vouching for the payout.
+- **Restart, same data directory:** genesis was not re-booked, the tail resumed from its cursor instead of
+  cold-starting again (one `cov` record, not two), the reconciled order was not re-audited, and `ledger.hasRef`
+  stopped the refill from minting twice (journal still 3 entries).
+- **No alarm fired in either process life** — observed in the server's stderr at the time. Alarms are logged, not
+  persisted, so unlike everything above this one is **not re-derivable from a clone**; the on-disk state (an empty
+  `outflow-suspects.log`, no divergence, a clean journal) is consistent with it but does not prove it.
+
+Record counts in `data/<troyPool>/` after the run — `ledger-journal` 3, `evidence` 1, `authorized` 1,
+`chain-observations` 3, `reconciled` 1, `outflow-cursor` last-wins, `outflow-suspects` **0 bytes**. (The directory
+is git-ignored: it holds a live deployment's state, not a fixture.) The coverage floor, framed exactly as
+ARCHITECTURE §7b describes — `L<payload bytes>,<crc32>|<payload>`:
+
+```
+L35,3499d6da|{"v":1,"t":"cov","unix":1783668512}
+```
+
+**What this run did _not_ prove.** No unauthorized outflow was staged, so `ROGUE PAYOUT` has still never fired
+against a real thief — only the negative (an authorized payout is not accused) is demonstrated. `CHAIN_DIVERGENCE`
+and both blind-spot states (`never-watched`, `aged-out`) remain exercised by tests only. And the customer-facing
+`GET /status/<orderId>` returns `NotFound` after a restart: the order rows are still in memory. The money survived;
+the status endpoint did not. See [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4.
+
 ## Reproduce
 
 ```bash

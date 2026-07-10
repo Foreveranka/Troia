@@ -113,7 +113,18 @@ was never replaced, the announced amount equals what the token contract actually
 still live on chain. Booked-vs-chain drift alarms after three consecutive readings, and throws rather than falling
 silent when it cannot read the balance.
 
+Both of those were **proven live on 2026-07-10**. A storefront checkout paid by a Troy sandbox card settled
+**80 USDC** on chain (tx
+[`d47f7fb9…`](https://stellar.expert/explorer/testnet/tx/d47f7fb92a149d61a6f576aa7f803d75e6d3b3dcb6b0119e5a12a7387683d1a5)).
+The live audit found that settlement through the identifier the **contract** indexes — not through the hash we
+recorded — passed all four gates, and marked the order reconciled. The books matched the chain to the stroop. Then
+the server was killed and restarted against the same data directory: nothing was re-booked, re-minted, or
+re-advanced, and our own payout was still recognised as authorized with the order registry gone. No alarm fired —
+though alarms are logged rather than persisted, so that last point is the one thing here a clone cannot re-check.
+See [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md).
+
 Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend → Render) so the demo runs without
-a local machine, and a 3–5 min proof video. The live run was a single manual smoke, not a load/soak test. Orders
-in flight (submitted, not yet landed) are still forgotten by a restart — safely, never toward a double pay. See
+a local machine, and a 3–5 min proof video. The live runs are single manual smokes, not a load/soak test. Orders
+in flight (submitted, not yet landed) are still forgotten by a restart — safely, never toward a double pay — and a
+restart makes a completed order answer `NotFound` on `/status`, because the order rows are still in memory. See
 [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).

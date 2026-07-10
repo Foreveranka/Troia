@@ -5,7 +5,10 @@
 > [`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded);
 > see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). The executed run used the now-built **storefront + Chrome extension**
 > path (not just `scripts/intent.mjs`), and `just serve` now also runs the **TRY-driven rebalance bot** (Step 4).
-> This doc remains the runbook for reproducing it.
+> This doc remains the runbook for reproducing it. A **second run** (`2026-07-10`, order `ST-7SRI0YDF`, 80 USDC, tx
+> [`d47f7fb9…`](https://stellar.expert/explorer/testnet/tx/d47f7fb92a149d61a6f576aa7f803d75e6d3b3dcb6b0119e5a12a7387683d1a5))
+> drove the same path against the durable logs, the payout tail and the live reconciler, and survived a
+> kill-and-restart — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 >
 > This is the operational script for the Phase-4.5 live step: a real iyzico charge automatically driving a real
 > on-chain `TroyPool.pay()`, behind a public callback/return tunnel on testnet. Everything the run needs is wired +

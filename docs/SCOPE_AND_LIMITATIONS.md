@@ -44,7 +44,8 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
 - **Crash durability with a stated contract** — an append-only log whose first write failure poisons it forever,
   so a partial write can only live in the physical tail; a torn tail is truncated and reported, and a damaged
   record that was fully written is **fatal**, never silently dropped. Every writer appends before it believes.
-  Tested by injected crashes and by mutation (delete a guard, watch the test fail). ARCHITECTURE §7b.
+  Tested by injected crashes and by mutation (delete a guard, watch the test fail). ARCHITECTURE §7b, and now
+  exercised against the live chain including a kill-and-restart — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 - **Chain-authoritative detection** — a payout tail that reads the USDC SAC's `transfer` events and calls any
   outflow whose hash is missing from the durable write-ahead journal a **rogue payout** (it could not have landed
   otherwise), plus a live reconciler that finds each order's settlement through the contract-indexed `tx_id` and
@@ -52,7 +53,8 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   token contract moved, and the tx is still live. It distinguishes **"we cannot see"** from **"it is not there"**:
   a payout that predates the tail's durable coverage floor, or whose transaction the RPC no longer returns, is
   reported as a blind spot rather than accused, and every alarm pages once per problem rather than every tick.
-  ARCHITECTURE §8a.
+  ARCHITECTURE §8a. Both loops have now run against the live chain and reconciled a real payout (tx `d47f7fb9…`),
+  finding it by the contract's own index rather than by the hash we recorded — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 - **Soroban `TroyPool` contract** — `pay` with atomic check-and-transfer (no TOCTOU), replay guard, pause,
   role-gated admin/upgrade; unit + integration + fuzz (conservation) tests green.
 - **Chrome MV3 "Pay with Troy card" extension** — the demo's actual money-path entry point, proven live e2e
@@ -111,7 +113,13 @@ automatically drove a real on-chain `pay()` end-to-end (74 USDC pool → merchan
 see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) — so the network-facing halves are now live-smoked, not just type-checked.
 The remaining honest limitations are operational, not "unrun":
 
-- **The live run is a single manual smoke, not a load/soak test.** It proved the money-first path over the real
+- **Two live runs, both single manual smokes — not a load/soak test.** The second (`2026-07-10`, order
+  `ST-7SRI0YDF`, 80 USDC, tx `d47f7fb9…`) additionally exercised the durable logs, the payout tail, the live
+  reconciler, and a kill-and-restart against the same data directory: no double mint, no re-advance, no false theft
+  accusation, no alarm, and the books matched the chain to the stroop. What it did **not** exercise: a genuinely
+  unauthorized outflow (so `ROGUE PAYOUT` has never fired against a real one), `CHAIN_DIVERGENCE`, or either
+  blind-spot state — those remain proven by tests, not by the chain. See [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
+- **The first live run is a single manual smoke, not a load/soak test.** It proved the money-first path over the real
   SDK/RPC/iyzico network once, hardened (per-attempt timeouts + bounded retry so a hung source drops fail-closed
   rather than wedging the poller or freezing a checkout) and gated by a **readiness preflight** (`just preflight`).
   Concurrent-load behavior (the SPIKE-3 solvency race under many simultaneous webhooks) is unit-proven offline but
@@ -131,6 +139,12 @@ The remaining honest limitations are operational, not "unrun":
   is still armed — never toward a double payout. A real database (one transaction, all the rows) is the mainnet
   swap, behind the same `Store` / `DurableLog` interfaces. There is also **no log rotation**: boot refuses above
   2 GiB with an explanatory error rather than truncating.
+- **A restart makes a completed order look lost to the customer.** Because the order rows are volatile,
+  `GET /status/<orderId>` answers `NotFound` after a restart — even for an order whose payout settled, whose
+  evidence is on disk, and which the live audit has already marked `Reconciled`. Observed, not theorised, in the
+  `2026-07-10` run. The money is intact and provable; only the customer-facing status endpoint forgot. Closing it
+  needs a durable order-row log behind the existing `Store` interface — the evidence row already carries the
+  order's frozen facts — and it is the one gap here a reviewer can trip over in a demo.
 - **Two known evidence gaps, named rather than papered over.** The `revertAlreadyProcessed → UsdcConfirmed` path
   writes no evidence row (the reverted hash must not become a witness), so such an order is not picked up by the
   durable work-list; and the webhook's idempotency key is burned before `advance()`, so a crash in that window

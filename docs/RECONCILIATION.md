@@ -205,6 +205,12 @@ itself. Four gates must all pass before `Reconciled`:
 3. the transaction is still live on chain;
 4. `resolveGroundTruth` — §3's exact cascade — returns `MATCHED`.
 
+Both loops have run against the live chain. On `2026-07-10` the audit reconciled a real payout (order
+`ST-7SRI0YDF`, 80 USDC, tx `d47f7fb9…`) by finding it under `tx_id = f11336a3e231fde6…` — the value
+`deriveIds('ST-7SRI0YDF')` computes independently — and the tail matched that outflow to the write-ahead journal
+without ever raising a suspect, including after a restart that erased the in-memory order registry. Details and the
+things the run did **not** prove are in [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
+
 An unreachable chain concludes **nothing** and re-polls. The two loops are complements, not duplicates: drift
 (ARCHITECTURE §7b) is windowless and always right about the **total** but cannot name a transaction; the tail
 names it and pays for that with the RPC's rolling ~7-day event window, whose gaps it declares (`TAIL BLIND SPOT`)

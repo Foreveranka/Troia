@@ -61,7 +61,7 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   (tx `cd643d71…`) and hardened: per-request fetch timeouts (15s intent / 8s poll), a phase-aware poll budget with
   honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo
   parity pinned to core's golden vectors (malformed order ids fail closed), and an amount gate aligned with
-  `toStroops` — ~105 tests across 10 spec files. Holds no keys, signs nothing.
+  `toStroops` — ~110 tests across 11 spec files. Holds no keys, signs nothing.
 
 The full gate — TypeScript suite, Rust contract tests, lint, type-check, and the offline `just verify` — is the
 acceptance bar for every change.
@@ -75,12 +75,19 @@ acceptance bar for every change.
   — real inventory adequacy, i.e. actually having bought the USDC — is deferred. `SimulatedRebalance` (testnet
   mint) is a built + tested `packages/rebalance`; only the real-CEX buy that actually acquires the USDC (economic
   solvency) is Phase-2. The token is valueless; the ledger, solvency mechanism, and reconciliation logic are real.
+  **This is the next funded milestone, not a hole**: the decision seam (`RebalancePolicy`) and the execution seam
+  (`RebalanceProvider`) already exist and are exercised on every settlement — Phase-2 replaces one implementation
+  behind them with a real exchange buy + withdrawal. The mechanism is proven; what money buys is the inventory.
 - **`signed ≠ settled`.** We prove what we signed (cryptographically, reset-proof) and what settled (only while
   the chain remembers it). A wiped testnet or a never-landed tx surfaces as `UNSETTLED`, never as a false match.
-- **The one residual loss window is named, not hidden.** In the narrow case _USDC sent → the reversible TRY leg
-  cannot be unwound_, the order lands in `LossReview` (customer-facing `review`) — surfaced with an evidence
-  flag, never silently absorbed. On testnet no real value is at stake; the path is demonstrated as a maturity
-  signal.
+- **The one residual _irreversible_ loss window is named, not hidden.** In the narrow case _USDC sent → the
+  reversible TRY leg cannot be unwound_, the order lands in `LossReview` (customer-facing `review`) — surfaced with
+  an evidence flag, never silently absorbed. When that loss occurs it is **ours**, never the customer's. On testnet
+  no real value is at stake; the path is demonstrated as a maturity signal.
+  There is a second, different failure — the charged-but-stranded order in §4 below. It is not an irreversible
+  loss: the customer's charge can still be voided or refunded through iyzico. But after a crash nothing in this
+  system remembers it, so the recovery is manual and only happens if the customer complains. Do not read "one loss
+  window" as "one way to disappoint a customer."
 - **iyzico is the sandbox.** The fiat leg runs against iyzico's sandbox with Troy test cards; a real direct-sale
   charge is proven (`paymentId 36418597`). The real settlement **valör** (iyzico blocking, 2–21 days, _not_ the
   marketed T+1) **cannot be measured in the sandbox**, so the FX-risk window uses the researched conservative 21
@@ -91,11 +98,12 @@ acceptance bar for every change.
   demo window. This is purely demo time-compression of the _settlement clock_; it is **separate** from the FX-risk
   pricing knob (`valorDays` = 21) that sizes the commission, which still uses the real ~21-day figure.
 - **Unit economics are disclosed, not assumed.** The pricing model is complete and never loses money by
-  construction (the PSP cut is grossed up, the FX-risk buffer is sized to the real valör). But the resulting
-  all-in markup is **rail-dependent** — at current (calm) volatility ~7.8% on iyzico credit (4.29%), ~3.7% on a
-  bank virtual-POS debit rail (1.04%) — and the FX-risk line is **data-driven**, so it rises when the market
-  tenses. The economics close on the cheaper rails / a negotiated rate / a shorter valör — a go-to-market lever,
-  surfaced here rather than hidden inside the FX.
+  construction (the PSP cut is grossed up, the FX-risk buffer is sized to the real valör). The resulting all-in
+  markup is **rail-dependent** — at current (calm) volatility ~7.8% on iyzico credit (4.29%), ~3.7% on a bank
+  virtual-POS debit rail (1.04%) — and the FX-risk line is **data-driven**, so it rises when the market tenses.
+  Three levers close it and all three are ordinary commercial work rather than research: the cheaper debit rail,
+  a negotiated processor rate, and a shorter settlement valör (the FX-risk buffer shrinks with `√n`). We surface
+  the number because a markup hidden inside an exchange rate is exactly what this project exists to end.
 
 ---
 
@@ -116,55 +124,33 @@ The remaining honest limitations are operational, not "unrun":
 - **Two live runs, both single manual smokes — not a load/soak test.** The second (`2026-07-10`, order
   `ST-7SRI0YDF`, 80 USDC, tx `d47f7fb9…`) additionally exercised the durable logs, the payout tail, the live
   reconciler, and a kill-and-restart against the same data directory: no double mint, no re-advance, no false theft
-  accusation, no alarm, and the books matched the chain to the stroop. What it did **not** exercise: a genuinely
-  unauthorized outflow (so `ROGUE PAYOUT` has never fired against a real one), `CHAIN_DIVERGENCE`, or either
-  blind-spot state — those remain proven by tests, not by the chain. See [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
-- **The first live run is a single manual smoke, not a load/soak test.** It proved the money-first path over the real
-  SDK/RPC/iyzico network once, hardened (per-attempt timeouts + bounded retry so a hung source drops fail-closed
-  rather than wedging the poller or freezing a checkout) and gated by a **readiness preflight** (`just preflight`).
-  Concurrent-load behavior (the SPIKE-3 solvency race under many simultaneous webhooks) is unit-proven offline but
-  not yet exercised against live rails.
-- **The revert-code read path is exercised only by fakes.** A _successful_ live `pay()` is proven (above), but a
-  landed-and-**reverted** `pay()`'s diagnostic events (the input to the revert-code read) are the one shape only a
-  live failing tx confirms — `scripts/probe-revert.mjs` is the check for it once such a tx exists on testnet.
-- **Durability is a file log, not a database — and it does not cover everything.** Seven append-only logs under
-  `TROIA_DATA_DIR/<troyPool-id>/` now survive a crash: the double-entry journal, the evidence rows (which carry
-  each order's frozen facts and act as the settlement work-list), the write-ahead list of authorized `pay()`
-  hashes, the chain observations, the reconciled marks, and the payout tail's cursor + suspects. They have an
-  explicit crash contract (ARCHITECTURE §7b) and a durable-log failure exits the process rather than degrading
-  quietly. What is **still volatile**, deliberately: the `OrderRow`s themselves, the reservation ledger, the
-  pending-settlement store, and the operator sequence snapshot. So **an order that was submitted but had not yet
-  landed is forgotten by a restart.** That fails **safe** — the on-chain `Processed(tx_id)` guard and the
-  single-use sequence both cap USDC delivery at one per order, and the durable evidence row means the settlement
-  is still armed — never toward a double payout. A real database (one transaction, all the rows) is the mainnet
-  swap, behind the same `Store` / `DurableLog` interfaces. There is also **no log rotation**: boot refuses above
-  2 GiB with an explanatory error rather than truncating.
-- **A restart still forgets an order that has not settled yet.** `GET /status/<orderId>` and `GET /receipt/<orderId>`
-  now fall back to the durable evidence log, so a **settled** order keeps answering `completed` — with its real tx
-  hash — across a restart (this was `NotFound` when first observed in the `2026-07-10` run). The fallback cannot
-  overstate the case: `handToReconciler` is the only writer of an evidence row and fires on exactly the two
-  transitions into `UsdcConfirmed`, whose only exit is `Reconciled`; both are `completed`. An order **still in
-  flight** has no row and still answers `404` — honestly, because with the order rows gone we genuinely no longer
-  know. So does an order that failed cleanly: failure leaves no durable record. Both would need durable order rows
-  behind the same `Store` interface, which would also let the recovery worker resume in-flight orders after a
-  restart — a change to the money path's crash semantics, and therefore deliberately not made here.
-- **Two known evidence gaps, named rather than papered over.** The `revertAlreadyProcessed → UsdcConfirmed` path
-  writes no evidence row (the reverted hash must not become a witness), so such an order is not picked up by the
-  durable work-list; and the webhook's idempotency key is burned before `advance()`, so a crash in that window
-  drops the webhook's drive (the poll worker re-drives it on the next tick).
-- **Late sequence allocation, two-store crash window (durable-store only).** The operator sequence is allocated
-  late — on `chargeOk`, the first step of the USDC leg — so an abandoned checkout consumes no sequence (a
-  gap-free operator account). `allocate()` persists the sequence snapshot one effect before the `OrderRow` is
-  persisted with that seq. A crash in that window is **money-safe** (the `Processed(tx_id)` guard, derived from order_id, + the
-  single-use sequence shield both cap USDC delivery at one per order) and, for a completed charge, **self-heals**
-  (recovery re-retrieves the same sale → `chargeOk` again → idempotent `allocate` returns the same seq →
-  submit). The only residual is a _theoretical_ liveness stranding of that seq, and it is **not reachable in the
-  PoC**: the in-memory sequence store is wiped by the very crash, so on restart the allocator re-bootstraps from
-  the live on-chain sequence. A durable sequence store (Phase 2) closes it by reconciling the order's seq from
-  `activeSeqFor(orderId)` on recovery.
+  accusation, and the books matched the chain to the stroop. Both runs were hardened (per-attempt timeouts +
+  bounded retry, so a hung source drops fail-closed rather than wedging the poller) and gated by a readiness
+  preflight (`just preflight`). Concurrent-load behaviour against the live rails has not been exercised. See
+  [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
+- **Solvency assumes exactly one backend process.** The pool's reservation gate is an in-process lock, so two
+  backend instances against the same pool could each reserve the last coin. The contract's own `balance >= amount`
+  guard is the second, independent shield — the chain still cannot overdraw — but the backend half of invariant ③a
+  is removed. This matters the day the demo is deployed to a platform that runs two instances or overlaps them
+  during a redeploy. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §3.
+- **A crash between the charge and the payout strands the order.** The order rows are in memory. If the process
+  dies after the customer has paid on the hosted form but before the USDC leg starts, nothing durable records the
+  charge — the write-ahead journal is written at submit time, the evidence log after confirmation — so on restart
+  the order is not re-driven, not voided, and the merchant is never paid. No double payout is possible in that
+  window; but the customer is charged and unsettled with no automatic unwind. Valueless on testnet, real on
+  mainnet. Durable order rows close it; see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §1. Together with the
+  single-process lock above, this is why "durable store" is a mainnet prerequisite rather than a nicety.
+- **The engineering gaps are enumerated separately.** Restart semantics, the two evidence gaps, late sequence
+  allocation, log rotation, and the detection paths that are proven by tests rather than by the chain (including
+  `ROGUE PAYOUT`, which has never fired against a real unauthorized outflow) are each stated in full — with why
+  they are money-safe and what closes them — in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). They are listed there rather
+  than here because none of them changes whether this project is worth building, and putting them beside the risks
+  that do would misstate their weight. Nothing has been dropped in the move.
 
-None of these are blockers for the proof story above; the live end-to-end run is demonstrated, and what remains is
-hardening (load/soak, the reverted-tx read path) — not "unrun."
+None of these blocks the proof story above. The live end-to-end path is demonstrated twice; what remains is
+hardening — load/soak, the reverted-transaction read path, and a shared lock before the backend is ever run in
+more than one copy. Those are engineering, and they are enumerated one by one in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) rather than summarised away.
 
 ---
 
@@ -193,11 +179,28 @@ hardening (load/soak, the reverted-tx read path) — not "unrun."
   patterns change.
 - **Mainnet.** Mainnet is a **separate, regulated phase**. Turkish regulatory engagement (MASAK) is a deliberate
   post-code step, handled with counsel — it is future work, never an excuse for a gap in what is claimed here.
+  **No regulator has been contacted yet.** The sequencing is intentional and, we think, the cheap order: prove the
+  settlement and proof layer where a mistake costs nothing, then buy the licence that lets it hold real money.
+  Reversing that order means paying for compliance on a system nobody has yet shown to be correct.
 
 ---
 
-## 6. How to hold us to this
+## 6. Where each kind of gap lives
+
+Two documents, because two audiences ask different questions.
+
+| Question                                                                 | Document                                                                                                                      |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Is this worth funding? What could make it fail as a business?            | **This file** — §3 testnet boundaries, §4 operational limits, §5 out of scope.                                                |
+| I am going to read or run this code. What is unfinished, and is it safe? | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — restart semantics, the single-process lock, evidence gaps, paths proven only by tests. |
+
+The split is a claim about **proportion**, not a place to hide. Every item moved out of this file is stated in the
+other one in full, with why it is money-safe and what closes it. If you would rather read one list, read both — they
+are 200 lines together.
+
+## 7. How to hold us to this
 
 Everything in §2 is checkable from a clone: run the gate and run `just verify` (offline). Anything in §3–§5 is
 stated as a limitation precisely so it cannot be mistaken for a claim. If a future document or demo asserts
-something in §4 or §5 is done, treat this file as the contradicting authority until it is updated with evidence.
+something in §3, §4 or §5 is done, treat this file as the contradicting authority until it is updated with
+evidence — and the same holds for [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) over the code it describes.

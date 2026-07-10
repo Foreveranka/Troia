@@ -392,13 +392,18 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // callbackUrl). It is a friendly landing page ONLY: it verifies nothing and moves no money. Settlement is driven
   // by the poll/recovery worker's authenticated server-side re-retrieve (a PULL keyed on the backend-issued
   // token), so a forged or replayed browser redirect here is inert. (The signed server-to-server /webhook is the
-  // deferred instant-notify path; the poll worker is the active, safer settlement path.) The storefront (5.1) will
-  // own the real customer-facing page + Turkish copy — this is the minimal placeholder that avoids a 415.
+  // deferred instant-notify path; the poll worker is the active, safer settlement path.)
+  //
+  // It therefore ASSERTS NOTHING about the payment. iyzico redirects the browser here on a decline exactly as it
+  // does on a charge — the outcome is knowable only from the authenticated re-retrieve — so a page that said
+  // "Payment received" told a declined customer something nobody had checked. It now sends them back to the shop,
+  // which polls /status and reports the truth. Turkish, because the hosted form they just left runs with locale tr.
   const RETURN_PAGE =
-    '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<!doctype html><html lang="tr"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Troia</title></head>' +
     '<body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center">' +
-    '<h1>Payment received</h1><p>Your transaction is being confirmed. You can close this page.</p></body></html>';
+    '<h1>Bu pencereyi kapatabilirsin</h1>' +
+    '<p>İşlemin sonucunu mağaza sayfasında göreceksin.</p></body></html>';
   app.get('/return', async (_request, reply) => reply.type('text/html').send(RETURN_PAGE));
   app.post('/return', async (_request, reply) => reply.type('text/html').send(RETURN_PAGE));
 

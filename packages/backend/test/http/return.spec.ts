@@ -26,6 +26,56 @@ describe('GET/POST /return — the post-payment browser landing page (no 415)', 
     expect(r.headers['content-type']).toContain('text/html');
   });
 
+  // The page cannot know the outcome. iyzico redirects the browser here whether the card was charged or declined
+  // — the result is only knowable from the authenticated server-side re-retrieve — so anything this page asserts
+  // about the payment is a guess. It asserted "Payment received" to declined customers until this test existed.
+  const OUTCOME_WORDS = [
+    'received',
+    'success',
+    'successful',
+    'completed',
+    'confirmed',
+    'approved',
+    'failed',
+    'declined',
+    'başarılı',
+    'onaylandı',
+    'alındı',
+    'tamamlandı',
+    'reddedildi',
+  ];
+
+  it('never claims an outcome — it cannot know one', async () => {
+    const h = makeHttpHarness();
+    const r = await h.app.inject({ method: 'GET', url: '/return' });
+    const body = r.body.toLowerCase();
+    for (const word of OUTCOME_WORDS) {
+      expect(body, `the landing page must not say "${word}"`).not.toContain(word);
+    }
+  });
+
+  it('says the same thing whether iyzico reports success or failure', async () => {
+    const h = makeHttpHarness();
+    const post = (payload: string) =>
+      h.app.inject({
+        method: 'POST',
+        url: '/return',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        payload,
+      });
+    const ok = await post('token=abc&status=success');
+    const bad = await post('token=abc&status=failure');
+    expect(ok.body).toBe(bad.body); // byte-identical: the body is not an input to what the customer is told
+  });
+
+  it('points the customer back at the shop, in the language of the page they just left', async () => {
+    const h = makeHttpHarness();
+    const r = await h.app.inject({ method: 'GET', url: '/return' });
+    expect(r.body).toContain('lang="tr"'); // the hosted iyzico form runs with locale tr
+    expect(r.body).toContain('Bu pencereyi kapatabilirsin');
+    expect(r.body).toContain('İşlemin sonucunu mağaza sayfasında göreceksin');
+  });
+
   it('touches NO money path — a /return hit calls no psp / stellar port (settlement is the worker pull)', async () => {
     const h = makeHttpHarness();
     await h.app.inject({

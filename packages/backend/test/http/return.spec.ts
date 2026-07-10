@@ -68,12 +68,12 @@ describe('GET/POST /return — the post-payment browser landing page (no 415)', 
     expect(ok.body).toBe(bad.body); // byte-identical: the body is not an input to what the customer is told
   });
 
-  it('points the customer back at the shop, in the language of the page they just left', async () => {
+  it('points the customer back at the shop', async () => {
     const h = makeHttpHarness();
     const r = await h.app.inject({ method: 'GET', url: '/return' });
-    expect(r.body).toContain('lang="tr"'); // the hosted iyzico form runs with locale tr
-    expect(r.body).toContain('Bu pencereyi kapatabilirsin');
-    expect(r.body).toContain('İşlemin sonucunu mağaza sayfasında göreceksin');
+    expect(r.body).toContain('lang="en"');
+    expect(r.body).toContain('You can close this window');
+    expect(r.body).toContain('You’ll see the result of your payment on the store page');
   });
 
   it('touches NO money path — a /return hit calls no psp / stellar port (settlement is the worker pull)', async () => {

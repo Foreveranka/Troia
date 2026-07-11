@@ -15,9 +15,9 @@ const EXPECTED: Record<State, PublicStatus> = {
   UsdcReverted: 'processing', // USDC reverted; cause being classified
   UsdcConfirmed: 'completed', // USDC landed; awaiting the offline reconciler
   Reconciled: 'completed', // reconciled terminal
-  ChargeReversing: 'failed', // USDC failed after charge; sale being voided
-  ChargeReversed: 'failed', // sale voided; TRY returned (clean terminal)
-  FailedClean: 'failed', // declined / solvency-rejected before any charge
+  FailedClean: 'failed', // declined / solvency-rejected BEFORE any charge — the only 'failed' bucket
+  ChargeReversing: 'review', // charged; USDC failed; sale being voided — not 'failed' (a retry would re-charge)
+  ChargeReversed: 'review', // charged then voided; TRY returned — not 'failed' (a retry would re-charge)
   LossReview: 'review', // manual sink: USDC fate unknown or reversal exhausted
 };
 

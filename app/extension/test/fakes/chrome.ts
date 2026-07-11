@@ -32,6 +32,7 @@ export interface ChromeStubScript {
 export interface ChromeStub {
   readonly sendMessage: Mock;
   readonly tabsCreate: Mock;
+  readonly tabsRemove: Mock;
   readonly onInstalled: Mock;
   /** the onMessage handler background registered at import (throws if none). */
   onMessageListener(): MessageHandler;
@@ -75,7 +76,11 @@ export function installChromeStub(script: Partial<ChromeStubScript> = {}): Chrom
     }),
   };
 
-  const tabs = { create: vi.fn(() => Promise.resolve({ id: 1 })) };
+  let nextTabId = 1;
+  const tabs = {
+    create: vi.fn(() => Promise.resolve({ id: nextTabId++ })),
+    remove: vi.fn(() => Promise.resolve()),
+  };
   const chrome = { runtime, tabs };
 
   const globals = globalThis as Record<string, unknown>;
@@ -85,6 +90,7 @@ export function installChromeStub(script: Partial<ChromeStubScript> = {}): Chrom
   return {
     sendMessage: runtime.sendMessage,
     tabsCreate: tabs.create,
+    tabsRemove: tabs.remove,
     onInstalled: runtime.onInstalled.addListener,
     onMessageListener: () => {
       if (messageHandler === undefined)

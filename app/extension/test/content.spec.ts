@@ -205,10 +205,65 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await vi.advanceTimersByTimeAsync(3000);
 
     expect(statusText()).toBe('Payment was not completed.');
-    expect(post).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled(); // no order placed, no retry requested yet
     const settled = statusPolls();
     await vi.advanceTimersByTimeAsync(9000);
     expect(statusPolls()).toBe(settled);
+  });
+
+  it('does NOT offer retry when a received payment ends in review (charged then reversed) — retrying would double-charge', async () => {
+    const post = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
+    stub.script.intent = OPEN_INTENT;
+    // The backend maps a charged-then-reversed order to 'review' (NOT 'failed'), precisely so a client never
+    // retries a charged order. The extension must remove the button on it, not re-arm it.
+    stub.script.statuses = ['processing', 'review'];
+
+    await loadWithBanner();
+    await clickPay();
+    await vi.advanceTimersByTimeAsync(3000); // processing (payment received)
+    await vi.advanceTimersByTimeAsync(3000); // review (charged, sale reversed)
+
+    const btn = shadow().querySelector('.pay') as HTMLButtonElement;
+    expect(btn.textContent).not.toBe('Try again');
+    expect(btn.style.display).toBe('none'); // button removed — no retry, no TROIA_RETRY
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('a declined payment offers "Try again", which mints a fresh order and auto-continues the payment', async () => {
+    const post = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
+    stub.script.intent = OPEN_INTENT;
+    stub.script.statuses = ['failed'];
+    stub.script.defaultStatus = 'pending';
+
+    await loadWithBanner();
+    await clickPay(); // first intent → declined
+    await vi.advanceTimersByTimeAsync(3000); // failed → offer retry
+
+    const btn = shadow().querySelector('.pay') as HTMLButtonElement;
+    expect(btn.textContent).toBe('Try again'); // re-enabled, not stuck on "Processing…"
+    expect(btn.disabled).toBe(false);
+
+    btn.click(); // Try again → ask the storefront for a fresh order id (the spent one can't be re-driven)
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'troia-extension',
+        type: 'TROIA_RETRY',
+        orderId: 'ST-AB12CD',
+      }),
+      location.origin,
+    );
+
+    // the storefront mints a fresh order id → the SEP-7 anchor's href changes in place → auto-continue
+    const fresh = PAYABLE.replace('ST-AB12CD', 'ST-ZZ99YY');
+    (document.querySelector('a') as HTMLAnchorElement).setAttribute('href', fresh);
+    await flush();
+    await vi.advanceTimersByTimeAsync(50); // rAF-debounced rescan → fresh banner → auto-pay
+    await flush();
+
+    const intents = stub.sendMessage.mock.calls.filter(
+      (c) => (c[0] as { type?: string }).type === 'TROIA_INTENT',
+    ).length;
+    expect(intents).toBe(2); // the retry fired a fresh intent for the new order — no stuck state, no refresh
   });
 
   it('polls through the generous pending window, then gives up with a not-charged message (never silent)', async () => {
@@ -223,6 +278,10 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     expect(statusText()).toBe(
       'Payment session timed out — you were not charged. Refresh to try again.',
     );
+    // The order is still LIVE (SolvencyReserved) and its card form may still be open, so we do NOT offer an
+    // in-place retry (a second order + tab could double-charge) — the button is removed, not re-armed.
+    const btn = shadow().querySelector('.pay') as HTMLButtonElement;
+    expect(btn.style.display).toBe('none');
     const settled = statusPolls();
     await vi.advanceTimersByTimeAsync(3000 * 10);
     expect(statusPolls()).toBe(settled); // stopped

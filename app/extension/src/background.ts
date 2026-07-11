@@ -14,6 +14,12 @@ chrome.runtime.onInstalled.addListener(() => {
   console.info('[troia] background service worker installed');
 });
 
+// The hosted-form tab currently open for each storefront tab (keyed by the storefront tab's own id). When a fresh
+// attempt opens a new form for a given storefront tab (a retry after a decline), we close THAT storefront tab's
+// previous form first — never another tab's live form — so a single storefront checkout never has two card forms
+// open at once. (tabs.remove needs no extra permission.)
+const formTabByStorefront = new Map<number, number>();
+
 /**
  * The manifest's match pattern carries no port, so `http://localhost/*` lets the content script run on ANY local
  * port — any other dev server on this machine could serve a page that looks like the storefront. The exact-origin
@@ -53,8 +59,22 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
         // fails to open, surface it as a failure so the banner says so and does NOT poll — no form opened means
         // the buyer never reached the card page, so nothing was charged.
         if (outcome.ok && typeof outcome.response.paymentPageUrl === 'string') {
+          // Close only THIS storefront tab's own previous form (a retry after a decline), never another tab's.
+          const storefrontTabId = sender.tab?.id;
+          if (storefrontTabId !== undefined) {
+            const stale = formTabByStorefront.get(storefrontTabId);
+            if (stale !== undefined) {
+              formTabByStorefront.delete(storefrontTabId);
+              void chrome.tabs.remove(stale).catch(() => {}); // already closed / gone — fine
+            }
+          }
           chrome.tabs.create({ url: outcome.response.paymentPageUrl }).then(
-            () => sendResponse(outcome),
+            (tab) => {
+              if (storefrontTabId !== undefined && tab.id !== undefined) {
+                formTabByStorefront.set(storefrontTabId, tab.id);
+              }
+              sendResponse(outcome);
+            },
             () => sendResponse({ ok: false, status: null, error: 'tab_open_failed' }),
           );
           return;

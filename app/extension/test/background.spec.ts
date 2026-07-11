@@ -134,6 +134,52 @@ describe('background message router', () => {
     expect(sendResponse).toHaveBeenCalledWith({ ok: true, response });
   });
 
+  it('closes the SAME storefront tab’s previous form before opening a new one (a retry never leaves two live forms)', async () => {
+    const response = {
+      orderId: 'o1',
+      token: 't',
+      paymentPageUrl: 'https://iyzico.test/form',
+      paidPriceTry: '10.00',
+    };
+    postIntent.mockResolvedValue({ ok: true, response });
+    const handler = await loadRouter();
+    const tabA = { origin: 'http://localhost:5173', tab: { id: 100 } };
+
+    // first attempt from storefront tab 100 → opens form tab 1, closes nothing
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'o1' } }, tabA, vi.fn());
+    await flush();
+    expect(stub.tabsCreate).toHaveBeenCalledTimes(1);
+    expect(stub.tabsRemove).not.toHaveBeenCalled();
+
+    // retry from the SAME storefront tab → closes its stale form tab 1, then opens a new one
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'o2' } }, tabA, vi.fn());
+    await flush();
+    expect(stub.tabsRemove).toHaveBeenCalledWith(1);
+    expect(stub.tabsCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('does NOT close another storefront tab’s live form (the close is scoped per storefront tab)', async () => {
+    const response = {
+      orderId: 'o1',
+      token: 't',
+      paymentPageUrl: 'https://iyzico.test/form',
+      paidPriceTry: '10.00',
+    };
+    postIntent.mockResolvedValue({ ok: true, response });
+    const handler = await loadRouter();
+    const tabA = { origin: 'http://localhost:5173', tab: { id: 100 } };
+    const tabB = { origin: 'http://localhost:5173', tab: { id: 200 } };
+
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'oa' } }, tabA, vi.fn());
+    await flush();
+    // a payment started in a DIFFERENT storefront tab must not touch tab A's still-live form
+    handler({ type: 'TROIA_INTENT', body: { orderId: 'ob' } }, tabB, vi.fn());
+    await flush();
+
+    expect(stub.tabsRemove).not.toHaveBeenCalled();
+    expect(stub.tabsCreate).toHaveBeenCalledTimes(2);
+  });
+
   it('replies with tab_open_failed (and does not throw) when the tab cannot be opened', async () => {
     const response = {
       orderId: 'o1',

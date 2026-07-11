@@ -4,9 +4,154 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Troia</title>
+    <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="./main.tsx"></script>
+    <div class="popup" id="popup">
+      <img class="bgmark" src="./assets/watermark.png" alt="" aria-hidden="true" />
+
+      <div class="hd">
+        <img class="logo" src="./assets/logo.png" alt="Troia logo" />
+        <span class="name">Troia</span>
+        <span class="spacer"></span>
+        <button class="close" id="close" type="button" aria-label="Close">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="body">
+        <div class="bridge">
+          <div class="node fiat"><img src="./assets/coin-try.png" alt="Turkish lira" /></div>
+          <div class="wire"><span class="pulse"></span></div>
+          <div class="node usdc"><img src="./assets/coin-usdc.png" alt="USDC" /></div>
+        </div>
+
+        <!-- IDLE -->
+        <div id="idle">
+          <div class="herorow">
+            <div class="herotext">
+              <h2>Pay with<br /><em>Troy</em> card</h2>
+            </div>
+            <div class="cardwrap">
+              <div class="card">
+                <span class="chip"></span>
+                <svg
+                  class="nfc"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                >
+                  <path d="M7 8a7 7 0 0 1 0 8M11 6a11 11 0 0 1 0 12M15 4a15 15 0 0 1 0 16" />
+                </svg>
+                <span class="troy">tr<i>o</i>y</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="lbl">How it works</div>
+          <div class="steps">
+            <div class="step">
+              <span class="n">1</span><span class="t">Go to the store’s payment step</span>
+            </div>
+            <div class="step">
+              <span class="n">2</span
+              ><span class="t">Tap <em>Pay with Troy card</em> on the page</span>
+            </div>
+            <div class="step">
+              <span class="n">3</span
+              ><span class="t">Pay in lira with your Troy card — you’re done</span>
+            </div>
+          </div>
+
+          <div class="rule"></div>
+
+          <div class="status idle">
+            <span class="sdot"></span>
+            <span class="st">
+              <strong>Nothing to pay here yet</strong>
+              <span
+                >Open a supported store’s checkout and the button appears right on the page.</span
+              >
+            </span>
+          </div>
+        </div>
+
+        <!-- FOUND -->
+        <div id="found" hidden>
+          <div class="status">
+            <span class="sdot"></span>
+            <span class="st">
+              <strong>You’re ready to pay</strong>
+              <span>This checkout can be paid with your Troy card.</span>
+            </span>
+          </div>
+
+          <div class="amount">
+            <span class="k">Order total</span>
+            <span class="v"><span id="amt-v">—</span><u id="amt-u"> USDC</u></span>
+          </div>
+          <div class="sub">You’ll pay the lira equivalent with your Troy card.</div>
+
+          <div class="callout active">
+            <span class="ib">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              >
+                <rect x="3" y="6" width="18" height="12" rx="2.5" />
+                <path d="M3 10h18" />
+                <path d="M6.5 14.5h4" />
+              </svg>
+            </span>
+            <span class="ct"
+              ><span
+                >You can complete your payment by clicking the <b>“Pay with Troy card”</b> button on
+                the payment page.</span
+              ></span
+            >
+          </div>
+
+          <div class="rule"></div>
+
+          <div class="meta">
+            <div class="mrow">
+              <span class="k">Order</span><span class="v" id="order-v">—</span>
+            </div>
+            <div class="mrow">
+              <span class="k">Paid to</span><span class="v" id="paid-v">—</span>
+            </div>
+          </div>
+
+          <div class="safe">
+            <span class="ck">✓</span>
+            <span
+              ><b>Checkout verified</b> — we confirmed the store’s payment details before offering
+              to pay.</span
+            >
+          </div>
+        </div>
+      </div>
+
+      <div class="ft">
+        <a class="hiw" href="https://troiadocs.vercel.app" target="_blank" rel="noopener noreferrer"
+          >How it works ↗</a
+        >
+      </div>
+    </div>
+
+    <script type="module" src="./popup.ts"></script>
   </body>
 </html>

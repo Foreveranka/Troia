@@ -7,11 +7,15 @@
 
 const HOST_ID = 'troia-pay-banner-host';
 const PAY_LABEL = 'Pay with Troy card';
+const RETRY_LABEL = 'Try again';
 
 export interface BannerModel {
   readonly amount: string;
   readonly assetCode: string;
   readonly onPay: () => void;
+  /** Called when the shopper clicks the button after it has been switched to "Try again" (see setRetry). Lets
+   *  the caller start a FRESH attempt instead of re-firing the spent order. Falls back to onPay if not given. */
+  readonly onRetry?: () => void;
   /** Called when the shopper dismisses the banner (× ) — lets the caller stop any status polling. */
   readonly onClose?: () => void;
 }
@@ -19,6 +23,12 @@ export interface BannerModel {
 export interface BannerHandle {
   setBusy(busy: boolean): void;
   setStatus(text: string, kind: 'info' | 'error'): void;
+  /** After a failed/timed-out attempt: re-enable the button, relabel it "Try again", and route its next click
+   *  to onRetry (a fresh attempt) rather than onPay (the spent order). */
+  setRetry(): void;
+  /** Remove the action button entirely — for a terminal state where retrying would be unsafe (a payment was
+   *  received, or the order is still live) so the banner is now informational only. */
+  hidePay(): void;
   remove(): void;
 }
 
@@ -53,7 +63,11 @@ export function showBanner(model: BannerModel): BannerHandle {
 
   const payBtn = shadow.querySelector('.pay') as HTMLButtonElement;
   const statusEl = shadow.querySelector('.status') as HTMLElement;
-  payBtn.addEventListener('click', () => model.onPay());
+  let retryMode = false; // set by setRetry(); a click then means "start a fresh attempt", not "pay this order"
+  payBtn.addEventListener('click', () => {
+    if (retryMode && model.onRetry !== undefined) model.onRetry();
+    else model.onPay();
+  });
   shadow.querySelector('.x')?.addEventListener('click', () => {
     removeBanner();
     model.onClose?.();
@@ -62,6 +76,8 @@ export function showBanner(model: BannerModel): BannerHandle {
 
   return {
     setBusy(busy: boolean): void {
+      // Leaving the busy state returns the button to its normal "Pay" role (a retry has its own explicit setRetry).
+      retryMode = false;
       payBtn.disabled = busy;
       payBtn.textContent = busy ? 'Processing…' : PAY_LABEL;
     },
@@ -69,6 +85,15 @@ export function showBanner(model: BannerModel): BannerHandle {
       statusEl.hidden = false;
       statusEl.textContent = text;
       statusEl.dataset.kind = kind;
+    },
+    setRetry(): void {
+      retryMode = true;
+      payBtn.disabled = false;
+      payBtn.textContent = RETRY_LABEL;
+    },
+    hidePay(): void {
+      retryMode = false;
+      payBtn.style.display = 'none';
     },
     remove(): void {
       removeBanner();

@@ -22,12 +22,15 @@ export function toPublicStatus(state: State): PublicStatus {
     case 'Reconciled':
       // USDC landed at the merchant (the charge was already taken) — done from the customer's view.
       return 'completed';
+    case 'FailedClean':
+      // a clean pre-charge failure (declined / solvency-rejected): the card was NEVER charged and the order is
+      // finished — the ONLY 'failed' bucket, so a client may safely offer a fresh attempt on it.
+      return 'failed';
     case 'ChargeReversing':
     case 'ChargeReversed':
-    case 'FailedClean':
-      // the payment did not go through (declined, or USDC failed and the sale is being/was voided).
-      return 'failed';
     case 'LossReview':
+      // the card WAS charged, and the sale is being/was voided (or its fate is under manual review). Distinct
+      // from 'failed' precisely so a client never invites a retry on a charged order (which would double-charge).
       return 'review';
   }
 }

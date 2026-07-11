@@ -1142,9 +1142,25 @@ function Checkout({
   const [addr, setAddr] = useState({ ...emptyAddr });
   const [shipKey, setShipKey] = useState('standard');
   const [pay, setPay] = useState<'card' | 'crypto' | null>(null);
-  // A stable order reference for this checkout, used as the payment memo whether the shopper pays via the
-  // extension (Troy card) or the crypto gateway — so both settle the SAME order.
-  const orderMemo = useState(() => orderRef())[0];
+  // The order reference for this checkout, used as the payment memo whether the shopper pays via the extension
+  // (Troy card) or the crypto gateway — so both settle the SAME order. It is stable for one attempt, but the
+  // extension can ask for a FRESH one after a failed Troy-card attempt (a declined card spends the order id on the
+  // backend), so a retry is a clean new order rather than a re-run of a dead one.
+  const [orderMemo, setOrderMemo] = useState(orderRef);
+  const orderMemoRef = useRef(orderMemo);
+  orderMemoRef.current = orderMemo;
+  useEffect(() => {
+    function onRetry(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data as { source?: string; type?: string; orderId?: string } | null;
+      if (!d || d.source !== 'troia-extension' || d.type !== 'TROIA_RETRY') return;
+      // Regenerate only for the order the extension actually failed on — ignore stale/duplicate signals. (The
+      // crypto gateway shares this memo but is a local mock with no settlement, so a shift there is harmless.)
+      if (d.orderId === orderMemoRef.current) setOrderMemo(orderRef());
+    }
+    window.addEventListener('message', onRetry);
+    return () => window.removeEventListener('message', onRetry);
+  }, []);
 
   const set = (k: keyof typeof emptyAddr) => (e: ChangeEvent<HTMLInputElement>) =>
     setAddr((a) => ({ ...a, [k]: e.target.value }));

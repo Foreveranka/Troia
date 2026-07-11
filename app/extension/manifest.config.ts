@@ -20,13 +20,24 @@ const BACKEND_PATTERN = hostPattern(BACKEND_BASE_URL);
 // The extension holds no keys and signs nothing; it reads the page's SEP-7 request and relays an intent.
 export default defineManifest({
   manifest_version: 3,
-  name: 'Troia — Pay with Troy card',
+  name: 'Troia',
   version: '0.0.1',
-  description:
-    'Detects a USDC-on-Stellar (SEP-7) checkout and offers to settle it with your Troy card. Holds no keys, signs nothing.',
+  description: 'Pay with Troy card',
+  icons: {
+    16: 'icons/icon-16.png',
+    32: 'icons/icon-32.png',
+    48: 'icons/icon-48.png',
+    128: 'icons/icon-128.png',
+  },
   action: {
     default_popup: 'src/popup/index.html',
     default_title: 'Troia',
+    default_icon: {
+      16: 'icons/icon-16.png',
+      32: 'icons/icon-32.png',
+      48: 'icons/icon-48.png',
+      128: 'icons/icon-128.png',
+    },
   },
   background: {
     service_worker: 'src/background.ts',

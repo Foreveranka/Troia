@@ -6,8 +6,7 @@
 > lira accountable hash-by-hash — it never silently loses money; the one irreversible loss bucket
 > (`LOSS_REVIEW`) is surfaced, never hidden."_ Honest proof boundary: **`signed ≠ settled`**.
 
-This document is the formal companion to the working narrative in `troia-olay-orgusu.md`. The narrative
-is the reasoning; this is the ADR-backed contract the code must satisfy. Everything network-specific is
+This is the ADR-backed contract the code must satisfy. Everything network-specific is
 injected via `NetworkConfig`; a literal `if (network === 'testnet')` anywhere in business logic is a bug.
 
 All code, comments, commit messages, and log strings are **English only**.
@@ -59,10 +58,14 @@ a "sent USDC but did not secure TRY" gap.
 If the USDC leg fails after the charge, the completed sale is **voided the same day** (`iyzico.cancel`), returning
 the customer's TRY — a reversible unwind, not a permanent loss.
 
-**Residual risk is not zero — it is confined to one narrow window**: USDC was sent, but the reversible charge
-cannot be unwound (the void itself repeatedly fails, or the USDC fate is genuinely unknown). That order lands in
-`LossReview` — a durable, surfaced bucket, never a silent park. On testnet no real value is at stake; the path
-exists to demonstrate maturity. When a loss occurs it is **ours**, never the customer's.
+**Residual risk is not zero — it is confined to one narrow window**: USDC was sent, and the void that would
+unwind the reversible charge itself repeatedly fails (its retry budget is exhausted). That order lands in
+`LossReview` — surfaced, never a silent park (`GET /status` answers `review`). A charge whose USDC fate is
+genuinely _unknown_ does not land here; it stays and re-polls forever rather than being routed to a manual sink
+(§3's "unknown never advances" rule). On testnet no real value is at stake; the path exists to demonstrate
+maturity. When a loss occurs it is **ours**, never the customer's. **`LossReview` is not itself durable** — it is
+recorded in the in-memory store alongside the `OrderRow`s, so a crash while an order sits in review loses the
+record (see KNOWN_ISSUES.md).
 
 ---
 
@@ -92,10 +95,12 @@ Load-bearing rules (each is a test):
 
 - **Reserve-before-charge:** solvency is reserved FIRST; the customer is never charged unless a USDC reservation
   is already held (fail-closed `409` at `/intent`).
-- **USDC is last, and never on an unknown charge:** `submitPay` fires only from `SolvencyReserved` on `chargeOk`;
-  `chargeUnknown` stays and re-polls, never submits.
+- **USDC is last, and never on an unknown charge:** every `submitPay` edge is post-charge (see "Write-ahead"
+  below for the two edges); `chargeUnknown` stays and re-polls, never submits.
 - **Write-ahead:** the in-flight state (`UsdcSubmitted`) is persisted **before** the side-effecting `submitPay`.
-  So a state can mean "the side effect definitely has not started yet" → safe to proceed.
+  So a state can mean "the side effect definitely has not started yet" → safe to proceed. `submitPay` fires from
+  two edges — the happy path (`SolvencyReserved`+`chargeOk`) and the reallocated-seq retry
+  (`UsdcReverted`+`revertOther`) — both always preceded by `persistInFlight` in the same effect list.
 - **Unknown never advances toward an irreversible action:** solvency, charge, and reversal are all 3-valued
   (OK/FAIL/Unknown). An `Unknown` result stays and re-polls (`rePollObserveOnly`, the only effect it may emit);
   it never triggers `pay()`, a charge, or a cancel. A two-valued gate before the irreversible USDC leg is a P0.
@@ -108,9 +113,10 @@ Load-bearing rules (each is a test):
   loops on `txBAD_SEQ` → forbidden; classify the cause (`revertAlreadyProcessed → UsdcConfirmed`;
   `revertBalanceGuard → void the sale`; `revertOther → reallocate a NEW seq`). Reconciled is reachable ONLY via
   `UsdcConfirmed`.
-- **Recovery never blind-resubmits** — restart fires an observation-only `recover` event that reads evidence;
-  only the charge→submit crash seam (charge done, `pay()` never sent, seq still active) uses `recoverResubmit`
-  for a money-safe same-seq submission. It never re-runs a side-effect that may already have started.
+- **Recovery never blind-resubmits** — the poll worker's restart pass re-reads evidence and observes the chain
+  before deciding anything (read-then-decide, never a blind write); only the charge→submit crash seam (charge
+  done, `pay()` never sent, seq still active) uses `recoverResubmit` for a money-safe same-seq submission. It
+  never re-runs a side-effect that may already have started.
 - **USDC failure unwinds reversibly:** when retries are exhausted (`UsdcDead`) or USDC did not move
   (`revertBalanceGuard`), the completed sale is voided (`fireCancel` → `ChargeReversing`); only a void that
   cannot complete lands in `LossReview`.
@@ -119,7 +125,7 @@ Load-bearing rules (each is a test):
 
 ## 4. Identity lineage — every key derives deterministically from one `order_id`
 
-Four guards (memo / seq / contract / capture) must derive from the **same identity** or they disagree
+Three guards (memo / seq / contract) must derive from the **same identity** or they disagree
 (one says "already done" while another says "new"). One pure function, byte-exact preimage, so two
 independent implementers produce byte-identical output:
 
@@ -151,8 +157,9 @@ deriveIds(order_id, destination, amount):
 Emptiness of order_id and non-positive amounts are byte-legal here; the "non-empty" / "amount > 0" business
 rules live in `PayoutIntent.build` (fail-closed). Violations of rules 1–4 throw `DeriveIdsError`.
 
-`seq S` and `quote_id` are **not** pure derivations (allocator / price-time bound) but are still pinned to
-`order_id`. A golden-vector fixture (`packages/core/test/fixtures/derive-ids.golden.json`) locks the hex.
+`seq S` is **not** a pure derivation (allocator-assigned) but is still pinned to `order_id` (`SequenceAllocator`
+keys its allocation on the order id). A golden-vector fixture
+(`packages/core/test/fixtures/derive-ids.golden.json`) locks the hex.
 
 **Two shields, two DIFFERENT fields:**
 
@@ -202,7 +209,10 @@ has actually paid us the held TRY** (we have no fiat to buy USDC with until then
 
 **Status (PoC).** The automatic TRY-driven rebalance loop is **built and running**. A background settlement
 worker (`settleTick`, on its own `SETTLEMENT_TICK_MS` interval, default 5s) runs alongside the poll worker: each
-tick **arms** every money-good order (`UsdcConfirmed`/`Reconciled`) and, after the settlement valör, refills the
+tick **arms** every money-good order that has a durable evidence row (`UsdcConfirmed`/`Reconciled`) — with one
+named exception: the `revertAlreadyProcessed → UsdcConfirmed` path deliberately writes no evidence row (§4's
+two-shields rationale), so that order is never armed or refilled by this loop (KNOWN_ISSUES §4) — and, after the
+settlement valör, refills the
 pool from _exactly that order's_ collected TRY — converted to USDC at the live oracle rate — by minting real
 issuer-signed USDC into the pool (a `SimulatedRebalance` wrapping `createSacMintClient`, the SAC-admin mint: the
 programmatic form of `just bootstrap`'s mint step); `store.creditPool` then lifts the `/intent` solvency gate. The
@@ -246,9 +256,9 @@ mint twice.
 | ⑩   | BOOKED OUTFLOW — the pool is credited when the payout is armed; booked-vs-chain drift alarms, never absorbs                  | `packages/ledger` + `checkDrift` (§7b)      |
 
 **`BuildError` (flat enum, deterministic control order):**
-`AddressInvalidChecksum → MemoMissing → MemoWrongLength → MemoZero → MemoMismatch → AmountNonPositive →
-IssuerNotAllowlisted → TrustlineMissing`. `build(raw, snapshot)` stays **pure** — trustline is read from an
-injected `AccountSnapshot`, not from the network.
+`OrderIdMalformed → OrderIdEmpty → AddressInvalidChecksum → MemoMissing → MemoWrongLength → MemoZero →
+MemoMismatch → AmountNonPositive → IssuerNotAllowlisted → TrustlineMissing`. `build(raw, ctx)` stays **pure** —
+trustline is read from an injected `AccountSnapshot` (carried on `ctx`), not from the network.
 
 `PayoutIntent.build` is **total and defensive at the trust boundary**: `RawPayout` field types are
 compile-time only, so build validates runtime types too (a non-`bigint` amount, non-`string` order_id, etc.
@@ -282,11 +292,11 @@ troia/
     ├── config/                 # NetworkConfig — single authority, no secrets
     ├── core/                   # PayoutIntent, deriveIds, state machine, domain types
     ├── oracle/                 # deterministic median CEX rate + commission inputs (no AI)
-    ├── pricing/                # userTRY = mid×(1+FX-risk+margin) grossed up for the PSP fee: ÷(1−rate)+fixed
+    ├── pricing/                # userTRY = mid×(1+FX-risk+margin) grossed up for the PSP fee: (net+fixed)÷(1−rate)
     ├── ledger/                 # double-entry: fiat_in / crypto_out / spread / fee
     ├── rebalance/              # RebalanceProvider — SimulatedRebalance (testnet mint) → real-CEX (Phase-2)
     ├── psp/                    # PaymentProvider (iyzico direct-sale: sandbox → prod)
-    ├── stellar-client/         # SDK wrapper: SAC transfer, submit + poll, snapshot loader, Signer boundary
+    ├── stellar-client/         # SDK wrapper: TroyPool.pay() build/submit + poll, SAC mint (rebalance), snapshot loader, Signer boundary
     ├── reconciler/             # keyless three-artifact reconciler + offline `just verify`
     ├── backend/                # the heart: state machine driver, HTTP, webhook, solvency, poll-worker, TRY-driven rebalance worker (settlement/: settleAndRebalance, pending store, policy, creditPool)
     ├── composition/            # Phase-4.5 root: real adapters + PSP-inclusive quote → ServerDeps; `just serve`
@@ -360,15 +370,15 @@ which re-minted USDC on every tick and never credited it.)
 
 **Seven logs, under `TROIA_DATA_DIR/<troyPool-id>/`** (scoped per pool, so two deployments never share state):
 
-| File                     | What survives                                                               | Replay policy                    |
-| ------------------------ | --------------------------------------------------------------------------- | -------------------------------- |
-| `ledger-journal.log`     | every double-entry posting                                                  | **fail-closed** — refuse to boot |
-| `evidence.log`           | `(orderId, txHash, signedXdr, seq, witnessedAt)` + the order's frozen facts | tolerant, deduped                |
-| `authorized.log`         | every tx hash written **before** submit                                     | tolerant                         |
-| `chain-observations.log` | pool outflows, settlements, `upgrade()`s seen on chain                      | tolerant                         |
-| `reconciled.log`         | orders whose four gates passed                                              | tolerant                         |
-| `outflow-cursor.log`     | how far the payout tail has read                                            | last-wins                        |
-| `outflow-suspects.log`   | unexplained outflows (`seen` / `alarmed` / `cleared`)                       | fold                             |
+| File                     | What survives                                                               | Replay policy                                                                        |
+| ------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `ledger-journal.log`     | every double-entry posting                                                  | torn tail healed + warned; a damaged **committed** record is fatal — refuses to boot |
+| `evidence.log`           | `(orderId, txHash, signedXdr, seq, witnessedAt)` + the order's frozen facts | tolerant, deduped                                                                    |
+| `authorized.log`         | every tx hash written **before** submit                                     | tolerant                                                                             |
+| `chain-observations.log` | pool outflows, settlements, `upgrade()`s seen on chain                      | tolerant                                                                             |
+| `reconciled.log`         | orders whose four gates passed                                              | tolerant                                                                             |
+| `outflow-cursor.log`     | how far the payout tail has read                                            | last-wins                                                                            |
+| `outflow-suspects.log`   | unexplained outflows (`seen` / `alarmed` / `cleared`)                       | fold                                                                                 |
 
 The ledger replays fail-closed because a lost posting is a lost fact about money; the evidence log replays
 tolerantly because it is written at-least-once by design and dedupes on `(orderId, txHash)`.
@@ -440,7 +450,7 @@ the ord-003 acceptance guarantee.
 input is ONLY the report file (no network, no DB). It **recomputes** each order's `hash`/signature/decode and
 re-derives verdict/status/summary from the embedded evidence, asserting each equals the stored value.
 Network is blocked in-process by a preload that patches `net`/`tls`/`dns`/`http(s)`/`http2`/`dgram`/`fetch`/
-`WebSocket`/`undici` to throw and count attempts (darwin-portable; **not** an OS firewall). Exit 0 requires a
+`WebSocket` to throw and count attempts (darwin-portable; **not** an OS firewall). Exit 0 requires a
 **positive** proof, not mere absence: a startup canary must confirm the block is armed (a deliberate
 `net.connect` throws), `ordersVerified === N`, `networkAttempts === 0`, and every re-derivation matches.
 Honest boundary: **`signed ≠ settled`** — the fixture tx has no Soroban footprint (`tx.ext().switch()===0`),
@@ -539,7 +549,7 @@ The ADRs are summarized inline below (they are not split into separate `docs/adr
    post-charge USDC failure voids the same-day sale.
 4. Transparent, legible pricing — four separate lines (the user only ever sees one ₺ total): oracle **mid** +
    **FX-risk commission** (μ·n + z·σ·√n, where n = the real iyzico settlement valör, ~21 days, not T+1) + fixed
-   **margin**, then a **PSP cost pass-through** grossed up `÷(1−rate)+fixed` so the net still covers mid+FX+margin
+   **margin**, then a **PSP cost pass-through** grossed up `(net+fixed)÷(1−rate)` so the net still covers mid+FX+margin
    after the provider's cut — gross-up, NOT addition (addition under-recovers by `rate × our-markup`). The iyzico
    rate (4.29%+0.25₺) and the valör are config knobs, swappable per ADR-9. Pricing primitive + policy are built
    and tested, and bound into the composition root (`makeQuoteFn` feeds the backend's injected `/intent` quote),

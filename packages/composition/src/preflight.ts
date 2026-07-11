@@ -1,10 +1,11 @@
 // `just preflight` — the live-smoke READINESS GATE. Before a human drives a real charge through the end-to-end
 // run, this smokes every DIRTY dependency in isolation (the ones type-checked but never live-exercised offline):
-// the operator account (fees), the pool USDC balance (readSacBalance), the CEX spot oracle, the Yahoo daily-close
-// history, and iyzico reachability. It answers "is everything the run needs actually up + configured?" with a
-// green/red report, so a missing pool balance / an unreachable RPC / a bad iyzico key is caught UP FRONT, not
-// mid-demo. runPreflight is the pure, offline-testable core (injected probes); buildPreflightProbes wires the real
-// adapters (network:true, live-smoked). It NEVER throws — a probe that throws becomes a red check.
+// the operator account (fees), the issuer account (fees for the rebalance bot's SAC mint), the pool USDC balance
+// (readSacBalance), the CEX spot oracle, the Yahoo daily-close history, and iyzico reachability. It answers "is
+// everything the run needs actually up + configured?" with a green/red report, so a missing pool balance / an
+// unreachable RPC / a bad iyzico key is caught UP FRONT, not mid-demo. runPreflight is the pure, offline-testable
+// core (injected probes); buildPreflightProbes wires the real adapters (network:true, live-smoked). It NEVER
+// throws — a probe that throws becomes a red check.
 
 import { createPaymentProvider } from '@troia/psp';
 import type { NetworkConfig } from '@troia/config';
@@ -26,6 +27,8 @@ export interface PreflightReport {
 export interface PreflightProbes {
   /** operator account native XLM balance (must cover pay() fees). Throws if the account is unreachable/unfunded. */
   operatorNativeXlm(): Promise<number>;
+  /** issuer account native XLM balance (must cover the rebalance bot's SAC mint fees). Throws if unreachable/unfunded. */
+  issuerNativeXlm(): Promise<number>;
   /** pool USDC balance in stroops (smokes readSacBalance against the live SAC + TroyPool). */
   poolBalanceStroops(): Promise<bigint>;
   /** live spot mid (smokes the CEX oracle end-to-end: fetch -> derive -> aggregate). */
@@ -74,6 +77,14 @@ export async function runPreflight(
       const xlm = await probes.operatorNativeXlm();
       return {
         name: 'operator XLM (fees)',
+        ok: xlm >= minXlm,
+        detail: `${xlm} XLM (need >= ${minXlm})`,
+      };
+    }),
+    safe('issuer XLM (fees)', async () => {
+      const xlm = await probes.issuerNativeXlm();
+      return {
+        name: 'issuer XLM (fees)',
         ok: xlm >= minXlm,
         detail: `${xlm} XLM (need >= ${minXlm})`,
       };
@@ -146,6 +157,12 @@ export function buildPreflightProbes(w: PreflightWiring): PreflightProbes {
       const snap = await horizon.loadAccountSnapshot(w.network.operatorPublic);
       if (snap === null)
         throw new Error(`operator ${w.network.operatorPublic} not funded on Horizon`);
+      const native = snap.balances.find((b) => b.asset_type === 'native');
+      return native?.balance !== undefined ? Number(native.balance) : 0;
+    },
+    async issuerNativeXlm() {
+      const snap = await horizon.loadAccountSnapshot(w.network.issuerPublic);
+      if (snap === null) throw new Error(`issuer ${w.network.issuerPublic} not funded on Horizon`);
       const native = snap.balances.find((b) => b.asset_type === 'native');
       return native?.balance !== undefined ? Number(native.balance) : 0;
     },

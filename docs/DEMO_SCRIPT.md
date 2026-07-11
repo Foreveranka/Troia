@@ -35,7 +35,7 @@ payoff — the same money-first flow from Act 3, now moving real testnet USDC th
 
 ```bash
 just build      # all TypeScript packages compile (tsc, strict)
-just test       # 581 TypeScript tests across 81 files
+just test       # TypeScript tests across the packages workspace (count grows; see the just test output)
 just lint       # ESLint clean
 cargo test      # 14 Soroban contract tests (unit + integration + fuzz conservation)
 ```
@@ -147,9 +147,9 @@ USDC — and neither of them had to see the other's world. That's the whole prod
 
 Optional trust beat: _"And if anything stalls, the banner never lies about money — a pre-payment timeout says 'you were not charged'; a post-payment delay says 'settlement is taking a little longer, you can safely close this'; and a double Pay click is a no-op."_
 
-> Honest note for the reviewer: this is a single manual live smoke (one of two such runs; see DEPLOYMENTS.md) on **testnet** with iyzico **sandbox** (no real
-> money). If recording without the stack up, narrate it over the confirmation screenshots + the explorer tx — do
-> not fake a charge.
+> Honest note for the reviewer: this is a single manual live smoke (one of two such runs; see DEPLOYMENTS.md) on
+> **testnet** with iyzico **sandbox** (no real money). See "If recording a video" below for how to handle a run
+> without the stack up.
 
 ---
 

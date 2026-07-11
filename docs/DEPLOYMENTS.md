@@ -164,7 +164,8 @@ just fund   # asserts the pool above is still on chain, tops up fee XLM for keys
             # and re-points the storefront + extension at it. Never deploys anything.
 ```
 
-`deployment.testnet.json` — the record of the five identities above — **is in the repository**: every value in it
+`deployment.testnet.json` — the record of the five identities above, plus the backend URL and the storefront's
+allowed origins — **is in the repository**: every value in it
 is public, and committing it is what makes "one pool, unchanging" true for every clone rather than something each
 machine re-invents. Moving money additionally needs the matching secrets in `.env`, and those never leave a
 machine. An offline test pins the two apps to this record, so a stale wiring fails the gate rather than the demo.

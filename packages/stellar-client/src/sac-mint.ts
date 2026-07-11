@@ -1,6 +1,6 @@
 // PURE, deterministic construction of the unprepared (pre-simulation) USDC SAC `mint(to, amount)` invocation —
-// the programmatic form of `just fund` step 5 (`stellar contract invoke $SAC --source-account issuer -- mint
-// --to $POOL --amount N`). The tx SOURCE is the ISSUER (the SAC admin), so the mint authorizes via
+// the programmatic form of `just bootstrap` step 5 (`stellar contract invoke $SAC --source-account issuer --
+// mint --to $POOL --amount N`). The tx SOURCE is the ISSUER (the SAC admin), so the mint authorizes via
 // source-account auth exactly like the CLI. Mirrors build.ts (buildPayTransaction): timebounds are INJECTED as
 // absolute unix seconds (determinism), and it neither simulates nor signs. On testnet this mints self-issued
 // USDC; on mainnet the SAME rebalance seam drives a real CEX buy instead (the mint disappears with the issuer).

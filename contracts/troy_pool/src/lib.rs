@@ -121,9 +121,9 @@ impl TroyPool {
 
     /// Move `amount` USDC from the pool to `merchant`. Atomic check-and-transfer with a per-`tx_id`
     /// replay guard. Order: operator auth → not paused → amount > 0 → not already processed →
-    /// sufficient balance → transfer → mark processed → emit. Any guard fails closed (Err), and the
-    /// replay guard is written only AFTER a successful transfer, so a reverted transfer never marks the
-    /// order processed.
+    /// sufficient balance → mark processed → transfer → emit. Any guard fails closed (Err), and the
+    /// replay guard is written BEFORE the transfer — Soroban's all-or-nothing revert means a failed
+    /// transfer undoes that write too, so a reverted transfer never leaves the order marked processed.
     pub fn pay(
         env: Env,
         tx_id: BytesN<32>,

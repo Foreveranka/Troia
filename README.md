@@ -7,11 +7,15 @@ the operator settles the merchant in USDC from a Stellar pool that is pre-funded
 > the one irreversible loss bucket (`LOSS_REVIEW`) is surfaced, never hidden."_ Honest proof boundary:
 > **`signed ≠ settled`**.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design contract and [`docs/ROADMAP.md`](docs/ROADMAP.md)
-for the phased build plan. For the reviewer-verifiable proof story, see [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md),
-[`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md), and [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
-What is unfinished in the code, and why each gap is money-safe, is enumerated in
-[`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
+## Where to start
+
+| If you have...                   | Read                                                                                                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5 minutes to evaluate this       | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md), then run `just verify`                                                                                  |
+| a repo to clone and run          | [`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)                                                                                                            |
+| a question about the trust model | [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)                                                                                                    |
+| a question about the design      | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design contract) / [`docs/ROADMAP.md`](docs/ROADMAP.md) (build plan)                                  |
+| a question about risk            | [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) (business/scope) + [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) (engineering gaps) |
 
 ## Verify it yourself
 
@@ -37,14 +41,14 @@ that lies about its own outcome cannot pass. A real `pay()` settled **74 USDC** 
 
 ## Commands
 
-| Command               | What                                                                  |
-| --------------------- | --------------------------------------------------------------------- |
-| `just ci`             | The full gate — every suite, nothing skipped (mirrors GitHub Actions) |
-| `just build`          | Build all TypeScript packages (this, not `just test`, typechecks)     |
-| `just test`           | The packages Vitest suite only — no typecheck, no extension, no Rust  |
-| `just lint`           | ESLint over the workspace                                             |
-| `just format`         | Prettier write                                                        |
-| `just contract-build` | `stellar contract build` (Soroban wasm)                               |
+| Command               | What                                                                                                                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `just ci`             | The full gate — every suite, nothing skipped (a subset of GitHub Actions: CI additionally diffs the committed recon fixture for regeneration honesty and does a release wasm build) |
+| `just build`          | Build all TypeScript packages (this, not `just test`, typechecks)                                                                                                                   |
+| `just test`           | The packages Vitest suite only — no typecheck, no extension, no Rust                                                                                                                |
+| `just lint`           | ESLint over the workspace                                                                                                                                                           |
+| `just format`         | Prettier write                                                                                                                                                                      |
+| `just contract-build` | `stellar contract build` (Soroban wasm)                                                                                                                                             |
 
 `just verify` runs today (offline, network-blocked reconciliation proof — see
 [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)); `just fund` verifies the one deployed pool and wires the apps to it — `just bootstrap` is what deploys one (see
@@ -64,7 +68,8 @@ Visa `4111111111111129`. Full list: [iyzico test cards](https://docs.iyzico.com/
 
 Secrets live **only** in `.env` (git-ignored); the repo carries `.env.example` placeholders and nothing else that
 is secret. It does carry `deployment.testnet.json` — the five **public** identifiers of the one deployment
-(issuer, USDC asset contract, `TroyPool`, operator, admin), the same five published in
+(issuer, USDC asset contract, `TroyPool`, operator, admin) plus the backend URL and storefront origins, the same
+identifiers published in
 [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md). An offline test asserts it holds no secret seed. `NetworkConfig` (in `packages/config`) holds **non-secret** values only — RPC url, network passphrase,
 contract/SAC addresses, and public G-addresses. Any network-specific literal outside `packages/config` is a
 bug and is caught by a guard test.

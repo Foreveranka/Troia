@@ -1,23 +1,20 @@
 # Troia — Live-Smoke Runbook (Phase 4.5 end-to-end)
 
-> **✅ Executed.** This run has been driven end-to-end: a real Troy sandbox card charge automatically drove a real
-> on-chain `TroyPool.pay()` (74 USDC pool → merchant, tx
-> [`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded);
-> see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). The executed run used the now-built **storefront + Chrome extension**
-> path (not just `scripts/intent.mjs`), and `just serve` now also runs the **TRY-driven rebalance bot** (Step 4).
-> This doc remains the runbook for reproducing it. A **second run** (`2026-07-10`, order `ST-7SRI0YDF`, 80 USDC, tx
-> [`d47f7fb9…`](https://stellar.expert/explorer/testnet/tx/d47f7fb92a149d61a6f576aa7f803d75e6d3b3dcb6b0119e5a12a7387683d1a5))
-> drove the same path against the durable logs, the payout tail and the live reconciler, and survived a
-> kill-and-restart — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
->
-> This is the operational script for the Phase-4.5 live step: a real iyzico charge automatically driving a real
-> on-chain `TroyPool.pay()` on testnet. Everything the run needs is wired +
-> offline-tested (see [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4); this doc is how a human actually
-> drives it. Honest boundary: **`signed ≠ settled`** — we prove what we signed cryptographically and what settled
-> while the chain remembers it.
->
-> Nothing here runs in the offline gate. It uses the network and the iyzico **sandbox** (valueless test cards); the
-> USDC is our own testnet mint. No real money moves.
+> **✅ Executed.** This is the operational script for a real iyzico charge automatically driving a real on-chain
+> `TroyPool.pay()` on testnet — this doc is how a human drives it. Honest boundary: **`signed ≠ settled`** — we
+> prove what we signed cryptographically and what settled while the chain remembers it. Nothing here runs in the
+> offline gate: it uses the network and the iyzico **sandbox** (valueless test cards); the USDC is our own testnet
+> mint. No real money moves.
+
+**Proven runs** (full detail in [`DEPLOYMENTS.md`](DEPLOYMENTS.md)):
+
+| Date       | Order         | Amount  | Tx                                                                                                                         | Additionally proved                                                           |
+| ---------- | ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 2026-07-07 | (storefront)  | 74 USDC | [`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded) | storefront + Chrome extension path end-to-end (not just `scripts/intent.mjs`) |
+| 2026-07-10 | `ST-7SRI0YDF` | 80 USDC | [`d47f7fb9…`](https://stellar.expert/explorer/testnet/tx/d47f7fb92a149d61a6f576aa7f803d75e6d3b3dcb6b0119e5a12a7387683d1a5) | durable logs, payout tail, live reconciler, and a kill-and-restart            |
+
+`just serve` now also runs the **TRY-driven rebalance bot** (Step 4). Everything the run needs is wired +
+offline-tested — see [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4.
 
 ---
 
@@ -44,15 +41,13 @@ hit a real RPC / the real sandbox. This run smokes:
 - **iyzico sandbox account** — register free at `sandbox-merchant.iyzipay.com`, copy `apiKey` + `secretKey` into
   `.env`. (The signed server-to-server notification webhook is deferred — settlement is driven by the poll worker's
   authenticated pull, so no dashboard webhook config is needed for this run.)
-- **A public tunnel — only if the browser and the backend are on different machines.** `TROIA_CALLBACK_URL` is the
-  hosted form's `callbackUrl`, and iyzico posts the **customer's browser** there after payment; iyzico's servers
-  never call it. `/return` verifies nothing and moves no money, so settlement does not depend on it at all. Both
-  proven runs used `cloudflared`, but the sandbox **accepts a plain `http://localhost:3000/return`** (measured:
-  `initializeCheckoutForm` returns `status: success`), so a same-machine run needs no tunnel.
+- **A public tunnel — only if the browser and the backend are on different machines.** See Step 3 for what
+  `TROIA_CALLBACK_URL` is and how to set it; a same-machine run needs no tunnel.
 - `.env` filled from `.env.example` (see the secret list there). `.env` is git-ignored; `deployment.testnet.json`
   is **committed** — it holds only public identifiers, and it is the one deployment everything settles against.
 - **`just serve` also requires `TROIA_ISSUER_SECRET`** — the USDC-SAC admin key that signs the rebalance mint,
-  **separate from the operator payout key**; boot fails **closed** without it.
+  **separate from the operator payout key**; boot fails **closed** without it. `just preflight` (Step 2) checks
+  this key and its XLM balance up front, so a missing/wrong issuer key is caught before the run, not mid-demo.
 
 ---
 
@@ -87,18 +82,19 @@ just preflight
 ```
 
 This smokes every live dependency **in isolation** and prints a green/red report — exit `0` = ready, exit `1` =
-fix the reds first. It checks: the operator key matches the deployment, the operator has XLM for fees, the pool
-holds USDC (`readSacBalance`), the CEX spot oracle returns a mid, the Yahoo history returns closes, and iyzico is
+fix the reds first. It checks: the operator key matches the deployment, the operator has XLM for fees, the issuer
+key matches the deployment, the issuer has XLM for fees (the rebalance bot's SAC mint needs it), the pool holds
+USDC (`readSacBalance`), the CEX spot oracle returns a mid, the Yahoo history returns closes, and iyzico is
 reachable with your creds (a no-charge probe — it creates no checkout form). **Do not proceed until this is green.**
-Note: preflight does **not** yet verify `TROIA_ISSUER_SECRET` or the issuer's XLM for fees — a missing/wrong issuer
-key surfaces only when the rebalance bot first mints.
 
 ## Step 3 — Set the callback URL
 
 iyzico redirects the customer's **browser** to this address after payment. The settlement itself is driven
 separately by the poll worker's server-side pull, so this is a landing page and nothing more.
 
-If the browser runs on the same machine as the backend — the usual local case — point it straight at localhost:
+If the browser runs on the same machine as the backend — the usual local case — point it straight at localhost.
+The sandbox **accepts a plain `http://localhost:3000/return`** (measured: `initializeCheckoutForm` returns
+`status: success`), so this needs no tunnel:
 
 ```
 TROIA_CALLBACK_URL=http://localhost:3000/return
@@ -122,7 +118,7 @@ just serve
 ```
 
 The backend reads `.env` + `deployment.testnet.json`, **seeds the pool balance + operator sequence from the chain**
-(two live reads), stands up Fastify, and starts the poll/recovery worker **and the TRY-driven rebalance bot** —
+(two live reads), stands up Fastify, and starts the poll worker **and the TRY-driven rebalance bot** —
 `settleTick`, scheduled on `SETTLEMENT_TICK_MS` (default 5s); it logs `troia rebalance bot armed — demo valör 30s,
 tick 5000ms`. After a money-good order's demo valör (the real iyzico valör is ~21 days, **compressed to
 `DEMO_VALOR_SECS`, default 30s**, so the refill is visible in the demo) the bot refills the pool from that order's
@@ -141,13 +137,14 @@ node scripts/intent.mjs            # a ledger-nonce order id, 1 USDC  (or: node 
 ```
 
 It prints the server-computed price (the client cannot dictate it) and writes `demo/checkout.html`. **Open that
-file in a browser** and pay with a **Troy sandbox test card** (see iyzico's test cards; 3DS mock OTP `123456`).
+file in a browser** and pay with a **Troy sandbox test card** (see iyzico's test cards; the 3DS OTP is shown in
+parentheses on the verification screen — enter what it displays).
 
 ## Step 6 — Watch it settle
 
 - **Coarse status** (never the crypto leg): `curl -s http://localhost:3000/status/<orderId>` →
   `pending → processing → completed`. The customer's browser lands on the `/return` page after paying; the
-  **poll/recovery worker** (every `POLL_INTERVAL_MS`) then re-retrieves the sale by its token and drives the USDC
+  **poll worker** (every `POLL_INTERVAL_MS`) then re-retrieves the sale by its token and drives the USDC
   leg — settlement is this authenticated **pull**, not a browser redirect.
 - **The `just serve` logs** show the money-first advance and the `pay()` submit as the worker picks the order up.
 - **The explorer** confirms the on-chain truth: the pool balance drops by the amount, the merchant receives USDC,
@@ -171,13 +168,8 @@ diagnostics, the code sits on a different contractId (SAC vs TroyPool) or nested
 
 ## Known limits (not blockers — see SCOPE §4)
 
-- **The order rows are single-process; the money facts are not.** Seven append-only logs under
-  `TROIA_DATA_DIR/<troyPool-id>/` survive a restart (ledger journal, evidence rows, authorized `pay()` hashes,
-  chain observations, reconciled marks, tail cursor + suspects). The `OrderRow`s, reservations, pending
-  settlements, and the operator sequence snapshot do **not** — so a restart forgets an order that was submitted
-  but had not yet landed. That fails **safe** (re-drive; the on-chain `Processed(tx_id)` guard and the single-use
-  sequence are the double-pay shields), and the durable evidence row keeps its settlement armed. A real database
-  is the mainnet swap. See SCOPE §4 and ARCHITECTURE §7b.
+- **The order rows are single-process; the money facts are not.** See KNOWN_ISSUES §1 for exactly what survives a
+  restart and why an order in flight is forgotten safely, never toward a double pay.
 - **Oracle quorum is 3-of-3 sources.** A CEX outage fails a quote **closed** (retry), the money-safe default. If a
   source is flaky during the demo, the bounded retry absorbs a blip; a sustained outage needs a retry/pause.
 - **The reversal (same-day void) path** is only exercised if a charge succeeds but the USDC leg cannot settle —

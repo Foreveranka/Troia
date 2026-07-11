@@ -2,8 +2,8 @@
 
 A Chrome MV3 extension that detects a **USDC-on-Stellar (SEP-7)** checkout on a supported store and offers to
 settle it with a **Troy card** instead — no crypto needed. It holds no keys and signs nothing: it reads the
-page's `web+stellar:pay` request, relays an intent to the Troia backend, which opens iyzico's hosted card form in
-a new browser tab. It then polls coarse status (via the background) and, on completion, fetches the settlement
+page's `web+stellar:pay` request, relays an intent to the Troia backend, and — once the backend returns a hosted
+form URL — the background worker opens iyzico's hosted card form in a new browser tab. It then polls coarse status (via the background) and, on completion, fetches the settlement
 receipt (on-chain tx hash + TRY charged) and posts `TROIA_PAID` to the storefront so the order is placed at the
 on-chain-settled amount.
 
@@ -15,7 +15,7 @@ Standalone package (not part of the pnpm workspace), built with Vite + React + [
 npm install
 npm run dev      # HMR dev build on port 5174
 npm run build    # production build into dist/
-npm test         # vitest run — 105 tests across 10 spec files
+npm test         # vitest run — 110 tests across 10 spec files
 ```
 
 Load the unpacked extension: open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**,

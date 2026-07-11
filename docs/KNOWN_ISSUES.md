@@ -1,16 +1,16 @@
 # Troia — Known Issues (engineering)
 
-> This is the engineer's list, not the reviewer's risk list. Nothing here changes whether the project is worth
-> funding; every item is a bounded implementation gap in a testnet proof-of-concept, with the reason it is safe and
-> the shape of its fix. The risks that _do_ bear on the decision — inventory acquisition, unit economics,
-> regulation, market size — live in [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) and are stated there in
-> full. Splitting the two is a claim about proportion, not a place to hide anything.
+> Engineering gaps in the testnet PoC — not the business/scope risks (those live in
+> [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md)). Each item states what is true, why it is money-safe
+> today, and what closes it.
 
-Each item states: what is true, why it is money-safe today, and what closes it.
+Tags mark what kind of gap each item is: `[mainnet-blocker]` must close before real money moves,
+`[public-deploy]` matters the day this runs on more than one instance/machine, `[test-gap]` is proven by tests but
+not yet by a live run, `[housekeeping]` is operational polish with no money-safety edge.
 
 ---
 
-## 1. Not everything survives a restart
+## 1. `[mainnet-blocker]` A crash in the charge window can strand a paid order (customer charged, merchant unpaid)
 
 Seven append-only logs under `TROIA_DATA_DIR/<troyPool-id>/` survive a crash: the double-entry journal, the
 settlement evidence (which carries each order's frozen facts and doubles as the settlement work-list), the
@@ -38,7 +38,7 @@ sequence snapshot.
   or void it. This changes the money path's crash semantics, so it is a deliberate later step — but it is the one
   gap on this page that is not merely tidiness.
 
-## 2. `/status` and `/receipt` after a restart
+## 2. `[mainnet-blocker]` `/status` and `/receipt` after a restart
 
 Both endpoints fall back to the durable evidence log, so a **settled** order keeps answering `completed`, with its
 real transaction hash, across a restart. (It answered `NotFound` when the defect was first observed in the
@@ -52,7 +52,7 @@ states, and both mean `completed` to a customer.
 - **Still open.** An order **in flight** has no row and answers `404`. So does an order that failed cleanly:
   failure leaves no durable record. Both need the durable order rows from §1.
 
-## 3. Solvency assumes exactly one backend process
+## 3. `[public-deploy]` Solvency assumes exactly one backend process
 
 The pool's reservation gate is an in-process lock (`Mutex`), so `reserve()`'s check and commit are serialized on a
 single event loop. **Two backend processes against the same pool would hold two independent locks and could both
@@ -64,7 +64,7 @@ reserve the same last coin.**
 - **Watch this before any public deployment.** A platform that runs two instances, or overlaps a new instance with
   the old one during a redeploy, silently removes the backend half of invariant ③a.
 
-## 4. Two evidence gaps, named rather than papered over
+## 4. `[mainnet-blocker]` Two evidence gaps, named rather than papered over
 
 - The `revertAlreadyProcessed → UsdcConfirmed` path writes **no evidence row** — deliberately, because the reverted
   transaction hash must never become a witness. Such an order is therefore absent from the durable work-list.
@@ -74,21 +74,18 @@ reserve the same last coin.**
   **crash** the poll worker has nothing to re-drive, because its work-list is the in-memory registry the crash
   erased. That is not a second defect; it is the §1 exposure seen from another angle, and it has the same fix.
 
-## 5. Late sequence allocation, two-store crash window
+## 5. `[housekeeping]` Late sequence allocation, two-store crash window
 
-The operator sequence is allocated late — on `chargeOk`, the first step of the USDC leg — so an abandoned checkout
-consumes no sequence and the operator account stays gap-free. `allocate()` persists the sequence snapshot one
-effect before the `OrderRow` is persisted with it.
-
-A crash in that window is **money-safe** (the `Processed(tx_id)` guard, derived from the order id, and the
-single-use sequence each cap delivery at one per order) and, for a completed charge, **self-heals**: recovery
-re-retrieves the same sale, `chargeOk` fires again, the idempotent `allocate()` returns the same sequence, and the
-payout submits. The only residual is a _theoretical_ liveness stranding of that sequence, and it is **not reachable
-in the PoC** — the in-memory sequence store is wiped by the very crash, so the allocator re-bootstraps from the
-live on-chain sequence on restart. A durable sequence store closes it by reconciling the order's sequence from
+The operator sequence is allocated late — on `chargeOk` — so an abandoned checkout consumes no sequence and the
+operator account stays gap-free. A crash in that window is **money-safe** (the `Processed(tx_id)` guard and the
+single-use sequence each cap delivery at one per order) and **self-heals** for a completed charge: recovery
+re-retrieves the sale, `chargeOk` fires again, and the idempotent `allocate()` returns the same sequence. The only
+residual — a theoretical liveness stranding of the sequence — is **not reachable in the PoC**, because the same
+crash that would strand it also wipes the in-memory sequence store, and the allocator re-bootstraps from the live
+on-chain sequence on restart. A durable sequence store closes it for good, by reconciling from
 `activeSeqFor(orderId)` during recovery.
 
-## 6. Paths proven by tests, not yet by the chain
+## 6. `[test-gap]` Paths proven by tests, not yet by the chain
 
 - **`ROGUE PAYOUT` has never fired against a real unauthorized outflow.** The live runs proved only the negative —
   that an authorized payout is not accused, including after a restart erased the in-memory order registry. Staging
@@ -99,14 +96,14 @@ live on-chain sequence on restart. A durable sequence store closes it by reconci
   landed-and-**reverted** `pay()`'s diagnostic events are the one shape only a live failing transaction confirms.
   `scripts/probe-revert.mjs` is the check for it once such a transaction exists on testnet.
 
-## 7. No log rotation
+## 7. `[housekeeping]` No log rotation
 
 Boot refuses to open a log at or above 2 GiB (`2**31` bytes, where `readFileSync` hard-fails) with an explanatory
 error rather than truncating it. At the payout tail's
 cadence the cursor log — the fastest-growing of the seven — takes years to approach that. Rotation is a later
 operational concern, not a correctness one.
 
-## 8. Concurrency is unit-proven, not load-proven
+## 8. `[test-gap]` Concurrency is unit-proven, not load-proven
 
 The SPIKE-3 solvency race (many simultaneous checkouts competing for the last coin) is proven offline, including
 the mutation check that removing the lock makes the same workload over-commit. It has never been run against the
@@ -119,7 +116,7 @@ quote are fetched before `reserve()`, and the hosted checkout form is opened aft
 exercise a narrower window than the test already does. What remains genuinely untested is throughput, not
 correctness — and the multi-process hazard in §3, which no single-process load test can find.
 
-## 9. `/intent` is unauthenticated; rate limiting is per-IP
+## 9. `[public-deploy]` `/intent` is unauthenticated; rate limiting is per-IP
 
 `POST /intent` takes no credential — anyone who can reach the backend can call it. That is **not a theft path**: the
 caller pays the TRY themselves (the backend prices the order server-side), and every field is re-validated

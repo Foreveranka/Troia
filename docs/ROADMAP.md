@@ -19,7 +19,7 @@ Goal: a monorepo that compiles, lints, tests, and has the safety rails wired bef
 - **0.2** TypeScript strict base config; ESLint + Prettier; Vitest runner.
 - **0.3** `packages/config` — `NetworkConfig` interface + testnet instance (no secrets). Lint rule/grep test:
   no network-specific literal outside this package.
-- **0.4** `.env.example` with the 5 secret placeholders; `.gitignore` for `.env`; secret-boundary README.
+- **0.4** `.env.example` with the 6 secret placeholders; `.gitignore` for `.env`; secret-boundary README.
 - **0.5** `justfile` skeleton: `just build`, `just test`, `just lint` (fund/demo/verify come later).
 - **0.6** Empty `contracts/troy_pool` that `stellar contract build` compiles (env sanity).
 
@@ -44,7 +44,7 @@ This is where the design earns its keep. Everything here is pure/deterministic a
   only table-listed transitions are reachable; write-ahead ordering; `UsdcDead` vs `UsdcReverted` seq inverse;
   terminal states accept no events. Strongest GO signal. Locks §3.
 - **1.5 `pricing` + `oracle` (pure parts)** — median/quorum/deviation math with injected quotes (no live CEX
-  yet). Tests: n=3 median+outlier, n=2 deviation→`OracleDeviationExceeded`, n≤1 fail-closed; spread math.
+  yet). Tests: n=3 median+outlier, n=2 deviation→`OracleError('DeviationExceeded')`, n≤1 fail-closed; spread math.
   Locks ⑤ freeze + ADR-2/4.
 - **1.6 `ledger`** — double-entry append-only (fiat_in/crypto_out/spread/fee). Tests: entries balance.
 - **1.7 composition smoke** (`packages/integration`) — one happy-path order threaded through the WHOLE
@@ -121,8 +121,9 @@ Now connect the core to the outside world, one provider at a time, behind interf
 - **4.2 `psp` (IyzicoSandbox)** — `initializeCheckoutForm`, `retrieveCheckoutFormResult`, `createPreAuth`,
   `createPostAuth`, `refund`, `cancel`, `verifyWebhookSignature`, `classifyIyzicoResult` (3-valued).
 - **4.3 Backend orchestration (Fastify)** — the state machine driving real calls; write-ahead persistence;
-  crash-recovery worker (read-then-decide). `POST /api/intent`, `GET /api/status/{id}`, `POST /api/webhooks/iyzico`
-  (HMAC verify on raw body before parse; event_id dedupe).
+  crash-recovery worker (read-then-decide). As built: `POST /intent`, `GET /status/:orderId`, `POST /webhook`
+  (iyzico's X-IYZ-SIGNATURE-V3 verified over its parsed-field concatenation, not a raw-body hash; event_id
+  dedupe).
 - **4.4 `rebalance` (SimulatedRebalance)** + `just fund` — **✅ done**: the live testnet rails are deployed
   (three keypairs, USDC SAC, a seeded `TroyPool`) and a real on-chain `pay()` money path is proven — pool
   `100,000 → 99,999`, replay guard, double-pay revert (see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)).
@@ -177,7 +178,7 @@ Showcase, not proof — comes last on purpose.
   worker (the only holder of the backend host permission) posts `/intent` and opens iyzico's hosted card page, then
   polls coarse status and hands the settlement receipt (tx hash + TRY charged) back to the storefront. Holds no
   keys, signs nothing, allowlisted origins only. **Proven live end-to-end** (Troy sandbox card → 74 USDC settled,
-  tx `cd643d71…`). 110 extension tests green (11 spec files). Hardened for the live money path: per-request fetch timeouts (intent 15s / polls 8s), a phase-aware poll budget with honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo parity pinned to core's golden vectors with malformed-order-id rejection (fail-closed `bad-order-ref`), and an amount gate aligned with `toStroops`.
+  tx `cd643d71…`). 110 extension tests green (10 spec files). Hardened for the live money path: per-request fetch timeouts (intent 15s / polls 8s), a phase-aware poll budget with honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo parity pinned to core's golden vectors with malformed-order-id rejection (fail-closed `bad-order-ref`), and an amount gate aligned with `toStroops`.
 - **5.3 Proof docs** — `RECONCILIATION.md`, `DEPLOYMENTS.md`, `SCOPE_AND_LIMITATIONS.md`, `DEMO_SCRIPT.md` ✅;
   `just verify` offline proof ✅. Remaining: a public shareable deploy (storefront → Vercel, backend → Render) and
   a 3–5 min proof video.

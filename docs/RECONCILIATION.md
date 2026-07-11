@@ -19,9 +19,9 @@ misroute money?"_ The answer is not "read our logs and trust them." The answer i
 `recon-report.json` embeds, per order, the signed transaction we submitted plus the chain observation, and
 `just verify` recomputes the truth from that embedded evidence with **no network and no database access**.
 
-The reconciler is **keyless and buildless by construction**: it imports `@stellar/stellar-base` only to
-_decode and verify_, never to sign (enforced by a grep-provenance test, `no-signing-in-src.spec.ts`). It cannot
-forge evidence because it holds no key.
+The reconciler is **keyless by construction and cannot build a transaction**: it imports `@stellar/stellar-base`
+only to _decode and verify_, never to sign or assemble one (enforced by a grep-provenance test,
+`no-signing-in-src.spec.ts`). It cannot forge evidence because it holds no key.
 
 ---
 
@@ -29,11 +29,11 @@ forge evidence because it holds no key.
 
 Per order, three independent records — deliberately from three different trust domains:
 
-| Artifact                  | Source                                                                                | Trust property                                                                                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **(a) `business_intent`** | our local DB row (`destination` / `amount_stroops` / `memo_hex`)                      | **Mutable.** "This is what was requested." A diff's `local_value` always comes from here.                                                                             |
-| **(b) `ledger_evidence`** | `signed_xdr` + its Stellar `hash`                                                     | **Frozen cryptographic witness.** "This is what we signed and submitted." Never re-serialized from (a) — corrupting the DB row cannot silently rewrite the signature. |
-| **(c) `chain_evidence`**  | `tx_hash` + `fetched_at_ledger` + a normalized `horizon_snapshot` of the `pay()` call | **Frozen chain observation.** "This is what the chain looked like when we watched it."                                                                                |
+| Artifact                  | Source                                                                                | Trust property                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **(a) `business_intent`** | our local order record (`destination` / `amount_stroops` / `memo_hex`)                | **Mutable.** "This is what was requested." A diff's `local_value` always comes from here.                                                                                   |
+| **(b) `ledger_evidence`** | `signed_xdr` + its Stellar `hash`                                                     | **Frozen cryptographic witness.** "This is what we signed and submitted." Never re-serialized from (a) — corrupting the local record cannot silently rewrite the signature. |
+| **(c) `chain_evidence`**  | `tx_hash` + `fetched_at_ledger` + a normalized `horizon_snapshot` of the `pay()` call | **Frozen chain observation.** "This is what the chain looked like when we watched it."                                                                                      |
 
 The signed blob **(b)** is the cryptographic tiebreaker between the mutable local row **(a)** and the observed
 chain **(c)**. The report pins two trust anchors at top level, read as **data**, never from the mutable XDR:
@@ -83,11 +83,11 @@ is exactly the case a reviewer should want caught, and it is caught with the cry
 The committed fixture (`packages/reconciler/test/fixtures/recon-report.json`, seed `troia-demo-0001`,
 operator `GA6C2W6O…E52K`) contains three orders:
 
-| Order     | Local amount        | Chain amount           | Verdict           | `signature_valid` | Meaning                                                                                                                             |
-| --------- | ------------------- | ---------------------- | ----------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `ord-001` | 10000000 (1.0 USDC) | 10000000               | **MATCHED**       | true              | Intent, signature, and chain all agree.                                                                                             |
-| `ord-002` | 25000000 (2.5 USDC) | 25000000               | **MATCHED**       | true              | Same — a clean settlement.                                                                                                          |
-| `ord-003` | 6000000 (0.6 USDC)  | **5000000 (0.5 USDC)** | **CORRUPT_LOCAL** | true              | The signed tx + chain agree on 0.5 USDC; only the local DB row claims 0.6. The chain wins; the discrepancy is surfaced, not hidden. |
+| Order     | Local amount        | Chain amount           | Verdict           | `signature_valid` | Meaning                                                                                                                                   |
+| --------- | ------------------- | ---------------------- | ----------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `ord-001` | 10000000 (1.0 USDC) | 10000000               | **MATCHED**       | true              | Intent, signature, and chain all agree.                                                                                                   |
+| `ord-002` | 25000000 (2.5 USDC) | 25000000               | **MATCHED**       | true              | Same — a clean settlement.                                                                                                                |
+| `ord-003` | 6000000 (0.6 USDC)  | **5000000 (0.5 USDC)** | **CORRUPT_LOCAL** | true              | The signed tx + chain agree on 0.5 USDC; only the local order record claims 0.6. The chain wins; the discrepancy is surfaced, not hidden. |
 
 `ord-003` is the deliberate mismatch — the "demo hero". Its `field_diff` records `amount: local 6000000 ≠ chain
 5000000`, its verdict is `CORRUPT_LOCAL`, and crucially `signature_valid` is still `true`: the evidence proves
@@ -143,8 +143,13 @@ just verify-tampered
 
 It forges the honest report **in a temp file** — flipping `ord-003`'s stored verdict _and_ status to `MATCHED`
 and the summary to `{matched:3, mismatch:0}` — then runs the same network-blocked verifier over the forgery.
-Nothing is written into the repo, so this runs on a bare clone in any order. Observed output (exit code `0`,
-meaning _the tamper was caught_):
+Nothing is written into the repo, so this runs on a bare clone in any order.
+
+Two exit codes are in play, and they mean opposite things: `just verify-tampered` (the outer wrapper script)
+exits **`0`**, because successfully catching a tamper is the expected, correct outcome; the **inner** verifier's
+exit — captured in the `verifierExit` field below — is `1`, because it read the forged report and the
+recomputation disagreed. `verifierExit: 1` is the recorded evidence that the catch actually happened, not a
+process failure. Observed output:
 
 ```json
 {
@@ -183,38 +188,17 @@ offline verify above (one order is a deliberate `CORRUPT_LOCAL` the reconciler c
 ## 6. The other reconciliation: the one the server does to itself
 
 Everything above is the **artifact** a reviewer verifies offline, after the fact. The running server also
-reconciles **continuously, against the live chain**, and it does not trust anything it announced. Two loops
-(ARCHITECTURE §8a):
-
-**The payout tail** asks: _did money leave the pool that no order authorized?_ It reads the USDC SAC's `transfer`
-events with `from == pool` — not the pool's own `payment_made`, because an `upgrade()`d pool can drain itself
-without emitting that event, while the token contract cannot be talked out of emitting `transfer`. Every `pay()`
-hash is written to a durable write-ahead journal **before** the transaction is broadcast, so a transaction cannot
-land unless its hash was already on disk. An outflow whose hash is absent was therefore **never authorized** —
-not "not yet witnessed", not "still settling". That is why the `ROGUE PAYOUT` alarm needs no grace period to be
-correct, and why a restart cannot erase the allowlist.
-
-**The live reconciler** asks: _did each order's settlement actually happen, and was it the one we announced?_ It
-finds the settlement through **`tx_id`** — the identifier the _contract_ indexes, a function of `order_id` alone —
-not through the transaction hash we recorded, because looking up by our own hash only checks our record against
-itself. Four gates must all pass before `Reconciled`:
-
-1. the pool's code was never replaced (an `upgrade()` latches `POOL CODE REPLACED`; past announcements stop being
-   proofs);
-2. the announced amount equals what the token contract **actually moved**;
-3. the transaction is still live on chain;
-4. `resolveGroundTruth` — §3's exact cascade — returns `MATCHED`.
+reconciles **continuously, against the live chain**, and does not trust anything it announced: a payout tail that
+calls any outflow whose hash is missing from the durable write-ahead journal a `ROGUE PAYOUT`, and a live
+reconciler that finds each order's settlement through the contract-indexed `tx_id` (not the hash we recorded) and
+gates `Reconciled` on four checks, the last of which is §3's exact `resolveGroundTruth` cascade. Full mechanics
+are in ARCHITECTURE §8a.
 
 Both loops have run against the live chain. On `2026-07-10` the audit reconciled a real payout (order
 `ST-7SRI0YDF`, 80 USDC, tx `d47f7fb9…`) by finding it under `tx_id = f11336a3e231fde6…` — the value
-`deriveIds('ST-7SRI0YDF')` computes independently — and the tail matched that outflow to the write-ahead journal
-without ever raising a suspect, including after a restart that erased the in-memory order registry. Details and the
-things the run did **not** prove are in [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
-
-An unreachable chain concludes **nothing** and re-polls. The two loops are complements, not duplicates: drift
-(ARCHITECTURE §7b) is windowless and always right about the **total** but cannot name a transaction; the tail
-names it and pays for that with the RPC's rolling ~7-day event window, whose gaps it declares (`TAIL BLIND SPOT`)
-rather than hides.
+`deriveIds('ST-7SRI0YDF')` computes independently — with no false theft accusation, including after a restart
+that erased the in-memory order registry. Details and what the run did **not** prove are in
+[`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 
 ---
 
@@ -228,7 +212,7 @@ rather than hides.
   claim "settlement is provable after reset."
 - The committed demo fixture tx is a **real, decodable Soroban `pay()` invocation with no execution footprint**,
   so it is genuinely verifiable but not itself network-submittable. A **real operator-signed `pay()` has already
-  landed on testnet** (tx `5a3d60cc…d64f13`, `TroyPool` `CCVNY6H…ATRKZ`), captured verbatim as
+  landed on testnet** (tx `5a3d60cc…`, `TroyPool` `CCVNY6H…`), captured verbatim as
   `recon-report.live.json` and re-verified reset-proof with `just verify-live` — same model, real chain evidence.
 
 **Bottom line for a reviewer:** clone the repo, run `just verify`, watch it pass on the honest report and fail

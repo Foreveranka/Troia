@@ -1,9 +1,10 @@
 // scripts/preflight.mjs — the live-smoke READINESS GATE wiring (ROADMAP Phase 4.5). Reads .env + the deployment
-// record, then smokes every DIRTY dependency the end-to-end run needs — the operator account (fees), the pool USDC
-// balance (readSacBalance), the CEX spot oracle, the Yahoo daily-close history, and iyzico reachability — and
-// prints a green/red readiness report. Exit 0 = ready to drive a real charge; exit 1 = fix the reds first. Run via
-// `just preflight` (node --env-file=.env). The network IS used (this is a live probe), but it moves NO money and
-// creates NO checkout form. The pure report logic (runPreflight) is unit-tested offline in @troia/composition.
+// record, then smokes every DIRTY dependency the end-to-end run needs — the operator account (fees), the issuer
+// account (fees for the rebalance bot's SAC mint), the pool USDC balance (readSacBalance), the CEX spot oracle,
+// the Yahoo daily-close history, and iyzico reachability — and prints a green/red readiness report. Exit 0 = ready
+// to drive a real charge; exit 1 = fix the reds first. Run via `just preflight` (node --env-file=.env). The
+// network IS used (this is a live probe), but it moves NO money and creates NO checkout form. The pure report
+// logic (runPreflight) is unit-tested offline in @troia/composition.
 
 import { readFileSync } from 'node:fs';
 import { testnetConfig } from '../packages/config/dist/index.js';
@@ -31,10 +32,16 @@ try {
 const network = testnetConfig(deployment);
 
 // Static preamble: the operator secret must derive the deployed operator public — the #1 `just serve` gotcha, and
-// cheap to catch here (local, no network) before wasting a live run.
+// cheap to catch here (local, no network) before wasting a live run. The issuer secret gets the same treatment:
+// `just serve` fails closed without TROIA_ISSUER_SECRET (it signs the rebalance bot's SAC mint), but that surfaces
+// only when the bot first tries to mint — minutes into a live run. Catch both up front.
 const operatorSecret = requireEnv('TROIA_OPERATOR_SECRET');
 const derivedOperator = new LocalKeySigner(operatorSecret).publicKey();
 const keyOk = derivedOperator === network.operatorPublic;
+
+const issuerSecret = requireEnv('TROIA_ISSUER_SECRET');
+const derivedIssuer = new LocalKeySigner(issuerSecret).publicKey();
+const issuerKeyOk = derivedIssuer === network.issuerPublic;
 
 const iyzicoSecretKey = requireEnv('IYZICO_SECRET_KEY');
 const probes = buildPreflightProbes({
@@ -53,7 +60,7 @@ const probes = buildPreflightProbes({
 
 const report = await runPreflight(probes);
 
-// Prepend the static key-match check so the report is one coherent list.
+// Prepend the static key-match checks so the report is one coherent list.
 const checks = [
   {
     name: 'operator key matches deployment',
@@ -62,9 +69,16 @@ const checks = [
       ? derivedOperator
       : `env derives ${derivedOperator} != deployment ${network.operatorPublic}`,
   },
+  {
+    name: 'issuer key matches deployment',
+    ok: issuerKeyOk,
+    detail: issuerKeyOk
+      ? derivedIssuer
+      : `env derives ${derivedIssuer} != deployment ${network.issuerPublic}`,
+  },
   ...report.checks,
 ];
-const ok = keyOk && report.ok;
+const ok = keyOk && issuerKeyOk && report.ok;
 
 console.log(`\n  Troia preflight — ${network.rpcUrl}\n`);
 for (const c of checks) {

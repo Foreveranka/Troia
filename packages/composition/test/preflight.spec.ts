@@ -19,6 +19,7 @@ const okRate: OracleResult = {
 function probes(over: Partial<PreflightProbes> = {}): PreflightProbes {
   return {
     operatorNativeXlm: () => Promise.resolve(9999),
+    issuerNativeXlm: () => Promise.resolve(9999),
     poolBalanceStroops: () => Promise.resolve(100_000n * 10_000_000n), // 100,000 USDC
     spotRate: () => Promise.resolve(okRate),
     historyCloseCount: () => Promise.resolve(126),
@@ -32,7 +33,7 @@ describe('runPreflight — the live-smoke readiness gate (offline, injected prob
   it('all green -> report.ok true with one check per dirty dependency', async () => {
     const r = await runPreflight(probes());
     expect(r.ok).toBe(true);
-    expect(r.checks).toHaveLength(5);
+    expect(r.checks).toHaveLength(6);
     expect(r.checks.every((c) => c.ok)).toBe(true);
   });
 
@@ -45,7 +46,7 @@ describe('runPreflight — the live-smoke readiness gate (offline, injected prob
     expect(pool?.ok).toBe(false);
     expect(pool?.detail).toContain('RPC 503');
     // the other checks are unaffected — one dead dependency doesn't mask the rest
-    expect(r.checks.filter((c) => c.ok)).toHaveLength(4);
+    expect(r.checks.filter((c) => c.ok)).toHaveLength(5);
   });
 
   it('a pool BELOW the minimum fails closed (no USDC to settle a demo order)', async () => {
@@ -93,6 +94,16 @@ describe('runPreflight — the live-smoke readiness gate (offline, injected prob
       minNativeXlm: 1,
     });
     expect(r.ok).toBe(false);
-    expect(r.checks.find((c) => c.name.includes('XLM'))?.ok).toBe(false);
+    expect(r.checks.find((c) => c.name.includes('operator'))?.ok).toBe(false);
+  });
+
+  it('an issuer with too little XLM for fees fails closed (the rebalance mint needs it)', async () => {
+    const r = await runPreflight(probes({ issuerNativeXlm: () => Promise.resolve(0) }), {
+      minNativeXlm: 1,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.checks.find((c) => c.name.includes('issuer'))?.ok).toBe(false);
+    // the operator check is unaffected — the two XLM checks are independent
+    expect(r.checks.find((c) => c.name.includes('operator'))?.ok).toBe(true);
   });
 });

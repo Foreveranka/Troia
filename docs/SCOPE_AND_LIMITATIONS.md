@@ -35,7 +35,7 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   payout; a `/intent` that cannot reserve gets a hard `409` before any charge is possible.
 - **Zero-trust pricing** — the ₺ price is computed **server-side** as four legible lines: the FX oracle **mid**,
   the **FX-risk commission** (μ·n + z·σ·√n + margin, with n = the real iyzico settlement valör ~21 days), and a
-  **PSP cost pass-through** grossed up `÷(1−rate)+fixed` so the net still covers mid+FX+margin after the
+  **PSP cost pass-through** grossed up `(net+fixed)÷(1−rate)` so the net still covers mid+FX+margin after the
   provider's cut. A client-supplied price _or currency_ is ignored; the same frozen price is what the form charges.
 - **Deterministic FX oracle** — median / distinct-source quorum / symmetric staleness band / fail-closed on
   disagreement, all on injected quotes (no AI, no live network in the tested path).
@@ -61,7 +61,7 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   (tx `cd643d71…`) and hardened: per-request fetch timeouts (15s intent / 8s poll), a phase-aware poll budget with
   honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo
   parity pinned to core's golden vectors (malformed order ids fail closed), and an amount gate aligned with
-  `toStroops` — ~110 tests across 11 spec files. Holds no keys, signs nothing.
+  `toStroops` — 110 tests across 10 spec files. Holds no keys, signs nothing.
 
 The full gate — TypeScript suite, Rust contract tests, lint, type-check, and the offline `just verify` — is the
 acceptance bar for every change.

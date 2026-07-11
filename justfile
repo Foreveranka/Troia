@@ -10,12 +10,13 @@ build:
 
 # NOTE: vitest runs under esbuild, which STRIPS types, so this does NOT typecheck; its include is packages/**
 # only, so it silently skips the extension and the contract. `just ci` is the honest gate.
-# Run the packages test suite only (581 tests).
+# Run the packages test suite only (count grows over time; see the vitest summary line for the current total).
 test:
     pnpm vitest run
 
-# Mirrors .github/workflows/ci.yml one-for-one; keep them in sync. Clean installs (npm ci), so it reproduces
-# CI rather than trusting whatever is in node_modules — needs the package registries.
+# A subset of .github/workflows/ci.yml — keep them in sync. CI additionally diffs the committed recon fixture
+# for regeneration honesty and does a release wasm build; neither is here. Clean installs (npm ci), so it
+# reproduces CI rather than trusting whatever is in node_modules — needs the package registries.
 # The full gate: every suite the repo owns, nothing skipped.
 ci:
     pnpm -r run build

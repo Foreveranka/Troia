@@ -23,7 +23,7 @@ lives in the workspace packages and the extension.)
 - **A realistic crypto-gateway checkout.** The shopper picks a coin → a network → pays to an address, like a real
   gateway. When they pick **USDC on Stellar**, the store renders a **SEP-7** request (`buildSep7` in
   `src/config.ts` → `web+stellar:pay?destination=…&amount=…&memo=…&memo_type=text&asset_code=USDC&asset_issuer=…`).
-  The destination is the hardcoded testnet merchant (`GA4WBDANMT…IESX`) and the asset is our testnet USDC issuer
+  The destination is the hardcoded testnet merchant (`GBCUCFGE…MNYAE`) and the asset is our testnet USDC issuer
   (`GCRAO5VCC…4N5W`); each order gets a short `ST-XXXXXXXX` reference used as the on-chain memo. The SEP-7 is
   rendered as a hidden anchor the moment the payment step opens, so the extension can read it off the DOM.
 - **Two checkout paths.** _Pay with Troy card_ (handled by the extension → Troia backend → USDC settlement) or a

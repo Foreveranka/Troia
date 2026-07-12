@@ -1,7 +1,7 @@
 # The honest gate. Every suite this repo owns runs here — nothing is skipped, so a green badge means green.
 #
 # `just test` alone would be a FALSE green: vitest runs under esbuild (which strips types, so it never
-# typechecks) and its include covers packages/** only, silently missing the extension's 105 tests, the
+# typechecks) and its include covers packages/** only, silently missing the extension's 114 tests, the
 # storefront, and the Soroban contract. The steps below mirror `just ci` one-for-one; keep them in sync.
 #
 # Third-party actions are deliberately avoided: pnpm comes from corepack (pinned by the root package.json
@@ -128,6 +128,10 @@ jobs:
       # The reviewer-facing proofs. verify.mjs runs under block-net.mjs, which patches net/tls/dns/http/fetch to
       # throw-and-count and arms a startup canary — so `networkAttempts: 0` is positively proven, not merely absent.
       - name: Offline proof — the honest report re-derives
+        # The acceptance corpus is signed by a throwaway seed-derived operator (not the deployment operator whose
+        # secret is never committed), so pin the verifier to it — mirrors `just verify`.
+        env:
+          TROIA_OPERATOR_PUBLIC: GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K
         run: >
           node --import ./packages/reconciler/bin/block-net.mjs
           ./packages/reconciler/bin/verify.mjs
@@ -142,4 +146,7 @@ jobs:
       # The negative half: a forged report must be caught by re-derivation (verify exit 1), not by an unreadable
       # file (verify exit 2). tamper-check pins the distinction, so this step cannot pass while testing nothing.
       - name: Offline proof — a forged report is caught
+        # tamper-check pins the verifier to the throwaway corpus operator; set it explicitly (don't inherit ambient).
+        env:
+          TROIA_OPERATOR_PUBLIC: GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K
         run: node scripts/tamper-check.mjs

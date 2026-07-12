@@ -50,6 +50,8 @@ export interface AppDeps {
   readonly orderLocks?: KeyedMutex;
   /** per-IP cap on POST /intent. Omitted -> DEFAULT_INTENT_RATE_LIMIT. Tests inject a tiny cap. */
   readonly rateLimit?: IntentRateLimit;
+  /** per-IP cap on GET /quote. Omitted -> DEFAULT_QUOTE_RATE_LIMIT. Tests inject a tiny cap. */
+  readonly quoteRateLimit?: IntentRateLimit;
 }
 
 /** A per-IP request cap for the one expensive money-path route, POST /intent. */
@@ -63,6 +65,15 @@ export interface IntentRateLimit {
  *  reservation-exhaustion DoS — rotating IPs each spend a few requests and never trip a per-IP cap; that hazard
  *  is named in KNOWN_ISSUES and closed by a reservation budget, not by this. */
 export const DEFAULT_INTENT_RATE_LIMIT: IntentRateLimit = { max: 20, timeWindowMs: 60_000 };
+
+/** GET /quote runs the SAME live-oracle pricing as /intent but reserves nothing, so it is cheaper — yet it still
+ *  hits the upstream rate source on EVERY call, so it must stay bounded (an unthrottled public /quote is a free
+ *  amplifier to hammer the oracle and fail-close real pricing). 30/min per IP: generous for one preview per checkout. */
+export const DEFAULT_QUOTE_RATE_LIMIT: IntentRateLimit = { max: 30, timeWindowMs: 60_000 };
+
+/** i128 upper bound — the amount ceiling PayoutIntent.build enforces. A quote must never price a value the charge
+ *  would reject, and this also guards @troia/pricing's RangeError on a non-positive amount. */
+const I128_MAX = 2n ** 127n - 1n;
 
 function optStr(o: Record<string, unknown>, k: string): string | undefined {
   const v = o[k];
@@ -120,6 +131,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // real client, but on a direct public exposure a client can spoof XFF and rotate the key. So this bounds a naive
   // single-source flood; it is not a defense against a distributed or XFF-spoofing attacker.
   const intentLimit = deps.rateLimit ?? DEFAULT_INTENT_RATE_LIMIT;
+  const quoteLimit = deps.quoteRateLimit ?? DEFAULT_QUOTE_RATE_LIMIT;
   app.register(rateLimit, {
     global: false,
     // keep the { error } shape the other routes return; statusCode is required here or the reply falls back to 500.
@@ -294,6 +306,34 @@ export function createApp(deps: AppDeps): FastifyInstance {
     });
   };
 
+  // GET /quote/:amountStroops — a read-only price PREVIEW. It runs the SAME deps.quote the charge uses (so the shown
+  // TL equals what /intent will charge, modulo rate drift), but creates NO order, NO reservation, NO hosted form, and
+  // NO sequence — it is strictly the pricing subset of /intent. A quote is a preview, never a commitment.
+  const handleQuote = async (request: FastifyRequest, reply: FastifyReply) => {
+    const params = request.params as { amountStroops?: string };
+    const amountStr = params.amountStroops;
+    if (typeof amountStr !== 'string' || amountStr.length === 0)
+      return reply.code(400).send({ error: 'BadRequest' });
+    let amount: bigint;
+    try {
+      amount = BigInt(amountStr);
+    } catch {
+      return reply.code(400).send({ error: 'BadAmount' });
+    }
+    // Same amount rule as PayoutIntent.build — a preview must never price a value the charge would reject; this also
+    // guards @troia/pricing's RangeError on a non-positive amount.
+    if (amount <= 0n || amount > I128_MAX) return reply.code(400).send({ error: 'BadAmount' });
+    let quote: Quote;
+    try {
+      quote = await deps.quote(amount);
+    } catch {
+      // fail-closed: a rate-feed outage shows NO price rather than a fabricated one (the same 502 /intent uses).
+      return reply.code(502).send({ error: 'PriceUnavailable' });
+    }
+    // ONLY the two customer-facing pricing fields — /quote creates no order, so it returns no order fields.
+    return reply.send({ paidPriceTry: quote.paidPriceTry, spreadBps: quote.spreadBps });
+  };
+
   // Register /intent inside after(): the rate-limit plugin installs its per-route hook when it LOADS, which — for a
   // synchronous factory that does not await register — happens after this function returns. A route added before then
   // is invisible to that hook and silently unlimited. after() defers this one registration until the plugin is ready;
@@ -303,6 +343,13 @@ export function createApp(deps: AppDeps): FastifyInstance {
       '/intent',
       { config: { rateLimit: { max: intentLimit.max, timeWindow: intentLimit.timeWindowMs } } },
       handleIntent,
+    );
+    // /quote joins /intent inside after() so its per-route rate-limit hook attaches — a read-only preview, but it
+    // hits the live oracle on every call, so it must not be silently unlimited.
+    app.get(
+      '/quote/:amountStroops',
+      { config: { rateLimit: { max: quoteLimit.max, timeWindow: quoteLimit.timeWindowMs } } },
+      handleQuote,
     );
   });
 

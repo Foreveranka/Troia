@@ -33,7 +33,8 @@ export interface StellarPortWiring {
  * Compose the StellarPort. submitPay/resendPersisted/observe/loadDestinationSnapshot forward to the client;
  * readPoolBalanceStroops reads the pool's SAC balance; readRevertErrorCode resolves the order's pay() tx hash from
  * the SHARED write-ahead journal and reads its contract Error code SCOPED to the pool contract. A missing witness
- * or any read failure yields null — the money-safe re-drive default (classifyRevertCause(null)='Other').
+ * or any read failure yields null — the money-safe default (classifyRevertCause(null)='Indeterminate' -> a bounded
+ * fresh-seq re-drive then LossReview, never an auto-void, since a null could mask a settled AlreadyProcessed).
  */
 export function wrapStellarPort(
   client: StellarClient,
@@ -50,7 +51,7 @@ export function wrapStellarPort(
       reads.readSacBalance(wiring.sacContractId, wiring.troyPool, wiring.operatorPublic),
     async readRevertErrorCode(orderId) {
       const persisted = await journal.loadPersisted(orderId);
-      if (persisted === null) return null; // no pay() witness for this order -> nothing to classify -> safe (Other)
+      if (persisted === null) return null; // no witness -> null -> Indeterminate (bounded re-drive then LossReview)
       // SCOPE to the pool contract, NEVER the SAC: an inner SAC transfer error must not be read as a TroyPool code.
       return reads.readContractErrorCode(persisted.hashHex, wiring.troyPool);
     },

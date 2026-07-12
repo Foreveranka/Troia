@@ -3,12 +3,13 @@ import { installChromeStub, type ChromeStub } from './fakes/chrome';
 
 // background.ts is the only backend-talking + tab-opening component. Mock the backend calls so the router is
 // tested in isolation (no real fetch), and drive its captured onMessage handler directly.
-const { postIntent, getStatus, getReceipt } = vi.hoisted(() => ({
+const { postIntent, getStatus, getReceipt, getQuote } = vi.hoisted(() => ({
   postIntent: vi.fn(),
   getStatus: vi.fn(),
   getReceipt: vi.fn(),
+  getQuote: vi.fn(),
 }));
-vi.mock('../src/lib/backend', () => ({ postIntent, getStatus, getReceipt }));
+vi.mock('../src/lib/backend', () => ({ postIntent, getStatus, getReceipt, getQuote }));
 
 // background's handler does its work in a promise .then; flush microtasks before asserting the reply.
 const flush = async (): Promise<void> => {
@@ -22,6 +23,7 @@ beforeEach(() => {
   postIntent.mockReset();
   getStatus.mockReset();
   getReceipt.mockReset();
+  getQuote.mockReset();
   stub = installChromeStub();
 });
 
@@ -275,6 +277,40 @@ describe('background message router', () => {
 
     expect(getReceipt).toHaveBeenCalledWith('o1');
     expect(sendResponse).toHaveBeenCalledWith({ ok: true, txHash: 'h', paidPriceTry: '10.00' });
+  });
+
+  it('routes TROIA_QUOTE to getQuote and forwards its outcome (read-only preview)', async () => {
+    getQuote.mockResolvedValue({ ok: true, paidPriceTry: '41.42', spreadBps: 229 });
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    const kept = handler({ type: 'TROIA_QUOTE', amountStroops: '10000000' }, SENDER, sendResponse);
+    expect(kept).toBe(true);
+    await flush();
+
+    expect(getQuote).toHaveBeenCalledWith('10000000');
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true, paidPriceTry: '41.42', spreadBps: 229 });
+  });
+
+  it('refuses TROIA_QUOTE from a foreign origin and never reaches the backend', async () => {
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler({ type: 'TROIA_QUOTE', amountStroops: '10000000' }, FOREIGN, sendResponse);
+
+    expect(getQuote).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'forbidden_origin' });
+  });
+
+  it('replies with an internal error when getQuote rejects', async () => {
+    getQuote.mockRejectedValue(new Error('boom'));
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler({ type: 'TROIA_QUOTE', amountStroops: '10000000' }, SENDER, sendResponse);
+    await flush();
+
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'internal' });
   });
 
   it('ignores an unknown message and an intent with no body (returns false, no reply)', async () => {

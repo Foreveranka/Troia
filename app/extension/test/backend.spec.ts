@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getReceipt, getStatus, postIntent } from '../src/lib/backend';
+import { getQuote, getReceipt, getStatus, postIntent } from '../src/lib/backend';
 import type { IntentBody } from '../src/lib/intent';
 
 const BODY: IntentBody = {
@@ -164,6 +164,39 @@ describe('getReceipt', () => {
   });
 });
 
+describe('getQuote', () => {
+  it('returns the preview price on 200', async () => {
+    const r = await getQuote('620000000', {
+      fetchImpl: fakeFetch(200, { paidPriceTry: '2650.00', spreadBps: 229 }),
+    });
+    expect(r).toEqual({ ok: true, paidPriceTry: '2650.00', spreadBps: 229 });
+  });
+
+  it('requests the URL-encoded stroops at /quote/:amountStroops', async () => {
+    let url = '';
+    const spy = (async (u: string) => {
+      url = u;
+      return { ok: true, status: 200, json: async () => ({ paidPriceTry: '1.00', spreadBps: 0 }) };
+    }) as unknown as typeof fetch;
+    await getQuote('620000000', { fetchImpl: spy, baseUrl: 'http://localhost:3000' });
+    expect(url).toBe('http://localhost:3000/quote/620000000');
+  });
+
+  it('maps a 502 PriceUnavailable to a fail outcome', async () => {
+    const r = await getQuote('1', { fetchImpl: fakeFetch(502, { error: 'PriceUnavailable' }) });
+    expect(r).toEqual({ ok: false, error: 'PriceUnavailable' });
+  });
+
+  it('reports network on a thrown fetch, and tolerates a missing spreadBps', async () => {
+    const throwing = (async () => {
+      throw new Error('down');
+    }) as unknown as typeof fetch;
+    expect(await getQuote('1', { fetchImpl: throwing })).toEqual({ ok: false, error: 'network' });
+    const noBps = await getQuote('1', { fetchImpl: fakeFetch(200, { paidPriceTry: '5.00' }) });
+    expect(noBps).toEqual({ ok: true, paidPriceTry: '5.00', spreadBps: null });
+  });
+});
+
 describe('request timeouts', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -190,6 +223,13 @@ describe('request timeouts', () => {
   it('getReceipt resolves to a timeout outcome when the fetch never settles', async () => {
     vi.useFakeTimers();
     const p = getReceipt('ST-AB12CD', { fetchImpl: hangingFetch, timeoutMs: 100 });
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(p).resolves.toEqual({ ok: false, error: 'timeout' });
+  });
+
+  it('getQuote resolves to a timeout outcome when the fetch never settles', async () => {
+    vi.useFakeTimers();
+    const p = getQuote('620000000', { fetchImpl: hangingFetch, timeoutMs: 100 });
     await vi.advanceTimersByTimeAsync(100);
     await expect(p).resolves.toEqual({ ok: false, error: 'timeout' });
   });

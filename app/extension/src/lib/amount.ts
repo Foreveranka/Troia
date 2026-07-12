@@ -14,3 +14,15 @@ export function toStroops(amount: string): bigint | null {
     BigInt(intPart) * 10n ** BigInt(USDC_DECIMALS) + BigInt(fracPadded === '' ? '0' : fracPadded);
   return stroops > 0n ? stroops : null; // amount must be strictly positive
 }
+
+// Format a canonical "N.MM" TRY string (the backend's paidPriceTry from GET /quote) into an INDICATIVE display
+// string, e.g. "2650.00" -> "≈ 2,650.00 TL". Pure string work — groups the integer part with thousands separators
+// and keeps the fractional part verbatim; never parses to Number, so no float drift. Best-effort: if the input is
+// not the expected shape it is passed through un-grouped rather than throwing. It is a PREVIEW label, never a
+// promise — the charged price is locked server-side at /intent.
+export function formatApproxTry(paidPriceTry: string): string {
+  const [intPart = '', fracPart] = paidPriceTry.split('.');
+  const grouped = /^\d+$/.test(intPart) ? intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : intPart;
+  const body = fracPart !== undefined ? `${grouped}.${fracPart}` : grouped;
+  return `≈ ${body} TL`;
+}

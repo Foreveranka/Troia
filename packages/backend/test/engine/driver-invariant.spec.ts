@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_STATES, transition } from '@troia/core';
+import { ALL_EVENT_TYPES, ALL_STATES, transition } from '@troia/core';
 import type { Event } from '@troia/core';
 import { planEffect } from '../../src/engine/plan.js';
 
@@ -27,13 +27,23 @@ const ALL_EVENTS: readonly Event[] = [
   { type: 'deadRetry', retriesRemaining: false },
   { type: 'revertAlreadyProcessed' },
   { type: 'revertBalanceGuard' },
-  { type: 'revertOther' },
+  { type: 'revertIndeterminate', retriesRemaining: true },
+  { type: 'revertIndeterminate', retriesRemaining: false },
   { type: 'reconciled' },
   { type: 'reversalConfirmed' },
   { type: 'reversalUnknown' },
   { type: 'reversalNotDone', retriesRemaining: true },
   { type: 'reversalNotDone', retriesRemaining: false },
 ];
+
+// Guards the property tests against a silently-omitted event variant (ALL_EVENT_TYPES is compile-time-exhaustive in
+// @troia/core's typechecked src; this test file is not typechecked). A new core Event variant forgotten in
+// ALL_EVENTS fails here instead of under-covering the property loops.
+describe('ALL_EVENTS fixture', () => {
+  it('covers every event type', () => {
+    expect(new Set(ALL_EVENTS.map((e) => e.type))).toEqual(new Set(ALL_EVENT_TYPES));
+  });
+});
 
 describe('driver invariant — at most one event-feeding effect per transition, and it is LAST', () => {
   it('holds for every (state, event) in the core table', () => {

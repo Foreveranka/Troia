@@ -19,7 +19,9 @@ is hardened _before_ real money moves, so the guarantees are demonstrable rather
 Testnet is where those guarantees are exercised end-to-end with **zero real-money risk** (the USDC is
 self-minted; see §3). The mathematics, the double-pay shields, the solvency mechanism, the price-lock, and the
 reconciler are **identical** to what a mainnet deployment would run — mainnet is a config swap plus three
-provider implementations plus a time-budget re-validation (ADR-9), not a rewrite.
+provider implementations plus a time-budget re-validation (ADR-9), not a rewrite. It is **not** turnkey, though:
+the `[mainnet-blocker]` gaps in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) (chiefly a durable order store) must close
+before real money moves.
 
 ---
 
@@ -61,7 +63,7 @@ provider implementations plus a time-budget re-validation (ADR-9), not a rewrite
   (tx `cd643d71…`) and hardened: per-request fetch timeouts (15s intent / 8s poll), a phase-aware poll budget with
   honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo
   parity pinned to core's golden vectors (malformed order ids fail closed), and an amount gate aligned with
-  `toStroops` — 110 tests across 10 spec files. Holds no keys, signs nothing.
+  `toStroops` — 114 tests across 10 spec files. Holds no keys, signs nothing.
 
 The full gate — TypeScript suite, Rust contract tests, lint, type-check, and the offline `just verify` — is the
 acceptance bar for every change.

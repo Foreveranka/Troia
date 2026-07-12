@@ -14,8 +14,9 @@
 import { findSep7Uri, evaluate, type Detection } from './lib/adapter';
 import { showBanner, type BannerHandle } from './lib/banner';
 import { buildIntentBody, intentUiAction, statusCopy } from './lib/intent';
+import { formatApproxTry, toStroops } from './lib/amount';
 import type { IntentOutcome, StatusOutcome, ReceiptOutcome } from './lib/backend';
-import type { PopupState } from './lib/messages';
+import type { PopupState, QuoteOutcome } from './lib/messages';
 
 console.info('[troia] content script active on', location.origin);
 
@@ -50,6 +51,9 @@ function clearPendingRetry(): void {
 // The last fully-verified (payable) detection, mirrored for the read-only popup. It tracks the banner exactly:
 // set when the banner is shown, cleared when it is not. The popup reads this and never re-parses the page.
 let lastDetection: Detection | null = null;
+// The indicative ≈₺ display string for the current detection, once the read-only /quote reply lands. Mirrors the
+// banner: reset to null on every detection change so a stale order's TL never shows against a new amount.
+let lastQuote: string | null = null;
 
 function stopPolling(): void {
   if (pollTimer !== null) {
@@ -108,17 +112,28 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
           h.setStatus(text, kind);
           h.setRetry();
         } else if (res.status === 'failed') {
-          // We DID see 'processing' first: the card was charged, and this 'failed' is a settlement reversal in
-          // flight (public 'failed' also covers ChargeReversing/ChargeReversed). Retrying would charge the same
-          // cart a second time, so offer no retry — the shopper must start a new order.
+          // Defense-in-depth, currently UNREACHABLE under the backend contract: public 'failed' is ONLY a clean
+          // pre-charge decline (FailedClean), always reached with !sawProcessing — a charged-then-reversed order
+          // surfaces as 'review', never 'failed'. So this branch does not fire today. It is kept as a fail-safe:
+          // should a future contract ever surface a CHARGED order as 'failed', we must NOT offer retry (that could
+          // double-charge), so we show the reversal copy and hide the pay button.
           h.setStatus(
             'Payment could not be completed — if your card was charged it will be reversed. Start a new order to try again.',
             'error',
           );
           h.hidePay();
+        } else if (res.status === 'review') {
+          // A charged order held for review (public 'review' = ChargeReversing / ChargeReversed / LossReview).
+          // Never offer retry (that could double-charge) — but never leave a paid shopper button-less and blank
+          // either: give an order reference and money reassurance. orderId is safe in setStatus (textContent).
+          h.setStatus(
+            `Payment held for review — order ${orderId}. If your card was charged it will be reversed automatically; otherwise we'll reach out. Keep this reference — you don't need to do anything now.`,
+            'info',
+          );
+          h.hidePay();
         } else {
           h.setStatus(text, kind);
-          if (terminal) h.hidePay(); // 'completed' / 'review' — the banner is informational from here, no retry
+          if (terminal) h.hidePay(); // 'completed' — the banner is informational from here, no retry
         }
         if (res.status === 'completed') {
           // fetch the settlement proof (on-chain tx hash + the TRY charged), then tell the storefront to place
@@ -226,6 +241,25 @@ function requestRetry(orderId: string): void {
   }, RETRY_TIMEOUT_MS);
 }
 
+// Ask the background (the sole host-permission holder) for a read-only price preview of the detected USDC amount,
+// then show the indicative ≈₺ on the banner. Fail-OPEN on display: any failure (unparseable amount, no messaging,
+// network, or a stale reply after the banner was replaced) leaves the USDC amount and the enabled Pay button
+// untouched — the charged price is locked at /intent regardless. It reserves nothing and never triggers a payment.
+function requestQuote(detection: Detection, h: BannerHandle): void {
+  const stroops = toStroops(detection.sep7.amount);
+  if (stroops === null) return; // an unparseable amount — /intent would fail-closed on it anyway
+  if (typeof chrome === 'undefined' || chrome.runtime?.sendMessage === undefined) return;
+  chrome.runtime.sendMessage(
+    { type: 'TROIA_QUOTE', amountStroops: stroops.toString() },
+    (res: QuoteOutcome | undefined) => {
+      if (h !== handle) return; // the banner was replaced (e.g. a retry) — drop this stale reply
+      if (chrome.runtime.lastError || res === undefined || !res.ok) return; // degrade to USDC-only, never block
+      lastQuote = formatApproxTry(res.paidPriceTry);
+      h.setApproxTry(lastQuote);
+    },
+  );
+}
+
 function scan(): void {
   const uri = findSep7Uri();
   if (uri === currentUri) return; // nothing changed since the last scan
@@ -233,6 +267,7 @@ function scan(): void {
 
   if (uri === null) {
     lastDetection = null;
+    lastQuote = null;
     clearPendingRetry();
     clearBanner();
     return;
@@ -242,6 +277,7 @@ function scan(): void {
   if (detection === null || !detection.payable) {
     // Fail-closed: an unrecognized or unverifiable request never gets a banner (nor a popup "found" state).
     lastDetection = null;
+    lastQuote = null;
     clearPendingRetry();
     clearBanner();
     if (detection !== null) {
@@ -257,6 +293,7 @@ function scan(): void {
     confidence: detection.confidence,
   });
   lastDetection = detection;
+  lastQuote = null; // reset before requesting the fresh preview below
   clearBanner();
   handle = showBanner({
     amount: detection.sep7.amount,
@@ -270,6 +307,8 @@ function scan(): void {
       handle = null;
     },
   });
+
+  requestQuote(detection, handle);
 
   // If this fresh SEP-7 is the fresh order we requested for a retry, continue the payment automatically —
   // one click on "Try again" then leads straight into the new card form.
@@ -316,6 +355,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage?.addListener) {
             assetCode: d.sep7.assetCode ?? 'USDC',
             destination: d.sep7.destination,
             orderId: d.sep7.memo ?? '',
+            ...(lastQuote !== null ? { approxTry: lastQuote } : {}),
           }
         : { found: false };
     sendResponse(reply);

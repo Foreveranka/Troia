@@ -11,7 +11,12 @@
 
 import { vi, type Mock } from 'vitest';
 import type { PublicStatus } from '../../src/lib/intent';
-import type { IntentOutcome, ReceiptOutcome, StatusOutcome } from '../../src/lib/backend';
+import type {
+  IntentOutcome,
+  QuoteOutcome,
+  ReceiptOutcome,
+  StatusOutcome,
+} from '../../src/lib/backend';
 
 type MessageHandler = (
   message: unknown,
@@ -27,6 +32,8 @@ export interface ChromeStubScript {
   defaultStatus: PublicStatus;
   /** the outcome returned to a TROIA_RECEIPT sendMessage. */
   receipt?: ReceiptOutcome;
+  /** the outcome returned to a TROIA_QUOTE (read-only price preview) sendMessage. */
+  quote?: QuoteOutcome;
 }
 
 export interface ChromeStub {
@@ -69,6 +76,9 @@ export function installChromeStub(script: Partial<ChromeStubScript> = {}): Chrom
         }
         case 'TROIA_RECEIPT':
           cb(state.receipt ?? ({ ok: false, error: 'none' } satisfies ReceiptOutcome));
+          return;
+        case 'TROIA_QUOTE':
+          cb(state.quote ?? ({ ok: false, error: 'none' } satisfies QuoteOutcome));
           return;
         default:
           cb(undefined);

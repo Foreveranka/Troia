@@ -76,7 +76,8 @@ export interface OrderReportEntry {
 export interface ReportNetwork {
   readonly network: 'testnet' | 'mainnet';
   readonly passphrase: string; // read as DATA by verify (needed to recompute the tx hash)
-  readonly operator_public: string; // PINNED trust anchor (the signer key)
+  readonly operator_public: string; // the signer key, read as DATA; verify cross-checks it against the canonical
+  // deployment operator (a self-named key is not self-authenticating — see verify.ts)
 }
 
 export interface ReconReport {

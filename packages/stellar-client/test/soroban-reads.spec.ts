@@ -4,8 +4,9 @@
 //   - firstContractErrorCode : the first contract error across a flat ScVal list (the reverted-tx diagnostics)
 // The DIRTY halves (simulate / getTransaction over rpc.Server) live in rpc-adapter.ts and are live-smoked, not
 // unit-tested. These parsers are the money-safety-critical part: a null revert code is the SAFE default
-// (classifyRevertCause(null)='Other' -> re-drive; the contract's Processed(tx_id) guard is the real double-pay
-// shield), so the parser must NEVER invent a code it is not certain of.
+// (classifyRevertCause(null)='Indeterminate' -> bounded re-drive then LossReview, never an auto-void; the
+// contract's Processed(tx_id) guard is the real double-pay shield), so the parser must NEVER invent a code it is
+// not certain of.
 
 import { describe, expect, it } from 'vitest';
 import { nativeToScVal, xdr } from '@stellar/stellar-base';

@@ -60,12 +60,16 @@ export async function decisionEvent(
   }
 }
 
-/** The one money-first loss bucket the flagLoss EFFECT records. flagLoss is emitted ONLY from
- *  reversalNotDone(false) -> LossReview (a completed charge whose same-day void could not complete within budget
- *  = a stuck refund). The other bucket, indeterminateLossReview, is written elsewhere (driver.applyEscalate),
- *  never via this effect — so this is unconditional. */
-export function flagLossBucket(_enteringEvent: Event): LossBucket {
-  return 'reversalExhausted';
+/** The loss bucket the flagLoss EFFECT records, by the event that entered LossReview:
+ *  - reversalNotDone(false) -> 'reversalExhausted': a completed charge whose same-day void could not complete
+ *    within budget (a stuck refund).
+ *  - revertIndeterminate(false) -> 'indeterminateLossReview': a landed-and-reverted tx whose contract code was
+ *    unreadable, so USDC fate is unknown and the charge is NOT reversed. The same bucket is also written by
+ *    driver.applyEscalate for a burned-but-unproven submit; both mean "USDC may have moved — do not auto-refund". */
+export function flagLossBucket(enteringEvent: Event): LossBucket {
+  return enteringEvent.type === 'revertIndeterminate'
+    ? 'indeterminateLossReview'
+    : 'reversalExhausted';
 }
 
 /** releaseReservation reason, by the state ENTERED. Money-first, releaseReservation is emitted only into

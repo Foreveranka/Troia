@@ -4,6 +4,8 @@
 
 import net from 'node:net';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import { verifyReport } from '../dist/verify.js';
 
@@ -32,7 +34,31 @@ try {
   fail(`cannot read report: ${e.message}`);
 }
 
-const result = verifyReport(report);
+// The trust anchor: the operator key every signature is checked against. It MUST come from OUTSIDE the report —
+// else a forged report could name (and self-sign with) an attacker's key and pass against itself. Precedence: an
+// explicit TROIA_OPERATOR_PUBLIC (set only by a trusted runner — e.g. the synthetic-corpus `just verify` targets,
+// whose throwaway signer is deliberately not the deployment operator), else the committed deployment record.
+// NEVER the report. Fail closed (exit 2) if it cannot resolve to a well-formed G-key — never fall back to the report.
+function resolveCanonicalOperator() {
+  const override = process.env.TROIA_OPERATOR_PUBLIC;
+  if (typeof override === 'string' && override.length > 0) return override;
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const deploymentPath =
+    process.env.TROIA_DEPLOYMENT_PATH ?? join(repoRoot, 'deployment.testnet.json');
+  return JSON.parse(readFileSync(deploymentPath, 'utf8')).operatorPublic;
+}
+
+let canonicalOperator;
+try {
+  canonicalOperator = resolveCanonicalOperator();
+} catch (e) {
+  fail(`cannot resolve canonical operator: ${e.message}`);
+}
+if (typeof canonicalOperator !== 'string' || !/^G[A-Z2-7]{55}$/.test(canonicalOperator)) {
+  fail(`canonical operator is not a valid G-key: ${canonicalOperator}`);
+}
+
+const result = verifyReport(report, canonicalOperator);
 const attempts = globalThis.__troiaNet.attempts;
 const expectedOrders = Array.isArray(report.orders) ? report.orders.length : -1;
 const ok = result.ok && attempts === 0 && result.ordersVerified === expectedOrders;

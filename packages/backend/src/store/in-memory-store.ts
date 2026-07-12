@@ -79,6 +79,7 @@ export class InMemoryStore implements Store {
   private readonly losses: LossRow[] = [];
   private readonly deadRetries = new Map<string, number>();
   private readonly reversalRetries = new Map<string, number>();
+  private readonly revertOtherRetries = new Map<string, number>();
 
   private readonly evidenceLog: DurableLog | undefined;
 
@@ -188,6 +189,11 @@ export class InMemoryStore implements Store {
   async bumpReversalRetries(orderId: string): Promise<number> {
     const n = (this.reversalRetries.get(orderId) ?? 0) + 1;
     this.reversalRetries.set(orderId, n);
+    return n;
+  }
+  async bumpRevertOtherRetries(orderId: string): Promise<number> {
+    const n = (this.revertOtherRetries.get(orderId) ?? 0) + 1;
+    this.revertOtherRetries.set(orderId, n);
     return n;
   }
 

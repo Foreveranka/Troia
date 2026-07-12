@@ -244,7 +244,22 @@ export async function perform(
     case 'confirmBurnedSeq': {
       deps.store.sequences.confirmBurned(BigInt(requireSeq(ctx)));
       const code = await deps.stellar.readRevertErrorCode(ctx.orderId);
-      return { event: revertEvent(classifyRevertCause(code)) };
+      const cause = classifyRevertCause(code);
+      // Only AlreadyProcessed(1) and BalanceGuard(2) are CERTAIN outcomes (handled by revertEvent). Every other
+      // cause — Paused/InvalidAmount (pre-replay-guard, so a prior settlement is not ruled out), an unreadable
+      // code, or an unknown one — is Indeterminate: re-drive with a NEW seq under a BUDGET (else a deterministic
+      // cause loops forever, burning one fresh seq per tick), and on exhaustion the reducer escalates to LossReview
+      // rather than a confident void (which could over-refund an order whose USDC already moved).
+      if (cause === 'Indeterminate') {
+        const n = await deps.store.bumpRevertOtherRetries(ctx.orderId);
+        return {
+          event: {
+            type: 'revertIndeterminate',
+            retriesRemaining: n <= deps.config.policy.maxRevertOtherRetries,
+          },
+        };
+      }
+      return { event: revertEvent(cause) };
     }
 
     case 'releaseSeq':

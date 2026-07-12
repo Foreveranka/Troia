@@ -5,9 +5,10 @@
 // are type-checked + live-smoked, calling these to interpret the raw result.
 //
 // MONEY-SAFETY: scValContractErrorCode / firstContractErrorCode return null unless a contract Error discriminant
-// is CERTAIN. A null flows to classifyRevertCause(null)='Other' -> a fresh-seq re-drive; the contract's
-// Processed(tx_id) guard is the real double-pay shield, so a conservative null can never cause a double payout.
-// Inventing a wrong code, by contrast, could mis-route (e.g. skip capturing a TRY charge whose USDC already
+// is CERTAIN. A null flows to classifyRevertCause(null)='Indeterminate' -> a BOUNDED fresh-seq re-drive, then
+// LossReview on budget exhaustion (never an auto-void): a null could mask a settled AlreadyProcessed, so voiding
+// would over-refund. The Processed(tx_id) guard remains the double-pay shield, so a null can never cause a double
+// payout. Inventing a wrong code, by contrast, could mis-route (e.g. skip capturing a TRY charge whose USDC already
 // landed), so the parsers stay strict: only an exact scvError->sceContract yields a code.
 //
 // CONTRACT-SCOPING (firstContractErrorCodeFromContract): pay() invokes the USDC SAC's transfer, so a reverted

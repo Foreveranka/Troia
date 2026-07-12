@@ -15,7 +15,7 @@ const report = JSON.parse(
 
 describe('reconciler — verifies a REAL on-chain pay() offline (live testnet smoke)', () => {
   it('the whole report re-derives clean: 1 order, MATCHED, no failures', () => {
-    const r = verifyReport(report);
+    const r = verifyReport(report, OPERATOR);
     expect(r.ok).toBe(true);
     expect(r.ordersVerified).toBe(1);
     expect(r.failures).toEqual([]);

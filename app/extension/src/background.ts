@@ -4,7 +4,7 @@
 // from here is not subject to page CORS and stays isolated from the merchant origin. On a successful intent it
 // opens iyzico's hosted card page in a new tab; it also proxies status polls. It holds no keys and signs nothing.
 
-import { postIntent, getStatus, getReceipt } from './lib/backend';
+import { postIntent, getStatus, getReceipt, getQuote } from './lib/backend';
 import { ALLOWED_ORIGINS } from './lib/config';
 import type { ExtensionMessage } from './lib/messages';
 
@@ -93,6 +93,15 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 
   if (msg?.type === 'TROIA_RECEIPT' && typeof msg.orderId === 'string') {
     getReceipt(msg.orderId).then(sendResponse, () =>
+      sendResponse({ ok: false, error: 'internal' }),
+    );
+    return true;
+  }
+
+  // Read-only price preview — the background is the only host-permission holder, so the content script routes the
+  // quote fetch through here. It reserves nothing and opens no tab; a failure just means the banner shows no ≈₺.
+  if (msg?.type === 'TROIA_QUOTE' && typeof msg.amountStroops === 'string') {
+    getQuote(msg.amountStroops).then(sendResponse, () =>
       sendResponse({ ok: false, error: 'internal' }),
     );
     return true;

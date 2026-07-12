@@ -1,8 +1,7 @@
 #![no_std]
 
 //! TroyPool — the single Soroban contract. It holds USDC custody (the pool = this contract's SAC
-//! balance) and moves it with `pay()`. Money-safety design (docs/ARCHITECTURE.md §5/§6,
-//! troia-olay-orgusu.md §6):
+//! balance) and moves it with `pay()`. Money-safety design (docs/ARCHITECTURE.md §5/§6):
 //!   - Invariant ② DOUBLE-PAY SHIELD (contract half): a per-`tx_id` replay guard in `Persistent`
 //!     storage. The primary shield is the operator's sequence (`txBAD_SEQ`); `Processed(tx_id)` is the
 //!     ONLY shield once channel accounts break the single-sequence assumption (Phase 2), so it must

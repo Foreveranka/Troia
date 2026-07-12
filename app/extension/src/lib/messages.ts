@@ -3,7 +3,7 @@
 // with typed outcomes.
 
 import type { IntentBody } from './intent';
-import type { IntentOutcome, StatusOutcome, ReceiptOutcome } from './backend';
+import type { IntentOutcome, StatusOutcome, ReceiptOutcome, QuoteOutcome } from './backend';
 
 export interface IntentRequestMessage {
   readonly type: 'TROIA_INTENT';
@@ -20,9 +20,17 @@ export interface ReceiptRequestMessage {
   readonly orderId: string;
 }
 
-export type ExtensionMessage = IntentRequestMessage | StatusRequestMessage | ReceiptRequestMessage;
+/** Read-only price preview: content asks background (the sole host-permission holder) to GET /quote for the
+ *  detected USDC amount, so the banner/popup can show the indicative ≈₺. Never triggers a payment. */
+export interface QuoteRequestMessage {
+  readonly type: 'TROIA_QUOTE';
+  readonly amountStroops: string;
+}
 
-export type { IntentOutcome, StatusOutcome, ReceiptOutcome };
+export type ExtensionMessage =
+  IntentRequestMessage | StatusRequestMessage | ReceiptRequestMessage | QuoteRequestMessage;
+
+export type { IntentOutcome, StatusOutcome, ReceiptOutcome, QuoteOutcome };
 
 // A separate, read-only channel: the popup → the content script. The popup asks for the checkout the content
 // script has ALREADY detected on this tab; the content script replies from state it holds and does nothing else.
@@ -39,4 +47,6 @@ export interface PopupState {
   readonly assetCode?: string;
   readonly destination?: string;
   readonly orderId?: string;
+  /** the indicative ≈₺ display string, once the read-only /quote reply has landed (omitted before it / on failure). */
+  readonly approxTry?: string;
 }

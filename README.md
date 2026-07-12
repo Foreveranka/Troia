@@ -19,8 +19,14 @@ the operator settles the merchant in USDC from a Stellar pool that is pre-funded
 
 ## Verify it yourself
 
-You do not have to trust this repo. Clone it, `pnpm install`, and run three checks that need **no keys, no
-network, and no live services** — the network is patched to throw and the attempt count is asserted to be zero:
+You do not have to trust our verdicts. Clone it, `pnpm install`, and run three checks that need **no keys, no
+network, and no live services** — the network is patched to throw and the attempt count is asserted to be zero.
+The verifier never trusts the report's own signer field: it re-derives every signature against an operator key
+supplied from **outside** the report, so a report that names and self-signs with an attacker's key cannot pass.
+`just verify` / `just verify-tampered` prove that re-derivation and the tamper-catch on a deterministic demo corpus;
+`just verify-live` re-derives a **real testnet payout** pinned to Troia's canonical operator (the committed
+[deployment record](docs/DEPLOYMENTS.md) — the code fails any report naming a different key). None of them query
+Horizon, so for that real payout open its `tx_hash` on the explorer to confirm it landed (`signed ≠ settled`):
 
 ```bash
 just verify           # an honest reconciliation report re-derives from its embedded evidence

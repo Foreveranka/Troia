@@ -419,8 +419,11 @@ Per order, three independent records (`packages/reconciler`, keyless & buildless
   invocation (`tx_id`/`amount`/`applied_rate`/`merchant`/`memo`), produced by the SAME normalizer that
   decodes (b), so the two sides can never disagree by format.
 
-The report pins the trust anchors at top level: `network.passphrase` (needed to recompute the tx hash) and
-`network.operator_public` (the signer key — read as **data**, never from the mutable XDR). Field mapping:
+The report carries two top-level fields: `network.passphrase` (needed to recompute the tx hash) and
+`network.operator_public` (the signer key — read as **data**, never from the mutable XDR). The operator is not
+self-authenticating: `verifyReport` takes the canonical operator as an argument (`bin/verify.mjs` supplies it from
+an explicit `TROIA_OPERATOR_PUBLIC`, else the committed deployment record) and fails any report naming a different
+key, so a forged report cannot self-sign with its own key and pass. Field mapping:
 `business_intent.destination ⇄ pay() merchant (arg3)`, `amount_stroops ⇄ i128 arg1`, `memo_hex ⇄ BytesN<32>
 arg4`. `applied_rate` is carried but **excluded** from the diff (the ledger is its audit source).
 
@@ -558,7 +561,8 @@ The ADRs are summarized inline below (they are not split into separate `docs/adr
 6. Memo fail-closed invariant (`PayoutIntent`, flat `BuildError`, deterministic order).
 7. USDC = 7 decimals on Stellar.
 8. Extension = adapter-per-gateway + manual fallback; holds no keys.
-9. Every dependency behind an interface → mainnet = config swap + 3 provider impls + time-budget re-validation.
+9. Every dependency behind an interface → mainnet = config swap + 3 provider impls + time-budget re-validation +
+   closing the `KNOWN_ISSUES.md` `[mainnet-blocker]` gaps (chiefly a durable order store). Not turnkey.
 10. Testnet positioning; mainnet = separate regulated phase (MASAK, post-code).
 11. Payment rail = `TroyPool.pay()` Soroban invocation; `memo` is an argument, not a tx memo.
 12. Identity from one `order_id` via `deriveIds` (byte-exact, domain-separated); `tx_id` from order, not tx_hash.

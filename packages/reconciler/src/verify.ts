@@ -1,7 +1,11 @@
-// 3.4 offline verification core (docs/ARCHITECTURE §8). Input is ONLY the report object — no network, no DB.
+// 3.4 offline verification core (docs/ARCHITECTURE §8). Inputs: the report object + the CANONICAL operator key
+// (supplied by the caller from the committed deployment record — NEVER read from the report). No network, no DB.
 // It does NOT trust the stored verdict/summary: it RECOMPUTES each order's ground truth from the embedded
-// evidence and asserts every stored field equals the recomputation, then re-derives the summary. A single
-// mismatch fails the whole report. The network block + positive-armed exit live in bin/verify.mjs.
+// evidence — re-deriving every signature against the CANONICAL operator — and asserts every stored field equals
+// the recomputation, then re-derives the summary. It also fails the report when its declared operator_public
+// does not equal the canonical one, so a self-signed forgery (attacker names + signs with its own key) cannot
+// pass. A single mismatch fails the whole report. The network block + positive-armed exit + canonical-operator
+// resolution live in bin/verify.mjs.
 
 import { resolveGroundTruth } from './resolve-ground-truth.js';
 import { summarize } from './report.js';
@@ -29,11 +33,20 @@ function diffEqual(a: readonly FieldDiff[], b: readonly FieldDiff[]): boolean {
 }
 
 /** Recompute every order from embedded evidence and assert it matches what the report claims. */
-export function verifyReport(report: ReconReport): VerifyResult {
+export function verifyReport(report: ReconReport, canonicalOperatorPublic: string): VerifyResult {
   const failures: string[] = [];
 
   if (report.version !== 1) failures.push(`unsupported report version: ${report.version}`);
-  const op = report.network.operator_public;
+  // Pin the trust anchor to a value from OUTSIDE the report. `operator_public` is data the report carries, so a
+  // forged report could name (and self-sign with) an attacker's key; checking signatures against the report's own
+  // key would then always pass. We (1) fail the report if its declared operator ≠ canonical, and (2) re-derive
+  // every signature against the CANONICAL key — so even absent (1), a forged report re-derives to EVIDENCE_TAMPERED.
+  if (report.network.operator_public !== canonicalOperatorPublic) {
+    failures.push(
+      `operator_public ${report.network.operator_public} != canonical ${canonicalOperatorPublic}`,
+    );
+  }
+  const op = canonicalOperatorPublic;
   const pass = report.network.passphrase;
 
   for (const o of report.orders) {

@@ -26,6 +26,10 @@ function showFound(state: PopupState): void {
   el('amt-v').textContent =
     state.amount !== undefined && state.amount.length > 0 ? state.amount : '—';
   el('amt-u').textContent = ` ${state.assetCode ?? 'USDC'}`;
+  el('approx-v').textContent =
+    state.approxTry !== undefined && state.approxTry.length > 0
+      ? state.approxTry
+      : 'the lira equivalent';
   el('order-v').textContent =
     state.orderId !== undefined && state.orderId.length > 0 ? state.orderId : '—';
   el('paid-v').textContent =

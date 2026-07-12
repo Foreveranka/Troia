@@ -18,8 +18,14 @@ write-ahead list of authorized `pay()` hashes, the chain observations, the recon
 cursor + suspects. They have an explicit crash contract (ARCHITECTURE §7b), and a durable-log failure exits the
 process rather than degrading quietly.
 
-Deliberately **volatile**: the `OrderRow`s, the reservation ledger, the pending-settlement store, and the operator
-sequence snapshot.
+Deliberately **volatile**: the `OrderRow`s, the reservation ledger, the pending-settlement store, the operator
+sequence snapshot, and the bounded-retry counters (`deadRetries` / `reversalRetries` / `revertOtherRetries` —
+in-memory `Map`s, not on the `OrderRow`). A restart resets those counters, so a retry budget restarts from zero on
+recovery. For `deadRetries`/`reversalRetries` this is inert in the PoC (the same crash erases the work-list, so
+nothing is re-driven — see below); `revertOtherRetries` has the widest blast radius, because its loop state
+(`UsdcSubmitted`) IS in the poll worker's recovery set and each iteration burns a fresh operator sequence, so once
+§1's durable store lands a durably-paused pool could re-open up to `maxRevertOtherRetries` fresh seq-burns per
+restart. All three counters must move onto the durable `OrderRow` alongside the durable sequence store when it does.
 
 - **Consequence.** An order that was submitted but had not yet landed is forgotten by a restart.
 - **Why that is safe, in the direction that matters most.** The on-chain `Processed(tx_id)` guard and the

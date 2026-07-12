@@ -56,6 +56,7 @@ export class FakeStore implements Store {
   readonly evidence: { orderId: string; record: EvidenceRecord; order: OrderFacts }[] = [];
   readonly deadRetries = new Map<string, number>();
   readonly reversalRetries = new Map<string, number>();
+  readonly revertOtherRetries = new Map<string, number>();
   reserveResult: ReserveOutcome = { kind: 'reserved', reservationId: 'res-1' };
   availableResult = 1_000_000_000_000n; // large by default (gate passes); scriptable for circuit-breaker tests
 
@@ -106,6 +107,11 @@ export class FakeStore implements Store {
   async bumpReversalRetries(orderId: string): Promise<number> {
     const n = (this.reversalRetries.get(orderId) ?? 0) + 1;
     this.reversalRetries.set(orderId, n);
+    return n;
+  }
+  async bumpRevertOtherRetries(orderId: string): Promise<number> {
+    const n = (this.revertOtherRetries.get(orderId) ?? 0) + 1;
+    this.revertOtherRetries.set(orderId, n);
     return n;
   }
   readonly credits: bigint[] = [];
@@ -248,6 +254,7 @@ export function makeConfig(): EngineConfig {
     policy: {
       maxDeadRetries: 3,
       maxReversalRetries: 3,
+      maxRevertOtherRetries: 3,
       reservationTtlMs: 600_000,
       poolLowWatermarkStroops: 0n,
     },

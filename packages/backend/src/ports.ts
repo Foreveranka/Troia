@@ -157,6 +157,7 @@ export interface Store {
    *  branch (never a timer). Atomic under withOrderLock. */
   bumpDeadRetries(orderId: string): Promise<number>;
   bumpReversalRetries(orderId: string): Promise<number>;
+  bumpRevertOtherRetries(orderId: string): Promise<number>;
   /** Best-effort read of `balance − Σ held reservations` (stroops) for the money-first circuit-breaker: the
    *  /intent hard gate (available < amount → 409, no charge) and the low-watermark warning. This is NOT the
    *  authoritative solvency gate — reserve() is (atomic, under the pool mutex); a dirty read here only fast-

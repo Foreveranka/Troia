@@ -111,9 +111,9 @@ describe('USDC-revert family (D2) — the double-pay-critical chain', () => {
     ]);
   });
 
-  it('revertOther (code null): reallocates a FRESH seq and resubmits exactly once (never reuses the burned seq)', async () => {
+  it('revertIndeterminate (code 3 = Paused): reallocates a FRESH seq and resubmits exactly once (never reuses the burned seq)', async () => {
     const h = makeHarness();
-    h.stellar.revertCode = null; // -> Other
+    h.stellar.revertCode = 3; // Paused -> Indeterminate (pre-replay-guard, so a prior settlement is not ruled out)
     const ctx = makeCtx(h.store, { hashHex: 'prior-hash', signedXdr: 'prior-xdr' });
     const burnedTxSeq = (BigInt(ctx.activeSeq as string) - 1n).toString();
 
@@ -122,6 +122,60 @@ describe('USDC-revert family (D2) — the double-pay-critical chain', () => {
     expect(r.state).toBe('UsdcConfirmed'); // fresh-seq resubmit lands (default LANDED_SUCCESS) -> awaits reconciler
     expect(h.stellar.submitReqs).toHaveLength(1); // exactly one resubmit
     expect(h.stellar.submitReqs[0]?.seq).not.toBe(burnedTxSeq); // a NEW seq, not the burned one
+    expect(h.store.revertOtherRetries.get(ctx.orderId)).toBe(1); // budget consumed exactly once on the happy re-drive
+  });
+
+  it('Paused (code 3) budget EXHAUSTED escalates to LossReview, NOT a void — a readable Paused cannot rule out a prior settlement', async () => {
+    // Design decision (user, after adversarial review): Paused is checked BEFORE the on-chain replay guard, so a
+    // Paused revert cannot confirm no prior settlement — it is Indeterminate, not a safe auto-void. A pool paused
+    // across the whole retry window would otherwise loop forever; bounded, it escalates to LossReview (charge held,
+    // no auto-refund), closing the masked-settlement over-refund class for the readable-Paused code too.
+    const h = makeHarness();
+    h.stellar.revertCode = 3; // Paused -> Indeterminate
+    h.stellar.observeVerdict = 'LANDED_REVERTED'; // every fresh-seq resubmit re-reverts, forever
+    const ctx = makeCtx(h.store, { hashHex: 'prior-hash', signedXdr: 'prior-xdr' });
+
+    const r = await advance(ctx, 'UsdcSubmitted', { type: 'evidenceReverted' }, h.deps);
+
+    expect(r.state).toBe('LossReview'); // NOT ChargeReversed — Paused is not a certain no-move
+    expect(r.quiescence).toBe('waiting');
+    // exactly maxRevertOtherRetries re-drives (n=1,2,3), then the n=max+1 tick routes to LossReview (no submit)
+    expect(h.store.revertOtherRetries.get(ctx.orderId)).toBe(
+      h.config.policy.maxRevertOtherRetries + 1,
+    );
+    expect(h.stellar.submitReqs).toHaveLength(h.config.policy.maxRevertOtherRetries);
+    expect(h.trace).not.toContain('psp.cancel'); // NEVER auto-void -> the customer is NOT auto-refunded
+    expect(h.store.losses[0]).toMatchObject({
+      orderId: ctx.orderId,
+      bucket: 'indeterminateLossReview',
+    });
+  });
+
+  it('revertIndeterminate budget EXHAUSTED (unreadable code) escalates to LossReview WITHOUT refunding — no over-refund of a possibly-settled order', async () => {
+    // Money-safety regression (adversarial finding): an UNREADABLE revert code (null — RPC could not surface it)
+    // can mask a genuine AlreadyProcessed where USDC ALREADY moved. So the exhaustion arm must NOT void/refund
+    // (that would refund the customer while the USDC is gone = silent pool loss). Instead it flags the
+    // indeterminateLossReview bucket (charge held, fate unknown) for manual review. (Pre-split, null looped forever.)
+    const h = makeHarness();
+    h.stellar.revertCode = null; // unreadable -> Indeterminate (NOT Other)
+    h.stellar.observeVerdict = 'LANDED_REVERTED'; // every fresh-seq resubmit re-reverts, forever
+    const ctx = makeCtx(h.store, { hashHex: 'prior-hash', signedXdr: 'prior-xdr' });
+
+    const r = await advance(ctx, 'UsdcSubmitted', { type: 'evidenceReverted' }, h.deps);
+
+    expect(r.state).toBe('LossReview'); // fate unknown -> manual sink, NOT ChargeReversed
+    expect(r.quiescence).toBe('waiting'); // LossReview is a manual sink, not an absolute terminal
+    // same bounded burn as a Paused revert (n=1,2,3 resubmit, n=max+1 escalates) — both are Indeterminate now
+    expect(h.store.revertOtherRetries.get(ctx.orderId)).toBe(
+      h.config.policy.maxRevertOtherRetries + 1,
+    );
+    expect(h.stellar.submitReqs).toHaveLength(h.config.policy.maxRevertOtherRetries);
+    expect(h.trace).not.toContain('psp.cancel'); // NEVER void -> the customer is NOT auto-refunded
+    expect(h.store.losses).toHaveLength(1);
+    expect(h.store.losses[0]).toMatchObject({
+      orderId: ctx.orderId,
+      bucket: 'indeterminateLossReview', // "USDC may have moved — do not auto-refund"
+    });
   });
 });
 

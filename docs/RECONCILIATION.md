@@ -1,8 +1,11 @@
 # Troia — Reconciliation (the reviewer-verifiable centerpiece)
 
-> **You do not have to trust us.** Every settlement carries its own cryptographic evidence, and a single
-> offline command re-derives the verdict of every order from that evidence. If our claim disagrees with the
-> math, the command fails. This document explains what is proven, how, and how to check it yourself in ~10 seconds.
+> **You do not have to trust our verdicts.** Every settlement carries its own cryptographic evidence, and a single
+> offline command re-derives the verdict of every order from that evidence — pinning each signature to an operator
+> key supplied from OUTSIDE the report, not to the key the report names, so a self-signed forgery cannot pass.
+> `just verify-live` pins to Troia's canonical operator (the committed deployment record) for a REAL payout, leaving
+> you one check: open its `tx_hash` on the explorer. If our claim disagrees with the math, the command fails. This
+> document explains what is proven, how, and how to check it yourself in ~10 seconds.
 
 Honest proof boundary, stated up front: **`signed ≠ settled`.** We prove what we _signed and submitted_ with
 cryptography that survives a link rot or a testnet reset; we prove what _settled on-chain_ only while the chain
@@ -17,7 +20,11 @@ Troia is custodial: a Turkish user pays TRY, and we pay the merchant USDC from a
 reviewer's fair question is _"how do I know a lira was accounted for, and that you did not quietly lose or
 misroute money?"_ The answer is not "read our logs and trust them." The answer is a self-verifying artifact:
 `recon-report.json` embeds, per order, the signed transaction we submitted plus the chain observation, and
-`just verify` recomputes the truth from that embedded evidence with **no network and no database access**.
+`just verify` recomputes each order's **verdict** from that embedded evidence with **no network and no database
+access** — proving the report is self-consistent and that its signatures verify against the operator key the
+verifier is pinned to (an external value, never the report's own field). It runs the demo corpus; `just verify-live`
+is the one that pins to Troia's canonical operator on a real payout. Neither queries Horizon, so neither proves —
+on its own — that the tx settled on-chain.
 
 The reconciler is **keyless by construction and cannot build a transaction**: it imports `@stellar/stellar-base`
 only to _decode and verify_, never to sign or assemble one (enforced by a grep-provenance test,
@@ -36,11 +43,16 @@ Per order, three independent records — deliberately from three different trust
 | **(c) `chain_evidence`**  | `tx_hash` + `fetched_at_ledger` + a normalized `horizon_snapshot` of the `pay()` call | **Frozen chain observation.** "This is what the chain looked like when we watched it."                                                                                      |
 
 The signed blob **(b)** is the cryptographic tiebreaker between the mutable local row **(a)** and the observed
-chain **(c)**. The report pins two trust anchors at top level, read as **data**, never from the mutable XDR:
+chain **(c)**. The report carries two top-level fields, read as **data**, never from the mutable XDR:
 
 - `network.passphrase` — needed to recompute the real Stellar transaction hash.
-- `network.operator_public` — the **pinned** signer key. The signature is selected _by hint_; any hint-matching
-  signature that verifies over `tx.hash()` passes (this is the multisig seam for later).
+- `network.operator_public` — the signer key the report names, **read as data and NOT trusted**: the verifier
+  re-derives every signature against an operator key supplied from OUTSIDE the report (the runner's
+  `TROIA_OPERATOR_PUBLIC`, else the committed deployment record — [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) and fails the
+  report if its named key differs. `just verify-live` runs with the canonical deployment operator; the demo corpus
+  (`just verify`) is pinned to a throwaway seed-derived signer, since the real operator secret is never committed.
+  Either way a forged report cannot name and self-sign with an attacker's key and pass. The signature is selected
+  _by hint_; any hint-matching signature that verifies over `tx.hash()` passes (this is the multisig seam for later).
 
 `applied_rate` is carried in the snapshot but **excluded** from the diff — the accounting ledger is its audit
 source, not the reconciler.
@@ -103,9 +115,13 @@ Summary: `{ total: 3, matched: 2, mismatch: 1, unsettled: 0 }`.
 just verify
 ```
 
-This builds `@troia/reconciler`, then runs the verifier under an in-process network block:
+This builds `@troia/reconciler`, then runs the verifier under an in-process network block. The demo corpus is
+signed by a throwaway seed-derived operator (the real operator secret is never committed), so the verifier is
+pinned to that corpus operator via `TROIA_OPERATOR_PUBLIC` — an external, committed constant, never the report's
+own field. `just verify-live` instead defaults to the canonical deployment operator.
 
 ```
+TROIA_OPERATOR_PUBLIC=GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K \
 node --import ./packages/reconciler/bin/block-net.mjs \
      ./packages/reconciler/bin/verify.mjs \
      ./packages/reconciler/test/fixtures/recon-report.json
@@ -180,8 +196,11 @@ just verify-live   # re-derives the verdict, no network, from a REAL landed test
 
 `recon-report.live.json` captures a real operator-signed `pay()` that landed on testnet (tx `5a3d60cc…`, `TroyPool`
 `CCVNY6H…`); `just verify-live` re-verifies it **MATCHED** offline (`networkAttempts:0`) — same model, real chain
-evidence. `just demo` runs the full loop end-to-end: N real testnet `pay()`s → a fresh `recon-report.json` → the
-offline verify above (one order is a deliberate `CORRUPT_LOCAL` the reconciler catches).
+evidence, pinned to the canonical operator by default (no override). It is **network-blocked exactly like
+`just verify`**: "live" names the report's provenance (a real landed tx), not a live query — nothing in the
+just-verify family touches Horizon, so confirming the tx actually landed stays a manual explorer check
+(`signed ≠ settled`). `just demo` runs the full loop end-to-end: N real testnet `pay()`s → a fresh
+`recon-report.json` → the offline verify above (one order is a deliberate `CORRUPT_LOCAL` the reconciler catches).
 
 ---
 
@@ -215,5 +234,7 @@ that erased the in-memory order registry. Details and what the run did **not** p
   landed on testnet** (tx `5a3d60cc…`, `TroyPool` `CCVNY6H…`), captured verbatim as
   `recon-report.live.json` and re-verified reset-proof with `just verify-live` — same model, real chain evidence.
 
-**Bottom line for a reviewer:** clone the repo, run `just verify`, watch it pass on the honest report and fail
-on the tampered one — offline, in seconds, without trusting a word we wrote.
+**Bottom line for a reviewer:** clone the repo, run `just verify`, watch it pass on the honest demo corpus and fail
+on the tampered one — proving the reconciler logic offline, in seconds. Then run `just verify-live`: it re-derives a
+REAL payout pinned to our canonical operator (the committed deployment record), leaving one check the offline run
+cannot do for you — open that `tx_hash` on the explorer to confirm it landed (`signed ≠ settled`).

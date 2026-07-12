@@ -68,7 +68,7 @@ step touches the network or iyzico.
   (`AdminChanged`/`OperatorChanged`/`PauseSet`/`Upgraded`). `set_admin` is **single-step by design** — a
   fat-fingered handover bricking admin is an accepted operational footgun whose mitigation is mainnet
   multisig+timelock (ADR-14), not in-contract two-step (testnet is redeployable; plan defers admin hardening).
-  Adversarial pass: 0 confirmed. 12 contract tests green; WASM + clippy clean.
+  Adversarial pass: 0 confirmed. Admin-path tests green; WASM + clippy clean (the full contract suite reaches 14 at 2.3 below).
 - **2.3 Contract tests** ✅ — 14 tests: every `Error` variant reverts (not a silent no-op), multi-order
   real-SAC integration, and a deterministic **conservation fuzz** (`pool + Σ merchants == seed` and
   pay-at-most-once, 400 random interleavings). Fuzz teeth proven by mutation: disabling the replay guard
@@ -178,7 +178,7 @@ Showcase, not proof — comes last on purpose.
   worker (the only holder of the backend host permission) posts `/intent` and opens iyzico's hosted card page, then
   polls coarse status and hands the settlement receipt (tx hash + TRY charged) back to the storefront. Holds no
   keys, signs nothing, allowlisted origins only. **Proven live end-to-end** (Troy sandbox card → 74 USDC settled,
-  tx `cd643d71…`). 110 extension tests green (10 spec files). Hardened for the live money path: per-request fetch timeouts (intent 15s / polls 8s), a phase-aware poll budget with honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo parity pinned to core's golden vectors with malformed-order-id rejection (fail-closed `bad-order-ref`), and an amount gate aligned with `toStroops`.
+  tx `cd643d71…`). 114 extension tests green (10 spec files). Hardened for the live money path: per-request fetch timeouts (intent 15s / polls 8s), a phase-aware poll budget with honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo parity pinned to core's golden vectors with malformed-order-id rejection (fail-closed `bad-order-ref`), and an amount gate aligned with `toStroops`.
 - **5.3 Proof docs** — `RECONCILIATION.md`, `DEPLOYMENTS.md`, `SCOPE_AND_LIMITATIONS.md`, `DEMO_SCRIPT.md` ✅;
   `just verify` offline proof ✅. Remaining: a public shareable deploy (storefront → Vercel, backend → Render) and
   a 3–5 min proof video.
@@ -217,5 +217,5 @@ video remain.
 - **No pushes** without explicit confirmation. The git history is **real** — commits are made as the work happens,
   never backdated or reconstructed.
 - **Commits show only tamerarda**, no co-author attribution.
-- We start at **0.1** and do not skip ahead. If a step reveals a design gap, we fix the design (ARCHITECTURE.md
-  / troia-olay-orgusu.md) before writing more code.
+- We start at **0.1** and do not skip ahead. If a step reveals a design gap, we fix the design (ARCHITECTURE.md)
+  before writing more code.

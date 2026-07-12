@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_STATES, MUTATION_EFFECTS, transition } from '@troia/core';
+import { ALL_EVENT_TYPES, ALL_STATES, MUTATION_EFFECTS, transition } from '@troia/core';
 import type { Event } from '@troia/core';
 import {
   assertNoMutationOnUnknown,
@@ -27,13 +27,23 @@ const ALL_EVENTS: readonly Event[] = [
   { type: 'deadRetry', retriesRemaining: false },
   { type: 'revertAlreadyProcessed' },
   { type: 'revertBalanceGuard' },
-  { type: 'revertOther' },
+  { type: 'revertIndeterminate', retriesRemaining: true },
+  { type: 'revertIndeterminate', retriesRemaining: false },
   { type: 'reconciled' },
   { type: 'reversalConfirmed' },
   { type: 'reversalUnknown' },
   { type: 'reversalNotDone', retriesRemaining: true },
   { type: 'reversalNotDone', retriesRemaining: false },
 ];
+
+// Guards the property tests against a silently-omitted event variant (ALL_EVENT_TYPES is compile-time-exhaustive in
+// @troia/core's typechecked src; this test file is not typechecked). A new core Event variant forgotten in
+// ALL_EVENTS fails here instead of under-covering the property loops.
+describe('ALL_EVENTS fixture', () => {
+  it('covers every event type', () => {
+    expect(new Set(ALL_EVENTS.map((e) => e.type))).toEqual(new Set(ALL_EVENT_TYPES));
+  });
+});
 
 describe('mutation-on-uncertainty guard (property over the whole core table)', () => {
   // EFFECT-DRIVEN (not gated on the predicate under test, so it catches an incomplete predicate): the GROUND

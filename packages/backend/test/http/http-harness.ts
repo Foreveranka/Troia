@@ -51,6 +51,7 @@ export function makeHttpHarness(
   balanceUnits = 100n,
   quoteFn: QuoteFn = quote,
   rateLimit: IntentRateLimit = NO_LIMIT,
+  quoteRateLimit: IntentRateLimit = NO_LIMIT,
 ): HttpHarness {
   const trace: Trace = [];
   const stellar = new FakeStellarPort(trace);
@@ -65,8 +66,14 @@ export function makeHttpHarness(
     quote: quoteFn,
     webhookSigningSecret: WEBHOOK_SECRET,
     rateLimit,
+    quoteRateLimit,
   });
   return { app, store, stellar, psp, clock, registry, trace };
+}
+
+/** The path GET /quote uses for a USDC amount in stroops (mirrors intentUrl-style helpers). */
+export function quoteUrl(amountStroops: bigint | string): string {
+  return `/quote/${encodeURIComponent(String(amountStroops))}`;
 }
 
 /**

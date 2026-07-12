@@ -227,6 +227,49 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     expect(btn.textContent).not.toBe('Try again');
     expect(btn.style.display).toBe('none'); // button removed — no retry, no TROIA_RETRY
     expect(post).not.toHaveBeenCalled();
+    // never button-less-and-blank: the review dead-end now gives an order reference + money reassurance
+    expect(statusText()).toContain('ST-AB12CD');
+    expect(statusText()!.toLowerCase()).toContain('reversed');
+  });
+
+  it('a review WITHOUT prior processing still shows the reference + reassurance and hides the button', async () => {
+    stub.script.intent = OPEN_INTENT;
+    stub.script.statuses = ['review'];
+
+    await loadWithBanner();
+    await clickPay();
+    await vi.advanceTimersByTimeAsync(3000); // review straight away — the branch fires regardless of sawProcessing
+
+    expect(statusText()).toContain('ST-AB12CD');
+    expect(statusText()!.toLowerCase()).toContain('reversed');
+    expect((shadow().querySelector('.pay') as HTMLButtonElement).style.display).toBe('none');
+  });
+
+  it('requests a read-only quote when the banner is shown and reveals the indicative ≈₺ on success', async () => {
+    stub.script.quote = { ok: true, paidPriceTry: '2650.00', spreadBps: 229 };
+
+    await loadWithBanner();
+    await flush();
+
+    // asked the background for a preview of the detected amount (toStroops('62.00') = 620000000)
+    expect(stub.sendMessage).toHaveBeenCalledWith(
+      { type: 'TROIA_QUOTE', amountStroops: '620000000' },
+      expect.any(Function),
+    );
+    const approx = shadow().querySelector('.approx') as HTMLElement;
+    expect(approx.hidden).toBe(false);
+    expect(approx.textContent).toBe('≈ 2,650.00 TL');
+  });
+
+  it('degrades to USDC-only when the quote fails — the banner and an enabled Pay button stay intact', async () => {
+    stub.script.quote = { ok: false, error: 'PriceUnavailable' };
+
+    await loadWithBanner();
+    await flush();
+
+    expect((shadow().querySelector('.approx') as HTMLElement).hidden).toBe(true); // no ≈₺ shown
+    expect((shadow().querySelector('.pay') as HTMLButtonElement).disabled).toBe(false); // Pay still usable
+    expect(shadow().textContent).toContain('62.00'); // the USDC amount is untouched
   });
 
   it('a declined payment offers "Try again", which mints a fresh order and auto-continues the payment', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ABSOLUTE_TERMINAL_STATES,
+  ALL_EVENT_TYPES,
   ALL_STATES,
   initialState,
   isAbsoluteTerminal,
@@ -34,13 +35,24 @@ const ALL_EVENTS: readonly Event[] = [
   { type: 'deadRetry', retriesRemaining: false },
   { type: 'revertAlreadyProcessed' },
   { type: 'revertBalanceGuard' },
-  { type: 'revertOther' },
+  { type: 'revertIndeterminate', retriesRemaining: true },
+  { type: 'revertIndeterminate', retriesRemaining: false },
   { type: 'reconciled' },
   { type: 'reversalConfirmed' },
   { type: 'reversalUnknown' },
   { type: 'reversalNotDone', retriesRemaining: true },
   { type: 'reversalNotDone', retriesRemaining: false },
 ];
+
+// Guards the property tests below against a silently-omitted event variant: ALL_EVENTS must cover every event type.
+// ALL_EVENT_TYPES is compile-time-exhaustive in @troia/core's typechecked src (this test file is NOT typechecked),
+// so if a new variant is added to the core Event union but forgotten in ALL_EVENTS, this fails — otherwise the
+// property loops would just under-cover it silently.
+describe('ALL_EVENTS fixture', () => {
+  it('covers every event type', () => {
+    expect(new Set(ALL_EVENTS.map((e) => e.type))).toEqual(new Set(ALL_EVENT_TYPES));
+  });
+});
 
 interface Edge {
   state: State;
@@ -231,29 +243,54 @@ describe('state machine — money-safety invariants', () => {
     expect(MUTATIONS.has('allocateSeq' as Effect)).toBe(true);
   });
 
-  it('DEAD reuses the SAME seq while REVERTED-other reallocates a NEW seq', () => {
+  it('DEAD reuses the SAME seq while a REVERTED (indeterminate) retry reallocates a NEW seq', () => {
     const deadRetry = transition('UsdcDead', { type: 'deadRetry', retriesRemaining: true });
-    const revertOther = transition('UsdcReverted', { type: 'revertOther' });
+    const revertRetry = transition('UsdcReverted', {
+      type: 'revertIndeterminate',
+      retriesRemaining: true,
+    });
     if (deadRetry.status === 'transition') {
       expect(deadRetry.effects).toContain('submitReplacementSameSeq');
       expect(deadRetry.effects).not.toContain('reallocateSeq');
     } else {
       throw new Error('deadRetry should transition');
     }
-    if (revertOther.status === 'transition') {
-      expect(revertOther.effects).toContain('reallocateSeq');
-      expect(revertOther.effects).not.toContain('submitReplacementSameSeq');
+    if (revertRetry.status === 'transition') {
+      expect(revertRetry.effects).toContain('reallocateSeq');
+      expect(revertRetry.effects).not.toContain('submitReplacementSameSeq');
     } else {
-      throw new Error('revertOther should transition');
+      throw new Error('revertIndeterminate should transition');
     }
+  });
+
+  it('revertIndeterminate EXHAUSTED escalates to LossReview — never a void (USDC fate unknown, no auto-refund)', () => {
+    // The cause is not a CERTAIN no-move (only AlreadyProcessed/BalanceGuard are), so we cannot confirm USDC did
+    // not move; the exhaustion arm must NOT void the sale (that could over-refund a settled order) — it flags the
+    // indeterminate loss instead (charge held, manual review).
+    const r = transition('UsdcReverted', { type: 'revertIndeterminate', retriesRemaining: false });
+    expect(r).toEqual({ status: 'transition', next: 'LossReview', effects: ['flagLoss'] });
+  });
+
+  it('revertIndeterminate with budget remaining reallocates a fresh seq and resubmits', () => {
+    const r = transition('UsdcReverted', { type: 'revertIndeterminate', retriesRemaining: true });
+    expect(r).toEqual({
+      status: 'transition',
+      next: 'UsdcSubmitted',
+      effects: ['reallocateSeq', 'persistInFlight', 'submitPay'],
+    });
   });
 
   it('UsdcReverted classify: AlreadyProcessed -> UsdcConfirmed (no handToReconciler), BalanceGuard -> ChargeReversing', () => {
     const ap = transition('UsdcReverted', { type: 'revertAlreadyProcessed' });
     const bg = transition('UsdcReverted', { type: 'revertBalanceGuard' });
     expect(ap).toEqual({ status: 'transition', next: 'UsdcConfirmed', effects: [] }); // reverted hash, no evidence append
-    expect(bg.status === 'transition' && bg.next).toBe('ChargeReversing');
-    if (bg.status === 'transition') expect(bg.effects).toContain('fireCancel');
+    // BalanceGuard is the ONLY revert that auto-voids (checked PAST the replay guard → USDC provably never moved).
+    // The seq is already burned by confirmBurnedSeq, so this must NOT releaseSeq (that throws SeqNotActive).
+    expect(bg).toEqual({
+      status: 'transition',
+      next: 'ChargeReversing',
+      effects: ['releaseReservation', 'fireCancel'],
+    });
   });
 
   it('recoverResubmit resends the never-sent pay() on the SAME seq, write-ahead first', () => {

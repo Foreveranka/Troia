@@ -1,7 +1,8 @@
 # Troia — Demo Script (3–5 minute proof walkthrough)
 
-> The demo's job is to make one claim undeniable: **Troia never silently loses money, and you can verify it
-> yourself, offline, in seconds.** Everything below is scripted so the run is deterministic and honest — each
+> The demo's job is to make one claim undeniable: **Troia never silently loses money, and you can check the
+> reconciliation report yourself, offline, in seconds** (with one manual step — the on-chain `tx_hash` — spelled
+> out in Act 2). Everything below is scripted so the run is deterministic and honest — each
 > beat is labeled **[runs today]** (zero setup) or **[runs live — stack up]** so nothing is oversold.
 
 One-line pitch to open with: _"A custodial TRY→USDC settlement layer that makes every lira accountable
@@ -69,8 +70,11 @@ Narrate the three things that make the `0` exit code meaningful:
 
 1. **Offline, provably.** `networkAttempts: 0`, and a startup canary confirmed the network block is _armed_ — a
    deliberate connection attempt threw. This didn't "happen not to call out"; it _could not_.
-2. **It recomputes, it doesn't trust.** The verifier ignores the report's own verdicts and re-derives each one
-   from the embedded signed transaction and chain snapshot — pinned operator key, real Stellar tx hash.
+2. **It recomputes the verdicts; it doesn't trust them.** The verifier ignores the report's own verdicts and
+   re-derives each from the embedded signed transaction and chain snapshot, pinning signatures to an operator key
+   supplied from OUTSIDE the report (here a demo corpus signer; `just verify-live` uses Troia's canonical operator),
+   never the key the report names — so a self-signed forgery fails. It never queries Horizon: for the REAL payout in
+   `just verify-live`, confirm the Stellar `tx_hash` on the explorer yourself.
 3. **`ord-003` is a deliberate mismatch, and it's caught.** Local DB says 0.6 USDC; the signed tx and the chain
    both say 0.5. Verdict `CORRUPT_LOCAL`, and `signature_valid` is still `true` — so the evidence proves the
    error is in _our records_, and the chain is the authority.

@@ -18,6 +18,10 @@ export type ReceiptOutcome =
   | { readonly ok: true; readonly txHash: string | null; readonly paidPriceTry: string | null }
   | { readonly ok: false; readonly error: string };
 
+export type QuoteOutcome =
+  | { readonly ok: true; readonly paidPriceTry: string; readonly spreadBps: number | null }
+  | { readonly ok: false; readonly error: string };
+
 export interface PostIntentOptions {
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
@@ -169,5 +173,41 @@ export async function getReceipt(
     ok: true,
     txHash: typeof json.txHash === 'string' ? json.txHash : null,
     paidPriceTry: typeof json.paidPriceTry === 'string' ? json.paidPriceTry : null,
+  };
+}
+
+/** Fetch the read-only price PREVIEW for a USDC amount (GET /quote/:amountStroops): the indicative TRY the
+ *  customer would be charged, priced via the SAME path /intent uses. A preview only — the charged price is locked
+ *  server-side at /intent. Never throws; a failure is a fail outcome the caller degrades through (shows no TL,
+ *  keeps the USDC amount + an enabled Pay button). Read-only on the backend: it reserves nothing. */
+export async function getQuote(
+  amountStroops: string,
+  opts: GetStatusOptions = {},
+): Promise<QuoteOutcome> {
+  const baseUrl = opts.baseUrl ?? BACKEND_BASE_URL;
+  const doFetch = opts.fetchImpl ?? fetch;
+
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      doFetch,
+      `${baseUrl}/quote/${encodeURIComponent(amountStroops)}`,
+      {},
+      opts.timeoutMs ?? POLL_TIMEOUT_MS,
+    );
+  } catch (e) {
+    return { ok: false, error: isTimeout(e) ? 'timeout' : 'network' };
+  }
+
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok || !isRecord(json) || typeof json.paidPriceTry !== 'string') {
+    const error =
+      isRecord(json) && typeof json.error === 'string' ? json.error : `http_${res.status}`;
+    return { ok: false, error };
+  }
+  return {
+    ok: true,
+    paidPriceTry: json.paidPriceTry,
+    spreadBps: typeof json.spreadBps === 'number' ? json.spreadBps : null,
   };
 }

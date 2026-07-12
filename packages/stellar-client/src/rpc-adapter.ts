@@ -170,8 +170,9 @@ export class SorobanRpcAdapter implements RpcPort {
    *  SCOPED to `contractId` (the TroyPool C-address): only an error emitted BY that contract counts, so the inner
    *  USDC SAC's own error can never be mis-read as TroyPool AlreadyProcessed/InsufficientBalance. Only a FAILED tx
    *  carries a code; SUCCESS/NOT_FOUND and any read/parse failure return null — the money-SAFE default
-   *  (classifyRevertCause(null)='Other' -> fresh-seq re-drive; the on-chain Processed(tx_id) guard is the real
-   *  double-pay shield, so a null can never cause a double payout). Extra method beyond RpcPort; live-smoked. */
+   *  (classifyRevertCause(null)='Indeterminate' -> bounded re-drive then LossReview, never an auto-void, since a
+   *  null could mask a settled AlreadyProcessed; the on-chain Processed(tx_id) guard is the double-pay shield, so a
+   *  null can never cause a double payout). Extra method beyond RpcPort; live-smoked. */
   async readContractErrorCode(hashHex: string, contractId: string): Promise<number | null> {
     try {
       const res = await withTimeout(
@@ -182,7 +183,7 @@ export class SorobanRpcAdapter implements RpcPort {
       if (res.status !== rpc.Api.GetTransactionStatus.FAILED) return null;
       return firstContractErrorCodeFromContract(collectDiagnosticEvents(res), contractId);
     } catch {
-      return null; // a timeout here -> null -> classifyRevertCause 'Other' -> fresh-seq re-drive (money-safe)
+      return null; // timeout -> null -> classifyRevertCause 'Indeterminate' -> bounded re-drive then LossReview (never auto-voids)
     }
   }
 

@@ -32,5 +32,6 @@ export {
   ABSOLUTE_TERMINAL_STATES,
   REVERSAL_PENDING_STATES,
   MUTATION_EFFECTS,
+  ALL_EVENT_TYPES,
 } from './state-machine.js';
 export type { State, Event, EventType, Effect, TransitionResult } from './state-machine.js';

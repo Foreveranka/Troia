@@ -1,4 +1,4 @@
-// Settlement state machine — the single source of truth (docs/ARCHITECTURE.md §3, troia-olay-orgusu.md §4).
+// Settlement state machine — the single source of truth (docs/ARCHITECTURE.md §3).
 // A PURE, TOTAL reducer: transition(state, event) returns a result and NEVER throws. Side effects are
 // returned as descriptors (data), not executed here — the backend (Phase 4) performs them and feeds the
 // results back as the next event.
@@ -113,7 +113,7 @@ export type Event =
   // UsdcReverted classification
   | { readonly type: 'revertAlreadyProcessed' }
   | { readonly type: 'revertBalanceGuard' }
-  | { readonly type: 'revertOther' }
+  | { readonly type: 'revertIndeterminate'; readonly retriesRemaining: boolean }
   // UsdcConfirmed
   | { readonly type: 'reconciled' }
   // ChargeReversing (the void is 3-valued)
@@ -122,6 +122,38 @@ export type Event =
   | { readonly type: 'reversalNotDone'; readonly retriesRemaining: boolean };
 
 export type EventType = Event['type'];
+
+/** Every event type, runtime-enumerable — the SINGLE source of truth for the property-test event fixtures (whose
+ *  test files `tsc -p` does not typecheck, so a type-level guard THERE would be dead). The
+ *  `satisfies Record<EventType, true>` makes this exhaustive AT COMPILE TIME in this typechecked file: a newly-added
+ *  Event variant forgotten here is a compile error (a missing key), and a stale/extra one is too. Tests assert their
+ *  `ALL_EVENTS` equal this set at runtime, so a silently-omitted variant fails a test instead of under-covering. */
+const EVENT_TYPE_PRESENCE = {
+  solvencyOk: true,
+  solvencyFail: true,
+  solvencyUnknown: true,
+  chargeOk: true,
+  chargeRejected: true,
+  chargeUnknown: true,
+  checkoutInitFailed: true,
+  recover: true,
+  recoverResubmit: true,
+  evidenceSuccess: true,
+  evidenceReverted: true,
+  evidencePending: true,
+  pollDead: true,
+  pollStillPending: true,
+  deadRetry: true,
+  revertAlreadyProcessed: true,
+  revertBalanceGuard: true,
+  revertIndeterminate: true,
+  reconciled: true,
+  reversalConfirmed: true,
+  reversalUnknown: true,
+  reversalNotDone: true,
+} satisfies Record<EventType, true>;
+
+export const ALL_EVENT_TYPES = Object.keys(EVENT_TYPE_PRESENCE) as readonly EventType[];
 
 export type TransitionResult =
   | { readonly status: 'transition'; readonly next: State; readonly effects: readonly Effect[] }
@@ -249,8 +281,17 @@ export function transition(state: State, event: Event): TransitionResult {
           return t('UsdcConfirmed', []);
         case 'revertBalanceGuard':
           return t('ChargeReversing', ['releaseReservation', 'fireCancel']); // USDC didn't move → void the sale
-        case 'revertOther':
-          return t('UsdcSubmitted', ['reallocateSeq', 'persistInFlight', 'submitPay']); // NEW seq
+        case 'revertIndeterminate':
+          // Every revert whose cause is NOT a CERTAIN no-move lands here (only AlreadyProcessed=1 and
+          // BalanceGuard=2 are certain — both checked at/after the on-chain replay guard). Paused/InvalidAmount are
+          // checked BEFORE that guard (so they cannot rule out a prior settlement), and an unreadable/unknown code
+          // is equally uncertain. Budget a bounded fresh-seq re-drive (a transient read or an unpause may clear it)
+          // — without it a deterministic cause would loop forever, burning a fresh operator seq every tick. On
+          // exhaustion escalate to LossReview (flagLoss → indeterminateLossReview: the charge is NOT reversed, USDC
+          // fate unknown) — NEVER an auto-void, which could over-refund an order whose USDC already moved.
+          return event.retriesRemaining
+            ? t('UsdcSubmitted', ['reallocateSeq', 'persistInFlight', 'submitPay']) // NEW seq
+            : t('LossReview', ['flagLoss']); // budget spent, fate unknown → manual sink, no auto-refund
         default:
           return rejected(state, event);
       }

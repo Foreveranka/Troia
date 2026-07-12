@@ -205,16 +205,28 @@ demo:
     echo "--- offline, network-blocked verification of the freshly-generated report ---"
     node --import ./packages/reconciler/bin/block-net.mjs ./packages/reconciler/bin/verify.mjs demo/recon-report.json
 
-# Phase 3.4 — offline reconciliation verification.
-# Offline, network-blocked self-verification of the reconciliation report (Phase 3.4).
+# The committed acceptance corpus is signed by a throwaway, seed-derived operator (generate.ts
+# operatorKeypair('troia-demo-0001')), NOT the real deployment operator whose secret is never committed. The
+# offline verifier pins signatures to this operator for the corpus targets (`verify`, `verify-tampered`);
+# `verify-live` / `demo` keep the DEFAULT deployment-record operator.
+corpus_operator := "GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K"
+
+# Phase 3.4 — offline verification of the DEMO acceptance corpus. Network-blocked (block-net.mjs): proves the
+# reconciler re-derives every verdict AND that signatures verify against an EXTERNALLY-pinned operator (here the
+# throwaway corpus signer via TROIA_OPERATOR_PUBLIC — the real operator secret is never committed), never the
+# report's own field. It does NOT tie to the canonical deployment operator (that is `just verify-live`) and does
+# NOT prove on-chain landing (no Horizon call).
 verify:
     pnpm --filter @troia/reconciler build
-    node --import ./packages/reconciler/bin/block-net.mjs \
+    TROIA_OPERATOR_PUBLIC={{corpus_operator}} node --import ./packages/reconciler/bin/block-net.mjs \
          ./packages/reconciler/bin/verify.mjs \
          ./packages/reconciler/test/fixtures/recon-report.json
 
-# Offline verification of the LIVE report — generated from a REAL testnet pay() tx (see docs/DEPLOYMENTS.md).
-# Self-verifying and reset-proof: passes with no network even after a testnet reset.
+# NETWORK-BLOCKED, exactly like `just verify` (block-net.mjs below) — this does NOT query Horizon/the chain.
+# "live" names the report's PROVENANCE: a REAL testnet pay() tx (docs/DEPLOYMENTS.md), not a live lookup. Pinned BY
+# DEFAULT to the canonical deployment operator (no override), and verifyReport FAILS the report if it names a
+# different key — so the canonical-operator signature is proven AUTOMATICALLY here. The ONE remaining manual check
+# is that the tx actually landed: open the tx_hash on the explorer (signed != settled). Reset-proof (no network).
 verify-live:
     pnpm --filter @troia/reconciler build
     node --import ./packages/reconciler/bin/block-net.mjs \
@@ -226,4 +238,4 @@ verify-live:
 # The NEGATIVE half of the offline proof: a lie cannot pass.
 verify-tampered:
     pnpm --filter @troia/reconciler build
-    node scripts/tamper-check.mjs
+    TROIA_OPERATOR_PUBLIC={{corpus_operator}} node scripts/tamper-check.mjs

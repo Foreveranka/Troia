@@ -23,6 +23,13 @@ const verifier = join(repoRoot, 'packages/reconciler/bin/verify.mjs');
 const honestPath =
   process.argv[2] ?? join(repoRoot, 'packages/reconciler/test/fixtures/recon-report.json');
 
+// The committed acceptance corpus is signed by a throwaway, seed-derived operator (generate.ts
+// operatorKeypair('troia-demo-0001')), NOT the real deployment operator whose secret is never committed. Pin the
+// verifier to that corpus operator so re-derivation reaches the tampered order's VERDICT (a canonical-operator
+// mismatch would short-circuit first). This is a committed, non-report constant — never sourced from the report
+// itself. An explicit TROIA_OPERATOR_PUBLIC (e.g. set by `just verify-tampered`) wins for standalone runs.
+const CORPUS_OPERATOR = 'GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K';
+
 function die(reason) {
   console.error(`tamper-check FAILED: ${reason}`);
   process.exit(1);
@@ -51,7 +58,13 @@ writeFileSync(forgedPath, JSON.stringify(forged, null, 2) + '\n');
 let stdout = '';
 let code = 0;
 try {
-  stdout = execFileSync('node', ['--import', blockNet, verifier, forgedPath], { encoding: 'utf8' });
+  stdout = execFileSync('node', ['--import', blockNet, verifier, forgedPath], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      TROIA_OPERATOR_PUBLIC: process.env.TROIA_OPERATOR_PUBLIC ?? CORPUS_OPERATOR,
+    },
+  });
 } catch (e) {
   code = e.status ?? -1;
   stdout = e.stdout ?? '';

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { acceptanceNetwork, buildAcceptanceReport } from './fixtures/build-corpus.js';
+import {
+  acceptanceNetwork,
+  acceptanceTroyPool,
+  buildAcceptanceReport,
+} from './fixtures/build-corpus.js';
 import { verifyReport } from '../src/verify.js';
 
 describe('recon-report — buildReconReport (3.3)', () => {
@@ -26,9 +30,9 @@ describe('recon-report — buildReconReport (3.3)', () => {
   });
 
   it('the built report verifies in-process (recomputation matches every stored field)', () => {
-    // The corpus is signed by a throwaway seed-derived operator (the real operator secret is never committed),
-    // so it is pinned against THAT operator — never the report's own field.
-    const r = verifyReport(report, acceptanceNetwork().operator_public);
+    // The corpus is signed by a throwaway seed-derived operator and settles through a throwaway seed-derived pool
+    // (the real operator secret is never committed), so it is pinned against THOSE — never the report's own fields.
+    const r = verifyReport(report, acceptanceNetwork().operator_public, acceptanceTroyPool());
     expect(r.ok).toBe(true);
     expect(r.failures).toEqual([]);
     expect(r.summary).toEqual({ total: 3, matched: 2, mismatch: 1, unsettled: 0 });

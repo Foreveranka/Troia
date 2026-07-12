@@ -423,7 +423,12 @@ The report carries two top-level fields: `network.passphrase` (needed to recompu
 `network.operator_public` (the signer key — read as **data**, never from the mutable XDR). The operator is not
 self-authenticating: `verifyReport` takes the canonical operator as an argument (`bin/verify.mjs` supplies it from
 an explicit `TROIA_OPERATOR_PUBLIC`, else the committed deployment record) and fails any report naming a different
-key, so a forged report cannot self-sign with its own key and pass. Field mapping:
+key, so a forged report cannot self-sign with its own key and pass. **Nor is the settlement contract**: a signature
+proves authorship, not destination, and the report supplies both sides of every `contract_id` comparison it makes —
+so an operator-signed `pay()` to a look-alike contract re-derives to `MATCHED` having moved nothing out of the pool.
+`verifyReport` therefore takes a second external anchor, the canonical `troyPool` (`TROIA_TROY_POOL`, else the same
+deployment record), and fails any order whose `pay()` invokes another contract — checked on the decoded XDR **and**
+the chain snapshot. Field mapping:
 `business_intent.destination ⇄ pay() merchant (arg3)`, `amount_stroops ⇄ i128 arg1`, `memo_hex ⇄ BytesN<32>
 arg4`. `applied_rate` is carried but **excluded** from the diff (the ledger is its audit source).
 

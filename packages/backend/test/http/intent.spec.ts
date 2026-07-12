@@ -92,6 +92,23 @@ describe('POST /intent — money-first ① order start', () => {
     expect(res.json()).toEqual({ error: 'BadRequest' });
   });
 
+  it('a lone-surrogate orderId is a clean 400, NOT a 500 that leaks the internal exception', async () => {
+    const h = makeHttpHarness();
+    const before = h.store.availableStroops();
+    // '\uD800' is a lone high surrogate — not well-formed Unicode. canonicalizeOrderId THROWS on it; without the
+    // boundary guard that throw would surface as a 500 with the raw DeriveIdsError message. memoHex stays the
+    // valid 'order-1' value (irrelevant: the id is rejected before any memo/build/port work).
+    const body = { ...intentBody('order-1'), orderId: '\uD800' };
+    const res = await h.app.inject({ method: 'POST', url: '/intent', payload: body });
+
+    expect(res.statusCode).toBe(400); // the crux: 400, never 500
+    expect(res.json()).toEqual({ error: 'OrderIdMalformed' }); // a clean code — no internal message leaks
+    // fail-closed ①: no order, no reservation, no sequence, no port touched
+    expect(h.store.availableStroops()).toBe(before);
+    expect(h.registry.getByOrderId('\uD800')).toBeUndefined();
+    expect(h.trace).toEqual([]);
+  });
+
   it('is idempotent: a duplicate /intent preserves the persisted token (never resets it to null)', async () => {
     const h = makeHttpHarness();
     const first = await h.app.inject({

@@ -34,31 +34,44 @@ try {
   fail(`cannot read report: ${e.message}`);
 }
 
-// The trust anchor: the operator key every signature is checked against. It MUST come from OUTSIDE the report —
-// else a forged report could name (and self-sign with) an attacker's key and pass against itself. Precedence: an
-// explicit TROIA_OPERATOR_PUBLIC (set only by a trusted runner — e.g. the synthetic-corpus `just verify` targets,
-// whose throwaway signer is deliberately not the deployment operator), else the committed deployment record.
-// NEVER the report. Fail closed (exit 2) if it cannot resolve to a well-formed G-key — never fall back to the report.
-function resolveCanonicalOperator() {
-  const override = process.env.TROIA_OPERATOR_PUBLIC;
-  if (typeof override === 'string' && override.length > 0) return override;
+// TWO trust anchors, resolved by the SAME rule: from OUTSIDE the report, never from it. An explicit env override
+// (set only by a trusted runner — e.g. the synthetic-corpus `just verify` targets, whose throwaway signer and
+// throwaway pool are deliberately not the deployment's), else the committed deployment record. Fail closed (exit 2)
+// if either cannot resolve to a well-formed key — never fall back to the report.
+//
+//   operator (G…) — WHO signed. Else a forged report names, and self-signs with, an attacker's key and passes
+//                   against itself.
+//   TroyPool (C…) — WHERE the money went. A signature proves authorship, not destination: an operator-signed pay()
+//                   to a look-alike contract drains nothing from the canonical pool yet re-derives MATCHED, because
+//                   the report supplies BOTH sides of every contract comparison it makes.
+function readDeployment() {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-  const deploymentPath =
-    process.env.TROIA_DEPLOYMENT_PATH ?? join(repoRoot, 'deployment.testnet.json');
-  return JSON.parse(readFileSync(deploymentPath, 'utf8')).operatorPublic;
+  const path = process.env.TROIA_DEPLOYMENT_PATH ?? join(repoRoot, 'deployment.testnet.json');
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function resolveAnchor(envVar, deploymentField) {
+  const override = process.env[envVar];
+  if (typeof override === 'string' && override.length > 0) return override;
+  return readDeployment()[deploymentField];
 }
 
 let canonicalOperator;
+let canonicalTroyPool;
 try {
-  canonicalOperator = resolveCanonicalOperator();
+  canonicalOperator = resolveAnchor('TROIA_OPERATOR_PUBLIC', 'operatorPublic');
+  canonicalTroyPool = resolveAnchor('TROIA_TROY_POOL', 'troyPool');
 } catch (e) {
-  fail(`cannot resolve canonical operator: ${e.message}`);
+  fail(`cannot resolve the canonical anchors: ${e.message}`);
 }
 if (typeof canonicalOperator !== 'string' || !/^G[A-Z2-7]{55}$/.test(canonicalOperator)) {
   fail(`canonical operator is not a valid G-key: ${canonicalOperator}`);
 }
+if (typeof canonicalTroyPool !== 'string' || !/^C[A-Z2-7]{55}$/.test(canonicalTroyPool)) {
+  fail(`canonical TroyPool is not a valid C-address: ${canonicalTroyPool}`);
+}
 
-const result = verifyReport(report, canonicalOperator);
+const result = verifyReport(report, canonicalOperator, canonicalTroyPool);
 const attempts = globalThis.__troiaNet.attempts;
 const expectedOrders = Array.isArray(report.orders) ? report.orders.length : -1;
 const ok = result.ok && attempts === 0 && result.ordersVerified === expectedOrders;

@@ -128,15 +128,19 @@ jobs:
       # The reviewer-facing proofs. verify.mjs runs under block-net.mjs, which patches net/tls/dns/http/fetch to
       # throw-and-count and arms a startup canary — so `networkAttempts: 0` is positively proven, not merely absent.
       - name: Offline proof — the honest report re-derives
-        # The acceptance corpus is signed by a throwaway seed-derived operator (not the deployment operator whose
-        # secret is never committed), so pin the verifier to it — mirrors `just verify`.
+        # The acceptance corpus is signed by a throwaway seed-derived operator and settles through a throwaway
+        # seed-derived pool (not the deployment's, whose operator secret is never committed), so pin BOTH anchors
+        # to the corpus — mirrors `just verify`.
         env:
           TROIA_OPERATOR_PUBLIC: GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K
+          TROIA_TROY_POOL: CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB
         run: >
           node --import ./packages/reconciler/bin/block-net.mjs
           ./packages/reconciler/bin/verify.mjs
           ./packages/reconciler/test/fixtures/recon-report.json
 
+      # No overrides: pinned to BOTH canonical deployment anchors, so this proves the real payout was signed by the
+      # canonical operator AND settled through the canonical TroyPool — a pay() to any other contract fails here.
       - name: Offline proof — the report from a REAL testnet payout re-derives
         run: >
           node --import ./packages/reconciler/bin/block-net.mjs
@@ -146,7 +150,8 @@ jobs:
       # The negative half: a forged report must be caught by re-derivation (verify exit 1), not by an unreadable
       # file (verify exit 2). tamper-check pins the distinction, so this step cannot pass while testing nothing.
       - name: Offline proof — a forged report is caught
-        # tamper-check pins the verifier to the throwaway corpus operator; set it explicitly (don't inherit ambient).
+        # tamper-check pins the verifier to the throwaway corpus anchors; set them explicitly (don't inherit ambient).
         env:
           TROIA_OPERATOR_PUBLIC: GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K
+          TROIA_TROY_POOL: CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB
         run: node scripts/tamper-check.mjs

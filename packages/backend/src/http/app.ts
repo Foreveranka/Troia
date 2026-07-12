@@ -11,7 +11,7 @@
 import Fastify from 'fastify';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
-import { canonicalizeOrderId, PayoutIntent } from '@troia/core';
+import { canonicalizeOrderId, DeriveIdsError, PayoutIntent } from '@troia/core';
 import { chargeEvent, projectCheckoutFormResult, verifyWebhookSignature } from '@troia/psp';
 import type { WebhookEvent } from '@troia/psp';
 import type { OrderCtx } from '../ctx.js';
@@ -78,6 +78,21 @@ const I128_MAX = 2n ** 127n - 1n;
 function optStr(o: Record<string, unknown>, k: string): string | undefined {
   const v = o[k];
   return typeof v === 'string' ? v : undefined;
+}
+
+// canonicalizeOrderId THROWS on a malformed order id (a lone UTF-16 surrogate — derive-ids.ts). With no Fastify
+// error handler installed, that throw becomes a 500 that leaks the internal exception message, on what is really a
+// client input error. Fail closed at the trust boundary instead: return null for a malformed id so the caller
+// answers a clean 400 {error:'OrderIdMalformed'} — the SAME code PayoutIntent.build already returns for it, so the
+// API is uniform whether the id is rejected here or one step later at build. Any other throw is a real fault and
+// still propagates. Money-safe: this only reshapes an error response; it is upstream of any seq/reserve/charge.
+function tryCanonicalizeOrderId(rawOrderId: string): string | null {
+  try {
+    return canonicalizeOrderId(rawOrderId);
+  } catch (e) {
+    if (e instanceof DeriveIdsError && e.code === 'OrderIdNotWellFormed') return null;
+    throw e;
+  }
 }
 
 function headerStr(v: string | string[] | undefined): string | null {
@@ -180,7 +195,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // canonical (NFC) form, so the lock / registry / store / reservation MUST too — else two NFC-equivalent but
     // byte-different orderIds collapse to one sequence yet split into two locks/orders/reservations/forms
     // (a double pool-reserve + a second charge surface). One identity for every per-order guard.
-    const orderId = canonicalizeOrderId(rawOrderId);
+    const orderId = tryCanonicalizeOrderId(rawOrderId);
+    if (orderId === null) return reply.code(400).send({ error: 'OrderIdMalformed' }); // fail-closed ①
 
     let amount: bigint;
     try {
@@ -359,7 +375,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const rawOrderId = params.orderId;
     if (typeof rawOrderId !== 'string' || rawOrderId.length === 0)
       return reply.code(400).send({ error: 'BadRequest' });
-    const orderId = canonicalizeOrderId(rawOrderId); // key on the same canonical identity /intent registered under
+    // key on the same canonical identity /intent registered under; a malformed id is a 400, never a 500 leak
+    const orderId = tryCanonicalizeOrderId(rawOrderId);
+    if (orderId === null) return reply.code(400).send({ error: 'OrderIdMalformed' });
     const rec = registry.getByOrderId(orderId);
     if (rec !== undefined) return reply.send({ orderId, status: toPublicStatus(rec.state) });
     // The registry is memory, and a restart erases it. The evidence log is not. A row exists only for an order
@@ -379,7 +397,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const rawOrderId = params.orderId;
     if (typeof rawOrderId !== 'string' || rawOrderId.length === 0)
       return reply.code(400).send({ error: 'BadRequest' });
-    const orderId = canonicalizeOrderId(rawOrderId);
+    const orderId = tryCanonicalizeOrderId(rawOrderId);
+    if (orderId === null) return reply.code(400).send({ error: 'OrderIdMalformed' });
     const rec = registry.getByOrderId(orderId);
     if (rec !== undefined)
       return reply.send({

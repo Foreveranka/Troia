@@ -8,6 +8,7 @@ import { verifyReport, decodeSignedPay, signatureValid, type ReconReport } from 
 // test keeps passing even after a testnet reset wipes the chain — exactly the `signed ≠ settled` guarantee.
 const REAL_TX_HASH = '5a3d60cc25fc82025560d1c13b74f63b619393e194ada43cc6b8317637d64f13';
 const OPERATOR = 'GDMAG4EMNWL6T4IJ6PXGBTBJEWAKFJ2YRKRFRIF7ZM7MG6YFZZU35E4S';
+const TROY_POOL = 'CCVNY6H67XQFOU64EU664HKUCO5M7ZJMJG2NIDSU6BQYRU23IJIATRKZ';
 
 const report = JSON.parse(
   readFileSync(new URL('./fixtures/recon-report.live.json', import.meta.url), 'utf8'),
@@ -15,11 +16,20 @@ const report = JSON.parse(
 
 describe('reconciler — verifies a REAL on-chain pay() offline (live testnet smoke)', () => {
   it('the whole report re-derives clean: 1 order, MATCHED, no failures', () => {
-    const r = verifyReport(report, OPERATOR);
+    const r = verifyReport(report, OPERATOR, TROY_POOL);
     expect(r.ok).toBe(true);
     expect(r.ordersVerified).toBe(1);
     expect(r.failures).toEqual([]);
     expect(r.summary).toEqual({ total: 1, matched: 1, mismatch: 0, unsettled: 0 });
+  });
+
+  it('the real payout settled through the CANONICAL TroyPool — the deployment record, not the report', () => {
+    // The one anchor a signature cannot supply: WHERE the money went. Pinned to the committed deployment record,
+    // so a pay() to any other contract could not have produced this report (see verify.spec's look-alike forgery).
+    const o = report.orders[0]!;
+    const decoded = decodeSignedPay(o.ledger_evidence.signed_xdr, report.network.passphrase);
+    expect(decoded.projection.contract_id).toBe(TROY_POOL);
+    expect(o.chain_evidence?.horizon_snapshot.contract_id).toBe(TROY_POOL);
   });
 
   it('the order is MATCHED with a valid operator signature and a chain-bound hash', () => {

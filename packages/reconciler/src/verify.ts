@@ -1,15 +1,17 @@
-// 3.4 offline verification core (docs/ARCHITECTURE §8). Inputs: the report object + the CANONICAL operator key
-// (supplied by the caller from the committed deployment record — NEVER read from the report). No network, no DB.
-// It does NOT trust the stored verdict/summary: it RECOMPUTES each order's ground truth from the embedded
-// evidence — re-deriving every signature against the CANONICAL operator — and asserts every stored field equals
-// the recomputation, then re-derives the summary. It also fails the report when its declared operator_public
-// does not equal the canonical one, so a self-signed forgery (attacker names + signs with its own key) cannot
-// pass. A single mismatch fails the whole report. The network block + positive-armed exit + canonical-operator
-// resolution live in bin/verify.mjs.
+// 3.4 offline verification core (docs/ARCHITECTURE §8). Inputs: the report object + TWO anchors supplied by the
+// caller from the committed deployment record and NEVER read from the report — the CANONICAL operator key (WHO
+// signed) and the CANONICAL TroyPool (WHERE the money went). No network, no DB. It does NOT trust the stored
+// verdict/summary: it RECOMPUTES each order's ground truth from the embedded evidence — re-deriving every
+// signature against the CANONICAL operator — and asserts every stored field equals the recomputation, then
+// re-derives the summary. It also fails the report when its declared operator_public does not equal the canonical
+// one, so a self-signed forgery (attacker names + signs with its own key) cannot pass. A single mismatch fails the
+// whole report. The network block + positive-armed exit + anchor resolution live in bin/verify.mjs.
 
+import { decodeSignedPay } from './decode.js';
+import { addressEqual } from './normalize.js';
 import { resolveGroundTruth } from './resolve-ground-truth.js';
 import { summarize } from './report.js';
-import type { FieldDiff, ReconReport } from './types.js';
+import type { FieldDiff, OrderReportEntry, ReconReport } from './types.js';
 
 export interface VerifyResult {
   readonly ok: boolean;
@@ -32,8 +34,50 @@ function diffEqual(a: readonly FieldDiff[], b: readonly FieldDiff[]): boolean {
   });
 }
 
+/**
+ * The SECOND anchor. A valid operator signature proves WHO signed, never WHERE the money went: an operator-signed
+ * `pay()` to a look-alike contract moves no USDC out of the canonical TroyPool, yet is entirely self-consistent —
+ * its chain snapshot can carry the same look-alike id, so decode ≡ snapshot holds and the whole cascade resolves
+ * MATCHED. `contract_id` is otherwise only ever compared BETWEEN two projections the report itself supplies, so
+ * nothing inside the report can catch this: the anchor has to come from outside, exactly like the operator key.
+ * Pin BOTH sides — the decoded XDR (the authentic witness) and the chain snapshot (the report's claim about the
+ * chain) — so neither a forged witness nor a forged observation can name a contract this deployment never used.
+ */
+function pinSettlementContract(
+  o: OrderReportEntry,
+  canonicalTroyPool: string,
+  passphrase: string,
+): readonly string[] {
+  const failures: string[] = [];
+
+  let signedContract: string;
+  try {
+    signedContract = decodeSignedPay(o.ledger_evidence.signed_xdr, passphrase).projection
+      .contract_id;
+  } catch {
+    return failures; // unreadable witness — already convicted EVIDENCE_TAMPERED; there is no contract to pin.
+  }
+  if (!addressEqual(signedContract, canonicalTroyPool)) {
+    failures.push(
+      `${o.order_id}: signed pay() invokes ${signedContract} != canonical TroyPool ${canonicalTroyPool}`,
+    );
+  }
+
+  const observed = o.chain_evidence?.horizon_snapshot.contract_id;
+  if (observed !== undefined && !addressEqual(observed, canonicalTroyPool)) {
+    failures.push(
+      `${o.order_id}: chain snapshot names ${observed} != canonical TroyPool ${canonicalTroyPool}`,
+    );
+  }
+  return failures;
+}
+
 /** Recompute every order from embedded evidence and assert it matches what the report claims. */
-export function verifyReport(report: ReconReport, canonicalOperatorPublic: string): VerifyResult {
+export function verifyReport(
+  report: ReconReport,
+  canonicalOperatorPublic: string,
+  canonicalTroyPool: string,
+): VerifyResult {
   const failures: string[] = [];
 
   if (report.version !== 1) failures.push(`unsupported report version: ${report.version}`);
@@ -60,6 +104,7 @@ export function verifyReport(report: ReconReport, canonicalOperatorPublic: strin
     if (gt.hash_consistent !== o.hash_consistent) failures.push(`${tag}: hash_consistent mismatch`);
     if (gt.chain_bound !== o.chain_bound) failures.push(`${tag}: chain_bound mismatch`);
     if (!diffEqual(gt.field_diff, o.field_diff)) failures.push(`${tag}: field_diff mismatch`);
+    failures.push(...pinSettlementContract(o, canonicalTroyPool, pass));
   }
 
   // Re-derive the summary from the (already-verified) statuses and compare to the stored one.

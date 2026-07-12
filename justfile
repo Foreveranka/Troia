@@ -206,10 +206,12 @@ demo:
     node --import ./packages/reconciler/bin/block-net.mjs ./packages/reconciler/bin/verify.mjs demo/recon-report.json
 
 # The committed acceptance corpus is signed by a throwaway, seed-derived operator (generate.ts
-# operatorKeypair('troia-demo-0001')), NOT the real deployment operator whose secret is never committed. The
-# offline verifier pins signatures to this operator for the corpus targets (`verify`, `verify-tampered`);
-# `verify-live` / `demo` keep the DEFAULT deployment-record operator.
+# operatorKeypair('troia-demo-0001')) and settles through a throwaway, seed-derived pool, NEITHER of which is the
+# real deployment's (whose operator secret is never committed). The offline verifier pins BOTH anchors to these for
+# the corpus targets (`verify`, `verify-tampered`); `verify-live` / `demo` keep the DEFAULT deployment-record ones.
+# Both are drift-tested against the seed derivation in test/verify.spec.ts.
 corpus_operator := "GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K"
+corpus_pool := "CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB"
 
 # Phase 3.4 — offline verification of the DEMO acceptance corpus. Network-blocked (block-net.mjs): proves the
 # reconciler re-derives every verdict AND that signatures verify against an EXTERNALLY-pinned operator (here the
@@ -218,15 +220,17 @@ corpus_operator := "GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K"
 # NOT prove on-chain landing (no Horizon call).
 verify:
     pnpm --filter @troia/reconciler build
-    TROIA_OPERATOR_PUBLIC={{corpus_operator}} node --import ./packages/reconciler/bin/block-net.mjs \
+    TROIA_OPERATOR_PUBLIC={{corpus_operator}} TROIA_TROY_POOL={{corpus_pool}} \
+         node --import ./packages/reconciler/bin/block-net.mjs \
          ./packages/reconciler/bin/verify.mjs \
          ./packages/reconciler/test/fixtures/recon-report.json
 
 # NETWORK-BLOCKED, exactly like `just verify` (block-net.mjs below) — this does NOT query Horizon/the chain.
 # "live" names the report's PROVENANCE: a REAL testnet pay() tx (docs/DEPLOYMENTS.md), not a live lookup. Pinned BY
-# DEFAULT to the canonical deployment operator (no override), and verifyReport FAILS the report if it names a
-# different key — so the canonical-operator signature is proven AUTOMATICALLY here. The ONE remaining manual check
-# is that the tx actually landed: open the tx_hash on the explorer (signed != settled). Reset-proof (no network).
+# DEFAULT to BOTH canonical deployment anchors (no override): verifyReport fails the report if it names a different
+# operator key, and fails any order whose pay() invokes a contract other than the canonical TroyPool — so "the
+# canonical operator signed it" AND "it settled through the canonical pool" are both proven AUTOMATICALLY here. The
+# ONE remaining manual check is that the tx actually landed: open the tx_hash on the explorer (signed != settled).
 verify-live:
     pnpm --filter @troia/reconciler build
     node --import ./packages/reconciler/bin/block-net.mjs \
@@ -238,4 +242,4 @@ verify-live:
 # The NEGATIVE half of the offline proof: a lie cannot pass.
 verify-tampered:
     pnpm --filter @troia/reconciler build
-    TROIA_OPERATOR_PUBLIC={{corpus_operator}} node scripts/tamper-check.mjs
+    TROIA_OPERATOR_PUBLIC={{corpus_operator}} TROIA_TROY_POOL={{corpus_pool}} node scripts/tamper-check.mjs

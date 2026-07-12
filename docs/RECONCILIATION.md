@@ -54,6 +54,16 @@ chain **(c)**. The report carries two top-level fields, read as **data**, never 
   Either way a forged report cannot name and self-sign with an attacker's key and pass. The signature is selected
   _by hint_; any hint-matching signature that verifies over `tx.hash()` passes (this is the multisig seam for later).
 
+The operator key answers **who signed** — never **where the money went**, and the report cannot answer that about
+itself. `contract_id` appears twice inside a report (in the signed XDR and in the snapshot) and the cascade only
+ever compares those two to _each other_, so an operator-signed `pay()` to a look-alike contract — one the operator
+deployed, holding no pool funds — is perfectly self-consistent and re-derives to `MATCHED` while the canonical
+TroyPool never moves a stroop. So the verifier takes a **second anchor from outside the report**, resolved by the
+same rule as the first (`TROIA_TROY_POOL`, else the committed deployment record's `troyPool`): every order's
+`pay()` must invoke the canonical TroyPool, checked on **both** sides — the decoded XDR _and_ the chain snapshot.
+Anything else fails the report. Signature ∧ contract: authorship _and_ destination, both pinned to a record the
+report cannot touch.
+
 `applied_rate` is carried in the snapshot but **excluded** from the diff — the accounting ledger is its audit
 source, not the reconciler.
 
@@ -116,12 +126,15 @@ just verify
 ```
 
 This builds `@troia/reconciler`, then runs the verifier under an in-process network block. The demo corpus is
-signed by a throwaway seed-derived operator (the real operator secret is never committed), so the verifier is
-pinned to that corpus operator via `TROIA_OPERATOR_PUBLIC` — an external, committed constant, never the report's
-own field. `just verify-live` instead defaults to the canonical deployment operator.
+signed by a throwaway seed-derived operator and settles through a throwaway seed-derived pool (the real operator
+secret is never committed), so the verifier is pinned to that corpus pair via `TROIA_OPERATOR_PUBLIC` and
+`TROIA_TROY_POOL` — external, committed constants, never the report's own fields. `just verify-live` instead
+defaults to **both** canonical deployment anchors, so it proves the real payout was signed by the canonical
+operator _and_ settled through the canonical TroyPool, with no override to get wrong.
 
 ```
 TROIA_OPERATOR_PUBLIC=GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K \
+TROIA_TROY_POOL=CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB \
 node --import ./packages/reconciler/bin/block-net.mjs \
      ./packages/reconciler/bin/verify.mjs \
      ./packages/reconciler/test/fixtures/recon-report.json

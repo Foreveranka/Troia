@@ -24,11 +24,13 @@ const honestPath =
   process.argv[2] ?? join(repoRoot, 'packages/reconciler/test/fixtures/recon-report.json');
 
 // The committed acceptance corpus is signed by a throwaway, seed-derived operator (generate.ts
-// operatorKeypair('troia-demo-0001')), NOT the real deployment operator whose secret is never committed. Pin the
-// verifier to that corpus operator so re-derivation reaches the tampered order's VERDICT (a canonical-operator
-// mismatch would short-circuit first). This is a committed, non-report constant — never sourced from the report
-// itself. An explicit TROIA_OPERATOR_PUBLIC (e.g. set by `just verify-tampered`) wins for standalone runs.
+// operatorKeypair('troia-demo-0001')) and settles through a throwaway, seed-derived pool — NEITHER is the real
+// deployment's (whose operator secret is never committed). Pin the verifier to BOTH corpus anchors so re-derivation
+// reaches the tampered order's VERDICT (a canonical-anchor mismatch would convict the report first, on the wrong
+// count). These are committed, non-report constants — never sourced from the report itself. Explicit
+// TROIA_OPERATOR_PUBLIC / TROIA_TROY_POOL (e.g. set by `just verify-tampered`) win for standalone runs.
 const CORPUS_OPERATOR = 'GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K';
+const CORPUS_POOL = 'CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB';
 
 function die(reason) {
   console.error(`tamper-check FAILED: ${reason}`);
@@ -63,6 +65,7 @@ try {
     env: {
       ...process.env,
       TROIA_OPERATOR_PUBLIC: process.env.TROIA_OPERATOR_PUBLIC ?? CORPUS_OPERATOR,
+      TROIA_TROY_POOL: process.env.TROIA_TROY_POOL ?? CORPUS_POOL,
     },
   });
 } catch (e) {

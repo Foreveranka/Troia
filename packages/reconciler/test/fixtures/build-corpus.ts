@@ -57,6 +57,12 @@ export function acceptanceNetwork(): ReportNetwork {
   };
 }
 
+/** The corpus's throwaway TroyPool — the settlement anchor `just verify` pins to, exactly as it pins the
+ *  throwaway operator. Seed-derived, so the hardcoded copies (justfile, ci.yml, tamper-check) can be drift-tested. */
+export function acceptanceTroyPool(): string {
+  return CONTRACT;
+}
+
 export function buildAcceptanceReport(): ReconReport {
   const inputs: OrderInput[] = [
     order('ord-001', 100, 10_000_000n),

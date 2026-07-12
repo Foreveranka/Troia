@@ -1,10 +1,18 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { acceptanceNetwork, buildAcceptanceReport } from './fixtures/build-corpus.js';
-import { verifyReport, type ReconReport } from '../src/index.js';
+import { Networks, StrKey } from '@stellar/stellar-base';
+import {
+  acceptanceNetwork,
+  acceptanceTroyPool,
+  buildAcceptanceReport,
+} from './fixtures/build-corpus.js';
+import { buildSignedPay, bytes32 } from './fixtures/generate.js';
+import { buildReconReport } from '../src/report.js';
+import { decodeSignedPay, verifyReport, type ReconReport } from '../src/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, '..');
@@ -15,26 +23,33 @@ const reportPath = join(here, 'fixtures', 'recon-report.json');
 const tamperedPath = join(here, 'fixtures', 'recon-report.tampered.json');
 const livePath = join(here, 'fixtures', 'recon-report.live.json');
 
-// The committed acceptance corpus is signed by a throwaway seed-derived operator, so the offline runner must be
-// pinned to THAT operator (never the report's own field). Real reviewer-facing reports pin to the canonical
-// deployment operator (read here straight from the committed record).
+// The committed acceptance corpus is signed by a throwaway seed-derived operator and settles through a throwaway
+// seed-derived pool, so the offline runner must be pinned to THOSE (never the report's own fields). Real
+// reviewer-facing reports pin to the canonical deployment anchors (read here straight from the committed record).
 const corpusOperator = acceptanceNetwork().operator_public;
-const canonicalOperator = (
-  JSON.parse(readFileSync(join(repoRoot, 'deployment.testnet.json'), 'utf8')) as {
-    operatorPublic: string;
-  }
-).operatorPublic;
+const corpusPool = acceptanceTroyPool();
+const deployment = JSON.parse(readFileSync(join(repoRoot, 'deployment.testnet.json'), 'utf8')) as {
+  operatorPublic: string;
+  troyPool: string;
+};
+const canonicalOperator = deployment.operatorPublic;
+const canonicalPool = deployment.troyPool;
 
 interface RunOut {
   code: number;
   out: string;
   err: string;
 }
-function runVerify(path: string): RunOut {
+function runVerify(path: string, overrides: Record<string, string> = {}): RunOut {
   try {
     const out = execFileSync('node', ['--import', blockNet, runner, path], {
       encoding: 'utf8',
-      env: { ...process.env, TROIA_OPERATOR_PUBLIC: corpusOperator },
+      env: {
+        ...process.env,
+        TROIA_OPERATOR_PUBLIC: corpusOperator,
+        TROIA_TROY_POOL: corpusPool,
+        ...overrides,
+      },
     });
     return { code: 0, out, err: '' };
   } catch (e) {
@@ -90,7 +105,7 @@ describe('just verify — offline armed acceptance (3.4)', () => {
     // a report that names, and is signed by, a non-canonical key. Under the OLD self-referential verify this
     // passed (that IS the 999,999-USDC self-signed-payout forge). Pinned to canonical, it must fail on BOTH the
     // operator mismatch AND every signature re-deriving to EVIDENCE_TAMPERED.
-    const r = verifyReport(buildAcceptanceReport(), canonicalOperator);
+    const r = verifyReport(buildAcceptanceReport(), canonicalOperator, canonicalPool);
     expect(r.ok).toBe(false);
     expect(
       r.failures.some((f) => f.includes('operator_public') && f.includes('!= canonical')),
@@ -100,14 +115,15 @@ describe('just verify — offline armed acceptance (3.4)', () => {
 
   it('accepts a genuine report whose operator IS the canonical one (no over-rejection)', () => {
     const live = JSON.parse(readFileSync(livePath, 'utf8')) as ReconReport;
-    const r = verifyReport(live, canonicalOperator);
+    const r = verifyReport(live, canonicalOperator, canonicalPool);
     expect(r.ok).toBe(true);
     expect(r.failures).toEqual([]);
   });
 
-  it('the bin fails closed (exit 2) when the canonical operator cannot be resolved — never falls back to the report', () => {
+  it('the bin fails closed (exit 2) when an anchor cannot be resolved — never falls back to the report', () => {
     const env = { ...process.env };
     delete env.TROIA_OPERATOR_PUBLIC;
+    delete env.TROIA_TROY_POOL;
     env.TROIA_DEPLOYMENT_PATH = join(here, 'fixtures', '__no_such_deployment__.json');
     let code = 0;
     let out = '';
@@ -122,10 +138,82 @@ describe('just verify — offline armed acceptance (3.4)', () => {
     if (out.length > 0) expect(JSON.parse(out).ok).not.toBe(true);
   });
 
-  it('the corpus operator hardcoded in justfile / ci.yml / tamper-check.mjs matches the seed derivation', () => {
-    // Those three files hardcode this value (they cannot import the TS fixture). corpusOperator is DERIVED from
-    // generate.ts operatorKeypair('troia-demo-0001'); pinning it here means a drifted hardcoded copy is caught,
-    // not silently mis-pinned.
+  it('the bin fails closed (exit 2) on a malformed TroyPool anchor — a G-key is not a settlement contract', () => {
+    const { code } = runVerify(reportPath, { TROIA_TROY_POOL: corpusOperator });
+    expect(code).toBe(2);
+  });
+
+  it('the corpus anchors hardcoded in justfile / ci.yml / tamper-check.mjs match the seed derivation', () => {
+    // Those three files hardcode these values (they cannot import the TS fixture). Both are DERIVED here from the
+    // 'troia-demo-0001' seed, so a drifted hardcoded copy is caught rather than silently mis-pinning the verifier.
     expect(corpusOperator).toBe('GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K');
+    expect(corpusPool).toBe('CBE4G2FHXZGGEYNUTBAICHPKMMVGJBF4757GY5IRBLMRP3O42CLCYPHB');
+  });
+});
+
+// The dishonest-operator attack the operator pin alone does NOT stop. Every signature is genuine, every hash is
+// self-consistent, the chain snapshot agrees with the signed XDR — and not one stroop left the canonical TroyPool,
+// because the pay() went to a contract the operator deployed itself. The report is internally flawless: it says
+// MATCHED, and re-deriving it from the embedded evidence AGREES. Only an anchor from outside the report can see it.
+describe('verifyReport — the settlement contract is pinned, not merely self-consistent', () => {
+  const LOOKALIKE = StrKey.encodeContract(createHash('sha256').update('lookalike-pool').digest());
+
+  /** One order, fully coherent, settled through `pool`. With pool = LOOKALIKE this is the forgery. */
+  function reportSettledThrough(pool: string): ReconReport {
+    const merchant = 'GA6C2W6OPOJJYIRCG3QSMTD7MZVBTVQM6QATLOPVGXI2AIUGXCSNE52K';
+    const memo = bytes32('lookalike|memo');
+    const built = buildSignedPay({
+      seed: 'troia-demo-0001', // the CORPUS operator — a real, valid, canonical-for-this-corpus signature
+      troyPoolContractId: pool,
+      txId32: bytes32('lookalike|txid'),
+      amountStroops: 999_999_0000000n,
+      appliedRate: 411_075_000n,
+      merchant,
+      memo32: memo,
+      seq: '200',
+      passphrase: Networks.TESTNET,
+    });
+    const dec = decodeSignedPay(built.signed_xdr, Networks.TESTNET);
+    return buildReconReport('lookalike', acceptanceNetwork(), [
+      {
+        business_intent: {
+          order_id: 'ord-forged',
+          destination: merchant,
+          amount_stroops: '9999990000000',
+          memo_hex: memo.toString('hex'),
+        },
+        ledger_evidence: { signed_xdr: built.signed_xdr, hash: built.hash },
+        chain_evidence: {
+          tx_hash: built.hash,
+          fetched_at_ledger: 2_000_200,
+          horizon_snapshot: dec.projection, // the snapshot AGREES with the XDR — both name the look-alike
+        },
+      },
+    ]);
+  }
+
+  it('the forgery is internally perfect: it re-derives to MATCHED, so nothing inside the report can catch it', () => {
+    const forged = reportSettledThrough(LOOKALIKE);
+    expect(forged.orders[0]?.verdict).toBe('MATCHED');
+    expect(forged.orders[0]?.signature_valid).toBe(true);
+    expect(forged.orders[0]?.chain_bound).toBe(true);
+    expect(forged.summary).toEqual({ total: 1, matched: 1, mismatch: 0, unsettled: 0 });
+  });
+
+  it('pinned to the real pool, it FAILS — the payout never touched the canonical TroyPool', () => {
+    const r = verifyReport(reportSettledThrough(LOOKALIKE), corpusOperator, corpusPool);
+    expect(r.ok).toBe(false);
+    expect(
+      r.failures.some((f) => f.includes('signed pay() invokes') && f.includes(LOOKALIKE)),
+    ).toBe(true);
+    expect(
+      r.failures.some((f) => f.includes('chain snapshot names') && f.includes(LOOKALIKE)),
+    ).toBe(true);
+  });
+
+  it('the SAME order through the canonical pool verifies clean — the pin rejects the forgery, not the shape', () => {
+    const r = verifyReport(reportSettledThrough(corpusPool), corpusOperator, corpusPool);
+    expect(r.ok).toBe(true);
+    expect(r.failures).toEqual([]);
   });
 });

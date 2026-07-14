@@ -159,7 +159,7 @@ the CLI (a second `pay()` with the same `tx_id` reverts `AlreadyProcessed`), the
 node scripts/probe-revert.mjs <txHashOfTheRevertedInvocation>
 ```
 
-Expect `readContractErrorCode -> 1 (AlreadyProcessed)`. If it prints `null` while the tx is `FAILED` with
+Expect it to print `readContractErrorCode  1 (AlreadyProcessed)`. If it prints `null` while the tx is `FAILED` with
 diagnostics, the code sits on a different contractId (SAC vs TroyPool) or nested in the soroban meta — investigate
 `collectDiagnosticEvents`. **Either way the money path is safe**: a `null` re-drives, and the on-chain
 `Processed(tx_id)` guard is the real double-pay shield.

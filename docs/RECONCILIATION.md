@@ -48,7 +48,8 @@ chain **(c)**. The report carries two top-level fields, read as **data**, never 
 - `network.passphrase` — needed to recompute the real Stellar transaction hash.
 - `network.operator_public` — the signer key the report names, **read as data and NOT trusted**: the verifier
   re-derives every signature against an operator key supplied from OUTSIDE the report (the runner's
-  `TROIA_OPERATOR_PUBLIC`, else the committed deployment record — [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) and fails the
+  `TROIA_OPERATOR_PUBLIC`, else `deployment.testnet.json` — the committed record the verifier actually reads; the
+  same identities are published for humans in [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) and fails the
   report if its named key differs. `just verify-live` runs with the canonical deployment operator; the demo corpus
   (`just verify`) is pinned to a throwaway seed-derived signer, since the real operator secret is never committed.
   Either way a forged report cannot name and self-sign with an attacker's key and pass. The signature is selected
@@ -59,7 +60,7 @@ itself. `contract_id` appears twice inside a report (in the signed XDR and in th
 ever compares those two to _each other_, so an operator-signed `pay()` to a look-alike contract — one the operator
 deployed, holding no pool funds — is perfectly self-consistent and re-derives to `MATCHED` while the canonical
 TroyPool never moves a stroop. So the verifier takes a **second anchor from outside the report**, resolved by the
-same rule as the first (`TROIA_TROY_POOL`, else the committed deployment record's `troyPool`): every order's
+same rule as the first (`TROIA_TROY_POOL`, else `deployment.testnet.json`'s `troyPool`): every order's
 `pay()` must invoke the canonical TroyPool, checked on **both** sides — the decoded XDR _and_ the chain snapshot.
 Anything else fails the report. Signature ∧ contract: authorship _and_ destination, both pinned to a record the
 report cannot touch.
@@ -75,7 +76,9 @@ source, not the reconciler.
 the witness authentic?) is split from divergence detection (did a _different_ tx settle?), so every verdict
 stays reachable and `CORRUPT_LOCAL` can only be reached _after_ the signature is proven valid.
 
-Let `S` = pinned-operator signature verifies over `tx.hash()`; `HB` = recomputed hash == recorded hash;
+Let `S` = the transaction's source **is** the pinned operator **and** its signature verifies over `tx.hash()` — a
+transaction the operator merely co-signed, sourced from another account, does not satisfy `S`; `HB` = recomputed
+hash == recorded hash;
 `BC` = recorded hash == chain `tx_hash` (bitwise); `DC` = decoded call == chain snapshot (semantic);
 `IC` = local intent == chain snapshot (semantic).
 
@@ -162,9 +165,11 @@ was never reached, computed purely from the embedded data.
 
 ### The verifier does not trust the stored verdicts
 
-`verifyReport` ignores the report's own `verdict` / `summary` fields and **recomputes** each from the embedded
-evidence, then asserts the stored values equal the recomputation. A single mismatch fails the whole report. To
-see the failure mode:
+`verifyReport` ignores the report's own `verdict` / `status` fields and **recomputes** each from the embedded
+evidence, then asserts the stored values equal the recomputation. The `summary` is then re-derived from those
+per-order statuses — which is sound precisely because each one was already proven equal to its recomputation a
+step earlier, so a forged status cannot survive to be counted. A single mismatch fails the whole report. To see
+the failure mode:
 
 ```bash
 just verify-tampered
@@ -223,12 +228,13 @@ Everything above is the **artifact** a reviewer verifies offline, after the fact
 reconciles **continuously, against the live chain**, and does not trust anything it announced: a payout tail that
 calls any outflow whose hash is missing from the durable write-ahead journal a `ROGUE PAYOUT`, and a live
 reconciler that finds each order's settlement through the contract-indexed `tx_id` (not the hash we recorded) and
-gates `Reconciled` on four checks, the last of which is §3's exact `resolveGroundTruth` cascade. Full mechanics
+gates `Reconciled` on five checks, the last of which is §3's exact `resolveGroundTruth` cascade. Full mechanics
 are in ARCHITECTURE §8a.
 
 Both loops have run against the live chain. On `2026-07-10` the audit reconciled a real payout (order
 `ST-7SRI0YDF`, 80 USDC, tx `d47f7fb9…`) by finding it under `tx_id = f11336a3e231fde6…` — the value
-`deriveIds('ST-7SRI0YDF')` computes independently — with no false theft accusation, including after a restart
+`deriveIds(order_id, destination, amount)` computes independently, binding the identifier to all three, which is
+what makes the lookup independent of our records — with no false theft accusation, including after a restart
 that erased the in-memory order registry. Details and what the run did **not** prove are in
 [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 
@@ -247,7 +253,9 @@ that erased the in-memory order registry. Details and what the run did **not** p
   landed on testnet** (tx `5a3d60cc…`, `TroyPool` `CCVNY6H…`), captured verbatim as
   `recon-report.live.json` and re-verified reset-proof with `just verify-live` — same model, real chain evidence.
 
-**Bottom line for a reviewer:** clone the repo, run `just verify`, watch it pass on the honest demo corpus and fail
-on the tampered one — proving the reconciler logic offline, in seconds. Then run `just verify-live`: it re-derives a
-REAL payout pinned to our canonical operator (the committed deployment record), leaving one check the offline run
-cannot do for you — open that `tx_hash` on the explorer to confirm it landed (`signed ≠ settled`).
+**Bottom line for a reviewer:** clone the repo and run `just verify` — it passes on the honest demo corpus. Then run
+`just verify-tampered`, which forges that same report in a temp file and proves the verifier **rejects** it (the
+inner verifier exits `1`; the check itself exits `0` because catching the forgery is the pass condition — §5).
+Together they prove the reconciler logic offline, in seconds. Then run `just verify-live`: it re-derives a REAL
+payout pinned to our canonical operator (from the committed `deployment.testnet.json`), leaving one check the
+offline run cannot do for you — open that `tx_hash` on the explorer to confirm it landed (`signed ≠ settled`).

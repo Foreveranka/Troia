@@ -4,7 +4,7 @@
 > A Turkish user pays TRY with a Troy card; the operator settles the merchant in USDC from a
 > pre-funded Stellar pool. The spread is revenue. Positioning: _"a settlement layer that makes every
 > lira accountable hash-by-hash — it never silently loses money; the one irreversible loss bucket
-> (`LOSS_REVIEW`) is surfaced, never hidden."_ Honest proof boundary: **`signed ≠ settled`**.
+> (`LossReview`) is surfaced, never hidden."_ Honest proof boundary: **`signed ≠ settled`**.
 
 This is the ADR-backed contract the code must satisfy. Everything network-specific is
 injected via `NetworkConfig`; a literal `if (network === 'testnet')` anywhere in business logic is a bug.
@@ -58,12 +58,14 @@ a "sent USDC but did not secure TRY" gap.
 If the USDC leg fails after the charge, the completed sale is **voided the same day** (`iyzico.cancel`), returning
 the customer's TRY — a reversible unwind, not a permanent loss.
 
-**Residual risk is not zero — it is confined to one narrow window**: USDC was sent, and the void that would
-unwind the reversible charge itself repeatedly fails (its retry budget is exhausted). That order lands in
-`LossReview` — surfaced, never a silent park (`GET /status` answers `review`). A charge whose USDC fate is
-genuinely _unknown_ does not land here; it stays and re-polls forever rather than being routed to a manual sink
-(§3's "unknown never advances" rule). On testnet no real value is at stake; the path exists to demonstrate
-maturity. When a loss occurs it is **ours**, never the customer's. **`LossReview` is not itself durable** — it is
+**Residual risk is not zero — two windows reach the manual sink**, and both refuse to guess. (1) The USDC leg
+failed and the same-day void that would unwind the completed sale itself fails repeatedly (`reversalNotDone`,
+budget spent): the charge stands with nothing delivered, so a human must return it. (2) A `pay()` landed and
+_reverted_ for a cause the chain will not name — paused, unreadable, unknown — and the bounded fresh-seq
+re-drives are spent (`revertIndeterminate`, budget spent): the USDC fate is genuinely unknown, so the order is
+parked **without** an automatic refund, because refunding a possibly-settled order is the worse error. Both land
+in `LossReview`, and both surface (`GET /status` answers `review`). On testnet no real value is at stake; the
+path exists to demonstrate maturity. When a loss occurs it is **ours**, never the customer's. **`LossReview` is not itself durable** — it is
 recorded in the in-memory store alongside the `OrderRow`s, so a crash while an order sits in review loses the
 record (see KNOWN_ISSUES.md).
 
@@ -88,8 +90,8 @@ UsdcReverted`) resolve the irreversible leg.
 
 The reducer is pure and total: `transition(state, event) → {status:'transition', next, effects} | {status:'ignored'}
 | {status:'rejected', reason}` — it never throws. Only table-listed transitions yield `transition`; a duplicate
-event on an absolute terminal / manual sink yields `ignored` (at-least-once redelivery); an undefined pair yields
-`rejected`.
+event on an absolute terminal / manual sink — or a non-reconciler event on `UsdcConfirmed` — yields `ignored`
+(at-least-once redelivery); every other undefined pair yields `rejected`.
 
 Load-bearing rules (each is a test):
 
@@ -100,26 +102,30 @@ Load-bearing rules (each is a test):
 - **Write-ahead:** the in-flight state (`UsdcSubmitted`) is persisted **before** the side-effecting `submitPay`.
   So a state can mean "the side effect definitely has not started yet" → safe to proceed. `submitPay` fires from
   two edges — the happy path (`SolvencyReserved`+`chargeOk`) and the reallocated-seq retry
-  (`UsdcReverted`+`revertOther`) — both always preceded by `persistInFlight` in the same effect list.
+  (`UsdcReverted`+`revertIndeterminate`) — both always preceded by `persistInFlight` in the same effect list.
 - **Unknown never advances toward an irreversible action:** solvency, charge, and reversal are all 3-valued
   (OK/FAIL/Unknown). An `Unknown` result stays and re-polls (`rePollObserveOnly`, the only effect it may emit);
   it never triggers `pay()`, a charge, or a cancel. A two-valued gate before the irreversible USDC leg is a P0.
-- **Deadness is hash-first, not wall-clock:** a tx is dead (safe to reallocate) only if **(1)** none of the
-  order's evidence hashes is SUCCESS, **and (2)** `observed last ledger closeTime > tx.maxTime`, **and**
+- **Deadness is hash-first, not wall-clock:** a tx is dead (safe to reallocate) only if **(1)** the in-flight
+  tx's own hash does not look up as SUCCESS, **and (2)** `observed last ledger closeTime > tx.maxTime`, **and**
   `network-read account seq < S` (seq still unburned). `Date.now()` is forbidden. A burned seq means a tx
-  landed (CONFIRMED or REVERTED) → not dead, no same-seq replay.
+  landed (CONFIRMED or REVERTED) → not dead, no same-seq replay; that branch is also what fail-closes an
+  aged-out success the hash lookup can no longer see.
 - **`UsdcDead` vs `UsdcReverted` — inverse seq behaviour:** DEAD = tx never entered, seq free → same-seq
   replacement valid (`submitReplacementSameSeq`). REVERTED = tx entered + reverted, seq burned → same-seq replay
   loops on `txBAD_SEQ` → forbidden; classify the cause (`revertAlreadyProcessed → UsdcConfirmed`;
-  `revertBalanceGuard → void the sale`; `revertOther → reallocate a NEW seq`). Reconciled is reachable ONLY via
-  `UsdcConfirmed`.
+  `revertBalanceGuard → void the sale`; `revertIndeterminate → reallocate a NEW seq` — the bounded retry counter
+  keeps the legacy name `maxRevertOtherRetries`). Reconciled is reachable ONLY via `UsdcConfirmed`.
 - **Recovery never blind-resubmits** — the poll worker's restart pass re-reads evidence and observes the chain
   before deciding anything (read-then-decide, never a blind write); only the charge→submit crash seam (charge
   done, `pay()` never sent, seq still active) uses `recoverResubmit` for a money-safe same-seq submission. It
   never re-runs a side-effect that may already have started.
 - **USDC failure unwinds reversibly:** when retries are exhausted (`UsdcDead`) or USDC did not move
-  (`revertBalanceGuard`), the completed sale is voided (`fireCancel` → `ChargeReversing`); only a void that
-  cannot complete lands in `LossReview`.
+  (`revertBalanceGuard`), the completed sale is voided (`fireCancel` → `ChargeReversing`). Two edges reach
+  `LossReview`: a void that cannot complete (`reversalNotDone`, budget spent), and a landed-and-reverted `pay()`
+  whose cause stays indeterminate (`revertIndeterminate`, budget spent) — the latter is parked with **no** refund
+  precisely because the USDC fate is unknown. A third quarantine (a burned-but-unproven seq) records a loss flag
+  without a state change, so it does not surface as `review` — see KNOWN_ISSUES §3.
 
 ---
 
@@ -180,8 +186,18 @@ keys its allocation on the order id). A golden-vector fixture
 
 `getAccount(pool).sequence` is really `getAccount(operator).sequence`. In PoC, `require_auth` identity =
 tx source = fee account = a single `operator`. The operator's single sequence space is the serialization
-bottleneck → the **head-of-line** rule (one in-flight payout at a time). Phase-2 seam: channel accounts
+bottleneck → the **head-of-line** rule (one in-flight payout at a time), enforced by Stellar's strict sequence
+ordering — not by a lock here (the backend's mutex is per-order). Phase-2 seam: channel accounts
 (operator auth stays fixed; source/fee/seq move to a channel pool; `SequenceAllocator` interface unchanged).
+
+**Late allocation, and why its crash window is not a gap.** The sequence is handed out on `chargeOk`, not at
+`/intent` — so an abandoned checkout consumes none and the operator account stays gap-free. A crash between the
+charge and the submit is **money-safe** (the `Processed(tx_id)` guard and the single-use sequence each cap
+delivery at one per order) and **self-heals** for a completed charge: recovery re-retrieves the sale, `chargeOk`
+fires again, and the idempotent `allocate()` returns the same sequence. The only residual — a sequence stranded
+in `ACTIVE` with no order to claim it — is not reachable here, because the same crash that would strand it also
+wipes the in-memory sequence store, and the allocator re-bootstraps from the live on-chain sequence on restart. A
+durable sequence store would close it for good, by reconciling from `activeSeqFor(orderId)` during recovery.
 
 **Payment rail is locked:** USDC payment is a `TroyPool.pay()` Soroban invocation, NOT a classic payment.
 `memo` is a `pay()` argument (`BytesN<32>`), not a tx memo field.
@@ -210,9 +226,9 @@ has actually paid us the held TRY** (we have no fiat to buy USDC with until then
 **Status (PoC).** The automatic TRY-driven rebalance loop is **built and running**. A background settlement
 worker (`settleTick`, on its own `SETTLEMENT_TICK_MS` interval, default 5s) runs alongside the poll worker: each
 tick **arms** every money-good order that has a durable evidence row (`UsdcConfirmed`/`Reconciled`) — with one
-named exception: the `revertAlreadyProcessed → UsdcConfirmed` path deliberately writes no evidence row (§4's
-two-shields rationale), so that order is never armed or refilled by this loop (KNOWN_ISSUES §4) — and, after the
-settlement valör, refills the
+named exception: the `revertAlreadyProcessed → UsdcConfirmed` path deliberately writes no evidence row, because a
+reverted transaction's hash must never become a witness (§3), so that order is never armed or refilled by this
+loop — and, after the settlement valör, refills the
 pool from _exactly that order's_ collected TRY — converted to USDC at the live oracle rate — by minting real
 issuer-signed USDC into the pool (a `SimulatedRebalance` wrapping `createSacMintClient`, the SAC-admin mint: the
 programmatic form of `just bootstrap`'s mint step); `store.creditPool` then lifts the `/intent` solvency gate. The
@@ -231,11 +247,14 @@ an on/off-ramp provider owns the _execution_ (the real fiat↔USDC conversion �
 seam). On testnet the execution is a self-issued SAC mint; on mainnet the **same seam** becomes a real CEX buy +
 withdrawal driven by the agent — the backend and the money-first core do not change.
 
-**Still Phase-2:** only the real inventory-acquiring CEX buy that _economically_ acquires the USDC (invariant ③b;
-testnet mints self-issued USDC without limit) remains deferred. The cross-restart durability this paragraph once
-deferred is **built** (§7b): the settlement work-list is now the durable evidence log rather than an in-memory
-registry, and `ledger.hasRef(ref)` makes the top-up mint idempotent across a restart — a re-armed order cannot
-mint twice.
+**Still Phase-2:** (a) the real inventory-acquiring CEX buy that _economically_ acquires the USDC (invariant ③b;
+testnet mints self-issued USDC without limit), and (b) **cross-restart mint idempotency**. The settlement
+work-list is now the durable evidence log rather than an in-memory registry (§7b), and `ledger.hasRef(ref)` — a
+durable set rebuilt from the journal at boot — stops a re-armed order from minting twice **once its top-up has
+been booked**. The mint runs before that booking, so a crash between the mint landing and `ledger.recordTopUp`
+leaves it landed-and-unbooked, and the re-armed order mints again; `SimulatedRebalance`'s dedup cache is
+in-memory and does not survive the restart. Money-safe on testnet (self-issued USDC; the drift is positive and
+alarms), a mainnet blocker — see KNOWN_ISSUES §2.
 
 ---
 
@@ -273,6 +292,12 @@ The success shape and the closed terminal-decline `errorCode` set are calibrated
 timeout / bank-errored / merchant-config — deliberately stay `Unknown` so a possibly-captured charge is never
 wrongly failed-clean.
 
+**Webhook authenticity has a stated limit.** `X-IYZ-SIGNATURE-V3` is an HMAC over a **concatenation of parsed
+fields** (the account secret key is both the HMAC key and the leading field) — **not** a hash of the raw body. A
+valid signature therefore proves that iyzico sent _those fields_; it authenticates nothing else in the payload, and
+it never proves the payment outcome. That is why the webhook is only a wake-up: the backend re-retrieves the sale
+server-side and classifies **that** result, never the webhook's own `status` field (invariant ⑥).
+
 ---
 
 ## 7. Package layout
@@ -298,7 +323,7 @@ troia/
     ├── psp/                    # PaymentProvider (iyzico direct-sale: sandbox → prod)
     ├── stellar-client/         # SDK wrapper: TroyPool.pay() build/submit + poll, SAC mint (rebalance), snapshot loader, Signer boundary
     ├── reconciler/             # keyless three-artifact reconciler + offline `just verify`
-    ├── backend/                # the heart: state machine driver, HTTP, webhook, solvency, poll-worker, TRY-driven rebalance worker (settlement/: settleAndRebalance, pending store, policy, creditPool)
+    ├── backend/                # the heart: state machine driver, HTTP, webhook, solvency, poll-worker, TRY-driven rebalance worker (settlement/: settleAndRebalance, pending store, rebalance policy, drift/outflow/reconcile workers; store/: creditPool)
     ├── composition/            # Phase-4.5 root: real adapters + PSP-inclusive quote → ServerDeps; `just serve`
     └── integration/            # cross-package composition smoke tests
 
@@ -387,7 +412,8 @@ tolerantly because it is written at-least-once by design and dedupes on `(orderI
 memo, applied rate, price, spread, fee), so a settlement interrupted by a crash is still armed after restart.
 Without this the payout stayed unbooked forever and the drift alarm below could never clear. Because a re-armed
 order would otherwise mint a second top-up, `ledger.hasRef(ref)` gates the mint — refs derive from the order, not
-from a counter, so replay is a no-op.
+from a counter, so replaying a **booked** top-up is a no-op. The gate only closes when the booking lands, and the
+mint runs first: the window between the two is still open (KNOWN_ISSUES §2).
 
 **Outflow booking + drift.** `recordSettlement` credits `USDC_POOL` when the payout is armed, before it is marked
 pending, so the books never trail the chain. The pool's opening balance is booked once as **genesis** (valued at
@@ -538,7 +564,9 @@ rather than matched against the message text; a cursor resumes **strictly after*
 
 Three separate keypairs even on testnet (no collapse): **admin** (`TROIA_ADMIN_SECRET`), **operator**
 (`TROIA_OPERATOR_SECRET`), **issuer** (`TROIA_ISSUER_SECRET`, USDC SAC mint). Plus iyzico
-(`IYZICO_API_KEY`/`IYZICO_SECRET_KEY`) and webhook (`WEBHOOK_SIGNING_SECRET`).
+(`IYZICO_API_KEY`/`IYZICO_SECRET_KEY`) and webhook (`WEBHOOK_SIGNING_SECRET`). The server itself reads only the
+operator and issuer secrets; **no runtime code reads `TROIA_ADMIN_SECRET`** — it exists for `just bootstrap` and
+CLI-driven admin ops (pause / upgrade / set-operator) through the `stellar` keystore.
 
 - `NetworkConfig` = non-secret, injected: RPC url, passphrase, `TroyPool` C-address, USDC SAC id, public
   G-addresses. Secrets = env only, git-ignored, `.env.example` placeholders in repo.
@@ -565,9 +593,10 @@ The ADRs are summarized inline below (they are not split into separate `docs/adr
 5. Solvency = backend AND contract.
 6. Memo fail-closed invariant (`PayoutIntent`, flat `BuildError`, deterministic order).
 7. USDC = 7 decimals on Stellar.
-8. Extension = adapter-per-gateway + manual fallback; holds no keys.
+8. Extension = adapter-per-gateway, fail-closed (shows nothing unless every check passes); holds no keys.
 9. Every dependency behind an interface → mainnet = config swap + 3 provider impls + time-budget re-validation +
-   closing the `KNOWN_ISSUES.md` `[mainnet-blocker]` gaps (chiefly a durable order store). Not turnkey.
+   closing the `KNOWN_ISSUES.md` `[mainnet-blocker]` gaps (a durable order store, a write-ahead journal on the
+   refill mint, a latch on the escalate path). Not turnkey.
 10. Testnet positioning; mainnet = separate regulated phase (MASAK, post-code).
 11. Payment rail = `TroyPool.pay()` Soroban invocation; `memo` is an argument, not a tx memo.
 12. Identity from one `order_id` via `deriveIds` (byte-exact, domain-separated); `tx_id` from order, not tx_hash.

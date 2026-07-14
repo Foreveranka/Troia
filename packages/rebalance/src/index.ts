@@ -1,4 +1,4 @@
-// RebalanceProvider — keeps the USDC pool funded (ARCHITECTURE §7 packages; ROADMAP Phase 4.4). `topUp` is
+// RebalanceProvider — keeps the USDC pool funded (ARCHITECTURE §7 packages; Phase 4.4). `topUp` is
 // async because real inventory acquisition (a CEX buy + withdrawal) settles asynchronously. Testnet uses
 // SimulatedRebalance, which mints self-issued test USDC straight to the pool; mainnet swaps in a real-CEX impl
 // (Phase-2, ADR-9) behind the SAME interface — no backend change.

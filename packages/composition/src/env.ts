@@ -25,9 +25,17 @@ export function requireEnv(env: EnvRecord, name: string): string {
   return v;
 }
 
-/** A bounded positive-integer env var. Absent/blank -> default; present-but-invalid (non-numeric, non-integer, or
- *  outside [min, max]) -> THROW. This is what keeps a typo like POLL_INTERVAL_MS="5s" from becoming NaN and
- *  clamping setInterval to ~1ms (a hot loop that storms iyzico + Stellar RPC), matching PORT's fail-closed shape. */
+/** A bounded positive-integer env var. Absent/blank -> the default, but only if the DEFAULT itself is in range;
+ *  present-but-invalid (non-numeric, non-integer, or outside [min, max]) -> THROW. This is what keeps a typo like
+ *  POLL_INTERVAL_MS="5s" from becoming NaN and clamping setInterval to ~1ms (a hot loop that storms iyzico +
+ *  Stellar RPC), matching PORT's fail-closed shape.
+ *
+ *  The bound binds the default too. Two callers derive `min` from ANOTHER settable var (RECON_INTERVAL_MS from
+ *  SETTLEMENT_TICK_MS; RECONCILE_INTERVAL_MS from OUTFLOW_INTERVAL_MS), so a perfectly valid setting there can lift
+ *  `min` above a default that was written for the base cadence. Handing that default back would invert the very
+ *  ordering the min encodes — a read-only observer running INSIDE the booking-lag window it was told to stay out
+ *  of, reporting bookkeeping in flight as drift. Silently degrading is the one thing this module promises not to
+ *  do, so an out-of-range default fails the boot and names the var to set. */
 export function intEnv(
   env: EnvRecord,
   name: string,
@@ -36,7 +44,14 @@ export function intEnv(
   max: number = INT32_MAX,
 ): number {
   const raw = env[name];
-  if (raw === undefined || raw.trim().length === 0) return def;
+  if (raw === undefined || raw.trim().length === 0) {
+    if (!Number.isInteger(def) || def < min || def > max) {
+      throw new Error(
+        `env ${name} is unset and its default ${def} is outside [${min}, ${max}] — set ${name} explicitly`,
+      );
+    }
+    return def;
+  }
   const n = Number(raw);
   if (!Number.isInteger(n) || n < min || n > max) {
     throw new Error(`env ${name}="${raw}" is invalid — want an integer in [${min}, ${max}]`);

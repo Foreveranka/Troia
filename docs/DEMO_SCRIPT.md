@@ -25,7 +25,9 @@ payoff — the same money-first flow from Act 3, now moving real testnet USDC th
 ## Pre-flight (before recording)
 
 - Toolchain per `README.md`: Node 22, pnpm, Rust + `wasm32v1-none`, stellar CLI 26.0.0, `just`.
-- `pnpm install` once. No `.env` and no network are needed for the runnable acts.
+- `pnpm install` once. No `.env` and no keys are needed for the runnable acts, and no act touches the network at
+  run time — `just verify` is network-blocked and asserts zero attempts. (One caveat, stated so nothing is
+  oversold: on a cold machine `cargo test` in Act 1 still fetches its crates once.)
 - Terminal with a legible font; commands typed live (they are short) so the reviewer sees there is no sleight of hand.
 
 ---
@@ -128,10 +130,15 @@ loaded unpacked. No tunnel is needed when the browser and the backend share a ma
 customer's browser to `TROIA_CALLBACK_URL`, and settlement is driven separately by the poll worker's pull.
 
 1. **Shop like a customer.** On the demo storefront, sign in, add items, pick a shipping tier, reach the payment
-   step. The customer sees only a ₺ total — never USDC, never a wallet, never a memo.
+   step. The demo store prices in `$`, like any shop; the customer never sees a wallet, a memo, or a seed phrase.
+   The one crypto word on screen is the amount the extension's own banner quotes in USDC — beside the indicative
+   `≈₺` it will actually charge. The ₺ the customer commits to is the one on iyzico's hosted form, and it is the
+   price the backend froze server-side.
 2. **The extension notices.** A "Pay with Troy card" banner appears at the bottom of the page. Say: _"The merchant
    integrated nothing. The extension read a standard SEP-7 payment request off the page, verified it fail-closed —
-   allowlisted USDC issuer, valid destination, byte-exact memo — and only then offered to pay."_
+   allowlisted USDC issuer, valid destination, a payment reference present — and only then offered to pay. The memo
+   is then re-derived from the order id and checked byte-for-byte by the backend, which is the only place that
+   guarantee can be enforced."_
 3. **Pay with a Troy sandbox card.** Click the banner → iyzico's **hosted** card form opens in a new tab (the PAN
    never touches our servers or the extension). Use a Troy test card (see `README.md`); the 3DS OTP is shown in
    parentheses on the verification screen.
@@ -159,16 +166,16 @@ Optional trust beat: _"And if anything stalls, the banner never lies about money
 
 ## What runs today vs. what is phase-gated
 
-| Beat                                                                    | Status                                                         |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `just build` / `just test` / `cargo test` / `just lint`                 | ✅ **runs today** (zero setup)                                 |
-| `just verify` (offline reconciler proof + tampered-report failure)      | ✅ **runs today** (zero setup)                                 |
-| Money-first flow **narration** + public-status mapping                  | ✅ **runs today** (design + tests)                             |
-| `just bootstrap` (friendbot + USDC SAC deploy + mint)                   | ✅ done (Phase 4.4)                                            |
-| Live storefront (`app/storefront`, SEP-7 pay URI)                       | ✅ built (Phase 5.1)                                           |
-| "Pay with Troy card" extension → real charge → real `pay()`             | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run |
-| `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done (Phase 4.4 + 5.2)                                      |
-| Automatic TRY-driven pool rebalance (`settleTick` + issuer-signed mint) | ✅ built (compressed valör 30s; real-CEX buy is Phase-2)       |
+| Beat                                                                    | Status                                                                                 |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `just build` / `just test` / `cargo test` / `just lint`                 | ✅ **runs today** (zero setup)                                                         |
+| `just verify` (offline reconciler proof + tampered-report failure)      | ✅ **runs today** (zero setup)                                                         |
+| Money-first flow **narration** + public-status mapping                  | ✅ **runs today** (design + tests)                                                     |
+| `just bootstrap` (friendbot + USDC SAC deploy + mint)                   | ✅ done — but it now **refuses** while the recorded pool is live (reset recovery only) |
+| Live storefront (`app/storefront`, SEP-7 pay URI)                       | ✅ built                                                                               |
+| "Pay with Troy card" extension → real charge → real `pay()`             | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run                         |
+| `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done                                                                                |
+| Automatic TRY-driven pool rebalance (`settleTick` + issuer-signed mint) | ✅ built (compressed valör 30s; real-CEX buy is Phase-2)                               |
 
 Acts 1–3 run today with zero setup; Act 2 (the offline, zero-trust proof) is the reproducible centerpiece. Act 4
 is proven — a real Troy sandbox card charge auto-drove a real on-chain `pay()` (74 USDC, tx `cd643d71…`) — but

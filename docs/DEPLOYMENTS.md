@@ -12,6 +12,27 @@ G-addresses, contract C-addresses, tx hashes); the three signing secrets live on
 > reset — or deploying the first pool — is `just bootstrap`, which refuses to run while a live pool is recorded
 > and tells you to update this page when it does run.
 
+## How the one-pool rule is actually enforced
+
+The rule above is not a promise, it is a gate: `scripts/pool-state.mjs`, which `just bootstrap` consults before it
+is allowed to change anything. It answers with exactly one word — **`live`**, **`absent`**, or **`unknown`** — and
+bootstrap deploys only on `absent`. It refuses on `live`, and it refuses on `unknown` too.
+
+That third word is the whole point, because the two facts a deploy script must never confuse are **"the pool is
+gone"** and **"I cannot see the pool."** An earlier version treated every failed liveness call as the former, so a
+momentary RPC outage would have been enough to deploy a **second** pool — orphaning the one every document,
+explorer link and recon report names, along with its balance.
+
+So the check is structural, in order:
+
+1. `stellar network health` must **parse** and say `healthy`. Its exit code is never consulted, because the CLI
+   exits `0` while printing `❌ Unhealthy` — trusting it would make an unreachable network look like a reset.
+2. Only then, a **keyless simulation** of the recorded pool's own `balance` view. It answers → `live`. It does not
+   → the contract genuinely is not there → `absent`.
+
+A missing `stellar` CLI, a timeout, a rate limit, a garbled response, a corrupt or missing `deployment.testnet.json`:
+all `unknown`. Fail closed, always. A second pool is never deployed on a guess.
+
 ## Accounts (classic `G…`)
 
 | Role          | Address                                                    | Explorer                                                                                                            |
@@ -34,6 +55,17 @@ issuer (USDC SAC mint authority). See ARCHITECTURE §9.
   Soroban. Its id is deterministic from the asset (`stellar contract id asset --asset USDC:<issuer>`).
 - **TroyPool** — the custody contract. `__constructor` bound `admin`, `operator`, and the USDC SAC once at
   deploy; it is unpaused and seeded with **100,000 USDC** (`1000000000000` stroops).
+
+## Demo merchant (the storefront's payee)
+
+| Role          | Address                                                    | Explorer                                                                                                            |
+| ------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| demo merchant | `GBCUCFGEAJLHYFAZFPJZOSSFLMNXW6TCE4BFFEVMYYJX7LIMRYAMNYAE` | [account](https://stellar.expert/explorer/testnet/account/GBCUCFGEAJLHYFAZFPJZOSSFLMNXW6TCE4BFFEVMYYJX7LIMRYAMNYAE) |
+
+The address the demo storefront pays **today** — its single source is `app/storefront/src/config.ts`, and `just wire`
+never writes it (only the USDC issuer is generated into the apps). It is **not part of the deploy**: a plain
+trustlined testnet account, swappable without touching the pool. The two full-stack runs recorded below predate it
+and paid `GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX`, the previous payee (retired 2026-07-10).
 
 ## Bootstrap transactions
 
@@ -66,7 +98,7 @@ An operator-signed `pay()` moved USDC from the pool to a merchant end-to-end, us
 - **Order:** `order_id = troia-smoke-0001`, amount **1 USDC** (`10000000` stroops), `applied_rate = 411075000`.
 - **Merchant:** `GDF7V2G5FB5UF4AT7ZQ2A4L3YFG44UVJW3APSZWDN3FCI3HJCCMMGOXN` — a fresh account with a USDC trustline
   ([trustline tx](https://stellar.expert/explorer/testnet/tx/d2b120f2f258f35474a3f08704639c381136a973215af114cdefbc82c59bbd49)).
-- **Derived identity** (`deriveIds(order_id)`, byte-exact — ARCHITECTURE §4):
+- **Derived identity** (`deriveIds(order_id, destination, amount)`, byte-exact — ARCHITECTURE §4):
   - `tx_id = fdce630a4557f4bb37a6d7c1d3e011f0749b1f2e0de54be336e8d4ee789876cf`
   - `memo  = 6115721c3f246433a851a959ba9b0bc8c3de9bc486f5da2cdd0f022bad30c5a9`
 
@@ -96,7 +128,8 @@ detected it and opened iyzico's hosted form **in a new browser tab**, a real **T
 confirmed — the backend submitted the irreversible USDC leg automatically. No step was hand-run.
 
 - **Order:** a storefront checkout; settlement amount **74 USDC** (`740000000` stroops).
-- **Merchant:** `GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX` (the demo merchant; balance 10 → **84 USDC**).
+- **Merchant:** `GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX` (the demo merchant **at the time of this
+  run**, since superseded — see above; balance 10 → **84 USDC**).
 - **Operator-signed `pay()`:** [tx `cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded)
   — `invoke_host_function` on `TroyPool`, pool `contract_debited` 74 USDC → merchant `account_credited` 74 USDC,
   operator source `GDMAG4EM…`, `2026-07-07T23:02:50Z`. Verifiable on the explorer while the chain remembers it.
@@ -122,10 +155,12 @@ nothing in it is asserted by the system about itself.
 
 - **Order `ST-7SRI0YDF`** — customer paid **4 019.46 TRY**; settlement **80 USDC** (`800000000` stroops).
 - **Operator-signed `pay()`:** [tx `d47f7fb9…`](https://stellar.expert/explorer/testnet/tx/d47f7fb92a149d61a6f576aa7f803d75e6d3b3dcb6b0119e5a12a7387683d1a5)
-  — ledger `3530567`, `2026-07-10T07:33:21Z`, merchant `GA4WBDAN…` credited 80 USDC.
+  — ledger `3530567`, `2026-07-10T07:33:21Z`, merchant `GA4WBDAN…` (the then-current demo payee) credited 80 USDC.
 - **The audit found the settlement by the contract's own index, not by our record.** The pool announced it under
-  `tx_id = f11336a3e231fde6…`; `deriveIds('ST-7SRI0YDF').txIdHex` computes the same value independently. All four
-  gates passed (no `upgrade()`; announced amount == the amount the token contract moved; the tx still live;
+  `tx_id = f11336a3e231fde6…`; `deriveIds(order_id, destination, amount).txIdHex` computes the same value
+  independently — the `tx_id` commits to all three, which is exactly what makes the lookup independent of our
+  records. All five gates passed (the settlement was found under the order's own `tx_id`; no `upgrade()`; the
+  announced amount == the amount the token contract moved; the tx still live and successful;
   `resolveGroundTruth → MATCHED`), and the order was marked `Reconciled`.
 - **The books equal the chain, to the stroop.** Ledger `USDC_POOL` = `991852840183`; `readSacBalance` on the pool =
   `991852840183`. Genesis `991794691346` − payout `800000000` + refill `858148837`. Each of the three journal

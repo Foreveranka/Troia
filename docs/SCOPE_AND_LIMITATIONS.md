@@ -20,8 +20,8 @@ Testnet is where those guarantees are exercised end-to-end with **zero real-mone
 self-minted; see §3). The mathematics, the double-pay shields, the solvency mechanism, the price-lock, and the
 reconciler are **identical** to what a mainnet deployment would run — mainnet is a config swap plus three
 provider implementations plus a time-budget re-validation (ADR-9), not a rewrite. It is **not** turnkey, though:
-the `[mainnet-blocker]` gaps in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) (chiefly a durable order store) must close
-before real money moves.
+the three `[mainnet-blocker]` gaps in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — a durable order store, a write-ahead
+journal on the refill mint, and a latch on the escalate path — must close before real money moves.
 
 ---
 
@@ -63,7 +63,7 @@ before real money moves.
   (tx `cd643d71…`) and hardened: per-request fetch timeouts (15s intent / 8s poll), a phase-aware poll budget with
   honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo
   parity pinned to core's golden vectors (malformed order ids fail closed), and an amount gate aligned with
-  `toStroops` — 114 tests across 10 spec files. Holds no keys, signs nothing.
+  `toStroops` — 132 tests across 10 spec files. Holds no keys, signs nothing.
 
 The full gate — TypeScript suite, Rust contract tests, lint, type-check, and the offline `just verify` — is the
 acceptance bar for every change.
@@ -134,7 +134,7 @@ The remaining honest limitations are operational, not "unrun":
   backend instances against the same pool could each reserve the last coin. The contract's own `balance >= amount`
   guard is the second, independent shield — the chain still cannot overdraw — but the backend half of invariant ③a
   is removed. This matters the day the demo is deployed to a platform that runs two instances or overlaps them
-  during a redeploy. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §3.
+  during a redeploy. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §4.
 - **A crash between the charge and the payout strands the order.** The order rows are in memory. If the process
   dies after the customer has paid on the hosted form but before the USDC leg starts, nothing durable records the
   charge — the write-ahead journal is written at submit time, the evidence log after confirmation — so on restart
@@ -143,7 +143,8 @@ The remaining honest limitations are operational, not "unrun":
   mainnet. Durable order rows close it; see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §1. Together with the
   single-process lock above, this is why "durable store" is a mainnet prerequisite rather than a nicety.
 - **The engineering gaps are enumerated separately.** Restart semantics, the two evidence gaps, late sequence
-  allocation, log rotation, and the detection paths that are proven by tests rather than by the chain (including
+  allocation, log rotation, the unauthenticated `/intent`, the refill mint's crash window, the escalate path that
+  never latches, and the detection paths that are proven by tests rather than by the chain (including
   `ROGUE PAYOUT`, which has never fired against a real unauthorized outflow) are each stated in full — with why
   they are money-safe and what closes them — in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). They are listed there rather
   than here because none of them changes whether this project is worth building, and putting them beside the risks
@@ -168,7 +169,10 @@ more than one copy. Those are engineering, and they are enumerated one by one in
   replaces the testnet SAC mint with no change to the backend or the money-first core. The `poolLowWatermarkStroops`
   low-water mark only **warns** (`/intent → poolLow:true`) — it is **not** the trigger. See the treasury cash-flow
   cycle + timing (rebalance runs on iyzico's valör cadence, not pool drainage) in **ARCHITECTURE §5a**.
-- **KYC** (a designed boundary, no-op on testnet; not yet a package).
+- **KYC** — the mainnet plan, not a testnet seam. There is no package, no port and no no-op implementation in the
+  code today: unlike the three items below, this boundary does not exist yet, and the hosted form carries a fixed
+  buyer record (the "KYC-stub" in the composition root). It arrives with the regulated mainnet phase (ADR-10),
+  which is where it belongs.
 - **HSM / multisig real thresholds** (the `Signer` boundary already exists in `stellar-client`; testnet
   threshold = 1, same flow shape).
 - **Channel accounts for concurrency** (the single-writer sequence allocator is today's seam; a channel pool is
@@ -178,8 +182,20 @@ more than one copy. Those are engineering, and they are enumerated one by one in
   port** (port-less `matches`/`host_permissions`), not `<all_urls>` and not a specific storefront origin. This
   keeps the reviewer's Chrome permission prompt honest and the attack surface small. A production build widens the
   allowlist to any storefront emitting a USDC SEP-7 — the DOM-scan mechanism is unchanged; only the manifest match
-  patterns change. But widening it to a storefront we do not control first requires SEP-7 request signing (see
-  [`ROADMAP.md`](ROADMAP.md), Deferred): the adapter validates the payee's shape, never its authorship.
+  patterns change. But widening it to a storefront we do not control first requires **SEP-7 request signing**,
+  which is not built — see the next item.
+- **SEP-7 request signing (`origin_domain` + `signature`) — the prerequisite for "works on any store".** Today the
+  adapter validates the payee's _shape_ (valid strkey, allowlisted USDC issuer) but never its _authorship_, so a DOM
+  injection on an allowlisted storefront origin could name any destination and all six checks would still pass. Not
+  exploitable now: the only allowlisted origins are the local demo storefront, and an attacker who can inject there
+  already owns the machine. It becomes real the moment a third-party origin joins the allowlist — which is exactly
+  what "works on any store" means. The fix keeps the no-registry design (Troia never records a merchant): verify the
+  request's `signature` against the `URI_REQUEST_SIGNING_KEY` published at
+  `https://<origin_domain>/.well-known/stellar.toml`, **and** require `origin_domain` to equal the origin of the page
+  the request was found on — `sender.origin` in the background worker is the unforgeable source. Both halves are
+  needed: a valid signature only proves the request came from the domain it _claims_, so signature alone would let an
+  injected request name an attacker's domain and sign under it. It is a prerequisite for the demo storefront too,
+  which would have to sign server-side: a browser bundle cannot hold the shop's signing key.
 - **Mainnet.** Mainnet is a **separate, regulated phase**. Turkish regulatory engagement (MASAK) is a deliberate
   post-code step, handled with counsel — it is future work, never an excuse for a gap in what is claimed here.
   **No regulator has been contacted yet.** The sequencing is intentional and, we think, the cheap order: prove the
@@ -198,8 +214,7 @@ Two documents, because two audiences ask different questions.
 | I am going to read or run this code. What is unfinished, and is it safe? | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — restart semantics, the single-process lock, evidence gaps, paths proven only by tests. |
 
 The split is a claim about **proportion**, not a place to hide. Every item moved out of this file is stated in the
-other one in full, with why it is money-safe and what closes it. If you would rather read one list, read both — they
-are 200 lines together.
+other one in full, with why it is money-safe and what closes it. If you would rather read one list, read both.
 
 ## 7. How to hold us to this
 

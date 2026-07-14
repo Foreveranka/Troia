@@ -1,4 +1,4 @@
-// just demo — the live, one-command end-to-end proof (ROADMAP Phase 5.3). Drives N real operator-signed
+// just demo — the live, one-command end-to-end proof (Phase 5.3). Drives N real operator-signed
 // TroyPool.pay() payouts on testnet, collects the on-chain evidence, and emits a recon-report.json that
 // `just verify` then checks OFFLINE. One order is a deliberate CORRUPT_LOCAL (the local DB amount disagrees
 // with what actually settled) — the reconciler catches it, chain-as-authority.

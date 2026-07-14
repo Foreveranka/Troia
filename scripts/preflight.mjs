@@ -1,4 +1,4 @@
-// scripts/preflight.mjs — the live-smoke READINESS GATE wiring (ROADMAP Phase 4.5). Reads .env + the deployment
+// scripts/preflight.mjs — the live-smoke READINESS GATE wiring (Phase 4.5). Reads .env + the deployment
 // record, then smokes every DIRTY dependency the end-to-end run needs — the operator account (fees), the issuer
 // account (fees for the rebalance bot's SAC mint), the pool USDC balance (readSacBalance), the CEX spot oracle,
 // the Yahoo daily-close history, and iyzico reachability — and prints a green/red readiness report. Exit 0 = ready

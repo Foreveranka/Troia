@@ -14,7 +14,7 @@ the operator settles the merchant in USDC from a Stellar pool that is pre-funded
 | 5 minutes to evaluate this       | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md), then run `just verify`                                                                                  |
 | a repo to clone and run          | [`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)                                                                                                            |
 | a question about the trust model | [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)                                                                                                    |
-| a question about the design      | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design contract) / [`docs/ROADMAP.md`](docs/ROADMAP.md) (build plan)                                  |
+| a question about the design      | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (design contract)                                                                                      |
 | a question about risk            | [`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) (business/scope) + [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) (engineering gaps) |
 
 ## Verify it yourself
@@ -138,8 +138,8 @@ re-advanced, and our own payout was still recognised as authorized with the orde
 though alarms are logged rather than persisted, so that last point is the one thing here a clone cannot re-check.
 See [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md).
 
-Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend → Render) so the demo runs without
+Remaining (not hidden): a public shareable deploy (storefront → Vercel, backend hosted) so the demo runs without
 a local machine, and a 3–5 min proof video. The live runs are single manual smokes, not a load/soak test. Orders
 in flight (submitted, not yet landed) are still forgotten by a restart — safely, never toward a double pay. A
 **settled** order survives one: `/status` and `/receipt` answer it from the durable evidence log. See
-[`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
+[`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md) and [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).

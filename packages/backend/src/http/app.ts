@@ -141,7 +141,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // Rate limiting is opt-in per route (`global: false`), and only POST /intent opts in — it is the one route that
   // reserves the pool and initializes a hosted charge, so it is the one worth defending; GET /status is polled every
   // 3s by the extension and must never be throttled. The counter is in-memory, i.e. PER PROCESS — consistent with
-  // the single-backend-process constraint (KNOWN_ISSUES §3); a second process would keep its own count. The key is
+  // the single-backend-process constraint (KNOWN_ISSUES §4); a second process would keep its own count. The key is
   // request.ip, which under trustProxy honors X-Forwarded-For: behind a proxy that sets and sanitizes XFF this is the
   // real client, but on a direct public exposure a client can spoof XFF and rotate the key. So this bounds a naive
   // single-source flood; it is not a defense against a distributed or XFF-spoofing attacker.

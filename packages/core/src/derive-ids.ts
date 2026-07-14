@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 // Canonical, byte-exact identity derivation. Every per-order identity comes from one order_id via
 // one pure function, so two independent implementations produce byte-identical output. See
-// docs/ARCHITECTURE.md §4 and test/fixtures/derive-ids.golden.json.
+// docs/ARCHITECTURE.md §5 and test/fixtures/derive-ids.golden.json.
 //
 // Canonical input rules (pinned so two implementers cannot diverge — verified independently):
 //   - order_id is NFC-normalized before UTF-8 encoding; lone surrogates are rejected.

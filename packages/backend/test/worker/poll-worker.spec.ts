@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SequenceAllocator } from '@troia/core';
 import type { OrderCtx } from '../../src/ctx.js';
 import type { State } from '@troia/core';
+import type { ObserveResult, ReducerState } from '@troia/stellar-client';
 import { InMemoryOrderRegistry } from '../../src/http/order-registry.js';
 import { KeyedMutex } from '../../src/store/mutex.js';
 import { pollInFlight } from '../../src/worker/poll-worker.js';
@@ -196,5 +197,128 @@ describe('pollInFlight — crash-recovery worker', () => {
     const report = await pollInFlight(registry, locks, h.deps);
     expect(report).toMatchObject({ polled: 1, advanced: 0, escalated: 0, quarantined: 0 });
     expect(h.trace).not.toContain('stellar.observe'); // re-read guard fires BEFORE the READ
+  });
+});
+
+// The quarantine LATCH. `applyEscalate` has no core event to transition on, so an escalated order KEEPS its
+// in-flight state — and that state is in RECOVERY_STATES. Without a latch the worker re-selects it on the very
+// next tick and escalates it again, forever: one duplicate loss row and (on the observe branch) one wasted chain
+// read per order per tick, and the quarantine that was supposed to hand the order to a human instead buries it.
+// The driver's contract has always said "recovery must not re-drive a loss-flagged order"; these pin that.
+describe('pollInFlight — an escalated order is latched out of the work-list', () => {
+  const observeByHash =
+    (h: ReturnType<typeof makeHarness>, verdicts: Record<string, ObserveResult['verdict']>) =>
+    async (state: ReducerState): Promise<ObserveResult> => {
+      h.trace.push('stellar.observe');
+      return {
+        next: state,
+        action: 'none',
+        verdict: verdicts[state.hashHex ?? ''] ?? 'STILL_PENDING',
+      };
+    };
+
+  const observes = (h: ReturnType<typeof makeHarness>) =>
+    h.trace.filter((t) => t === 'stellar.observe').length;
+
+  it('SHIELD: a healthy in-flight order is still polled every tick and still settles', async () => {
+    // The regression shield for this change: the latch must not touch the live path. A healthy order is never
+    // loss-flagged, so it must keep being re-observed tick after tick, and must still advance when its tx lands.
+    const h = makeHarness();
+    h.stellar.observeVerdict = 'STILL_PENDING';
+    const { registry, locks } = seed(h, 'order-1', 'UsdcPending');
+
+    for (const _tick of [1, 2, 3]) {
+      const report = await pollInFlight(registry, locks, h.deps);
+      expect(report).toMatchObject({ polled: 1, advanced: 0, escalated: 0, quarantined: 0 });
+      expect(registry.getByOrderId('order-1')?.state).toBe('UsdcPending');
+    }
+    expect(observes(h)).toBe(3); // re-read on EVERY tick — a live tx is never abandoned
+    expect(h.store.losses).toEqual([]); // and never flagged
+
+    h.stellar.observeVerdict = 'LANDED_SUCCESS'; // the tx lands
+    const report = await pollInFlight(registry, locks, h.deps);
+    expect(report).toMatchObject({ advanced: 1 });
+    expect(registry.getByOrderId('order-1')?.state).toBe('UsdcConfirmed');
+  });
+
+  it('an INDETERMINATE order escalates exactly ONCE, however many ticks run', async () => {
+    const h = makeHarness();
+    h.stellar.observeVerdict = 'INDETERMINATE_LOSS_REVIEW';
+    const { registry, locks } = seed(h, 'order-1', 'UsdcPending');
+
+    expect(await pollInFlight(registry, locks, h.deps)).toMatchObject({ escalated: 1 });
+    expect(h.store.losses).toHaveLength(1);
+    expect(observes(h)).toBe(1);
+
+    for (const _tick of [2, 3, 4]) {
+      const report = await pollInFlight(registry, locks, h.deps);
+      expect(report).toMatchObject({ escalated: 0, quarantined: 0, advanced: 0 });
+    }
+
+    expect(h.store.losses).toHaveLength(1); // ONE row, not one per tick
+    expect(observes(h)).toBe(1); // and a quarantined order costs no further chain reads, ever
+    expect(registry.getByOrderId('order-1')?.state).toBe('UsdcPending'); // still parked for the reconciler
+  });
+
+  it('a witness-null quarantine is not re-quarantined either', async () => {
+    const h = makeHarness();
+    const { registry, locks } = seed(h, 'order-1', 'UsdcPending', {
+      hashHex: null,
+      signedXdr: null,
+      payMaxTimeUnix: null,
+    });
+
+    expect(await pollInFlight(registry, locks, h.deps)).toMatchObject({ quarantined: 1 });
+    expect(await pollInFlight(registry, locks, h.deps)).toMatchObject({ quarantined: 0 });
+    expect(await pollInFlight(registry, locks, h.deps)).toMatchObject({ quarantined: 0 });
+    expect(h.store.losses).toHaveLength(1);
+  });
+
+  it('SHIELD: the latch is per-order — a quarantined order never starves a healthy one beside it', async () => {
+    // The sharpest shield. One wedged order sharing the work-list must not stop the other from settling.
+    const h = makeHarness();
+    const healthy = makeCtx(h.store, {
+      orderId: 'healthy',
+      hashHex: 'hash_healthy',
+      signedXdr: 'xdr_healthy',
+      payMaxTimeUnix: 2_000_000_000,
+    });
+    const doomed = makeCtx(h.store, {
+      orderId: 'doomed',
+      hashHex: 'hash_doomed',
+      signedXdr: 'xdr_doomed',
+      payMaxTimeUnix: 2_000_000_000,
+    });
+    const registry = new InMemoryOrderRegistry();
+    registry.put(healthy, 'UsdcPending');
+    registry.put(doomed, 'UsdcPending');
+    const locks = new KeyedMutex();
+
+    h.stellar.observe = observeByHash(h, {
+      hash_doomed: 'INDETERMINATE_LOSS_REVIEW',
+      hash_healthy: 'STILL_PENDING',
+    });
+
+    // tick 1: the doomed order is quarantined; the healthy one is observed and left in place
+    expect(await pollInFlight(registry, locks, h.deps)).toMatchObject({ polled: 2, escalated: 1 });
+
+    // tick 2: the doomed order is skipped entirely; the healthy one is STILL observed
+    const before = observes(h);
+    expect(await pollInFlight(registry, locks, h.deps)).toMatchObject({ escalated: 0 });
+    expect(observes(h)).toBe(before + 1); // exactly ONE read — the healthy order's, not the doomed one's
+
+    // tick 3: the healthy order's tx lands and it settles, with the doomed one still latched beside it
+    h.stellar.observe = observeByHash(h, {
+      hash_doomed: 'INDETERMINATE_LOSS_REVIEW',
+      hash_healthy: 'LANDED_SUCCESS',
+    });
+    expect(await pollInFlight(registry, locks, h.deps)).toMatchObject({
+      advanced: 1,
+      escalated: 0,
+    });
+    expect(registry.getByOrderId('healthy')?.state).toBe('UsdcConfirmed');
+    expect(h.store.losses).toEqual([
+      { orderId: 'doomed', bucket: 'indeterminateLossReview', usdcTxHash: 'hash_doomed' },
+    ]);
   });
 });

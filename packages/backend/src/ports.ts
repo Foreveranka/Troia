@@ -139,7 +139,20 @@ export interface Store {
     nowMs: number,
   ): Promise<ReserveOutcome>;
   releaseReservation(orderId: string, reason: ReleaseReason): Promise<void>;
+  /** Record a quarantine. Idempotent per (orderId, bucket): the escalate path has no core event to transition on,
+   *  so it can be reached again on every recovery tick for the same order, and an append-per-call would bury the
+   *  one row a human needs under thousands of copies of itself. */
   flagLoss(orderId: string, bucket: LossBucket, usdcTxHash: string | null): Promise<void>;
+  /**
+   * Has this order been quarantined, in any bucket?
+   *
+   * The poll worker's work-list is keyed on STATE, and `applyEscalate` changes no state — an escalated order keeps
+   * its in-flight state, which is still a recovery state. Without this read the worker re-selects it every tick and
+   * escalates it again, forever. This is the latch that makes the driver's stated invariant true: recovery must not
+   * re-drive a loss-flagged order. Synchronous, like `settledEvidence` — it is consulted before the work begins and
+   * must not split the caller's lock.
+   */
+  isLossFlagged(orderId: string): boolean;
   markWebhookSeen(eventId: string, orderId: string, nowMs: number): Promise<'first' | 'duplicate'>;
   appendEvidence(orderId: string, record: EvidenceRecord, order: OrderFacts): Promise<void>;
   /**

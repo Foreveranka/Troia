@@ -57,6 +57,16 @@ export async function pollInFlight(
         // RE-READ inside the lock: the order may have advanced (webhook / a prior tick) since the snapshot.
         const rec = registry.getByOrderId(orderId);
         if (rec === undefined) return 'skip';
+
+        // THE QUARANTINE LATCH. `applyEscalate` records a loss but has no core event to transition on, so an
+        // escalated order KEEPS its in-flight state — which is still in RECOVERY_STATES, so it is still on this
+        // work-list. Without this read it is re-selected and re-escalated on every single tick, forever: another
+        // duplicate loss row and (on the observe branch) another wasted chain read each time, and the quarantine
+        // meant to hand the order to a human buries it instead. The flag is monotonic, so skipping here is stable.
+        // Deliberately NOT abandonment: the order stays parked for the live reconciler, which finds settlements by
+        // the contract-indexed tx_id and is not driven from this list at all.
+        if (deps.store.isLossFlagged(orderId)) return 'skip';
+
         const state = rec.state;
         const ctx = rec.ctx; // bind from the RE-READ record, never the stale snapshot
 

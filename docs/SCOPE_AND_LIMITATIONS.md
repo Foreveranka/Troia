@@ -20,8 +20,8 @@ Testnet is where those guarantees are exercised end-to-end with **zero real-mone
 self-minted; see §3). The mathematics, the double-pay shields, the solvency mechanism, the price-lock, and the
 reconciler are **identical** to what a mainnet deployment would run — mainnet is a config swap plus three
 provider implementations plus a time-budget re-validation (ADR-9), not a rewrite. It is **not** turnkey, though:
-the three `[mainnet-blocker]` gaps in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — a durable order store, a write-ahead
-journal on the refill mint, and a latch on the escalate path — must close before real money moves.
+the two `[mainnet-blocker]` gaps in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — a durable order store, and a write-ahead
+journal on the refill mint — must close before real money moves.
 
 ---
 
@@ -46,7 +46,7 @@ journal on the refill mint, and a latch on the escalate path — must close befo
 - **Crash durability with a stated contract** — an append-only log whose first write failure poisons it forever,
   so a partial write can only live in the physical tail; a torn tail is truncated and reported, and a damaged
   record that was fully written is **fatal**, never silently dropped. Every writer appends before it believes.
-  Tested by injected crashes and by mutation (delete a guard, watch the test fail). ARCHITECTURE §7b, and now
+  Tested by injected crashes and by mutation (delete a guard, watch the test fail). ARCHITECTURE §3b, and now
   exercised against the live chain including a kill-and-restart — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 - **Chain-authoritative detection** — a payout tail that reads the USDC SAC's `transfer` events and calls any
   outflow whose hash is missing from the durable write-ahead journal a **rogue payout** (it could not have landed
@@ -55,12 +55,12 @@ journal on the refill mint, and a latch on the escalate path — must close befo
   token contract moved, and the tx is still live. It distinguishes **"we cannot see"** from **"it is not there"**:
   a payout that predates the tail's durable coverage floor, or whose transaction the RPC no longer returns, is
   reported as a blind spot rather than accused, and every alarm pages once per problem rather than every tick.
-  ARCHITECTURE §8a. Both loops have now run against the live chain and reconciled a real payout (tx `d47f7fb9…`),
-  finding it by the contract's own index rather than by the hash we recorded — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
+  RECONCILIATION.md §8. Both loops have now run against the live chain and reconciled a real payout, finding it by
+  the contract's own index rather than by the hash we recorded — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 - **Soroban `TroyPool` contract** — `pay` with atomic check-and-transfer (no TOCTOU), replay guard, pause,
   role-gated admin/upgrade; unit + integration + fuzz (conservation) tests green.
 - **Chrome MV3 "Pay with Troy card" extension** — the demo's actual money-path entry point, proven live e2e
-  (tx `cd643d71…`) and hardened: per-request fetch timeouts (15s intent / 8s poll), a phase-aware poll budget with
+  (see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) and hardened: per-request fetch timeouts (15s intent / 8s poll), a phase-aware poll budget with
   honest give-up (never falsely claims "not charged"), tab-open-failure handling, a double-submit guard, memo
   parity pinned to core's golden vectors (malformed order ids fail closed), and an amount gate aligned with
   `toStroops` — 132 tests across 10 spec files. Holds no keys, signs nothing.
@@ -80,8 +80,8 @@ acceptance bar for every change.
   **This is the next funded milestone, not a hole**: the decision seam (`RebalancePolicy`) and the execution seam
   (`RebalanceProvider`) already exist and are exercised on every settlement — Phase-2 replaces one implementation
   behind them with a real exchange buy + withdrawal. The mechanism is proven; what money buys is the inventory.
-- **`signed ≠ settled`.** We prove what we signed (cryptographically, reset-proof) and what settled (only while
-  the chain remembers it). A wiped testnet or a never-landed tx surfaces as `UNSETTLED`, never as a false match.
+- **`signed ≠ settled`** (see [`RECONCILIATION.md`](RECONCILIATION.md)) — a wiped testnet or a never-landed tx
+  surfaces as `UNSETTLED`, never a false match.
 - **The one residual _irreversible_ loss window is named, not hidden.** In the narrow case _USDC sent → the
   reversible TRY leg cannot be unwound_, the order lands in `LossReview` (customer-facing `review`) — surfaced with
   an evidence flag, never silently absorbed. When that loss occurs it is **ours**, never the customer's. On testnet
@@ -118,13 +118,11 @@ is now **built, type-checked, and offline-tested**: a factory (`buildTestnetServ
 provider + the `stellar-client` adapters + the PSP-inclusive quote into the backend's `ServerDeps`, a server
 bootstrap (`just serve`) stands the app up, and a composition smoke proves the whole stack boots from that factory
 and its fail-closed routes work. The Phase-4.5/5.2 **live run has now executed**: a real Troy sandbox card charge
-automatically drove a real on-chain `pay()` end-to-end (74 USDC pool → merchant, tx
-[`cd643d71…`](https://stellar.expert/explorer/testnet/tx/cd643d7178c6d6068aabe236af45e68fba60d9062d1ff71a85c5af75dfb08ded);
-see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) — so the network-facing halves are now live-smoked, not just type-checked.
+automatically drove a real on-chain `pay()` end-to-end (74 USDC pool → merchant; see
+[`DEPLOYMENTS.md`](DEPLOYMENTS.md)) — so the network-facing halves are now live-smoked, not just type-checked.
 The remaining honest limitations are operational, not "unrun":
 
-- **Two live runs, both single manual smokes — not a load/soak test.** The second (`2026-07-10`, order
-  `ST-7SRI0YDF`, 80 USDC, tx `d47f7fb9…`) additionally exercised the durable logs, the payout tail, the live
+- **Two live runs, both single manual smokes — not a load/soak test.** The second run additionally exercised the durable logs, the payout tail, the live
   reconciler, and a kill-and-restart against the same data directory: no double mint, no re-advance, no false theft
   accusation, and the books matched the chain to the stroop. Both runs were hardened (per-attempt timeouts +
   bounded retry, so a hung source drops fail-closed rather than wedging the poller) and gated by a readiness
@@ -134,7 +132,7 @@ The remaining honest limitations are operational, not "unrun":
   backend instances against the same pool could each reserve the last coin. The contract's own `balance >= amount`
   guard is the second, independent shield — the chain still cannot overdraw — but the backend half of invariant ③a
   is removed. This matters the day the demo is deployed to a platform that runs two instances or overlaps them
-  during a redeploy. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §4.
+  during a redeploy. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §3.
 - **A crash between the charge and the payout strands the order.** The order rows are in memory. If the process
   dies after the customer has paid on the hosted form but before the USDC leg starts, nothing durable records the
   charge — the write-ahead journal is written at submit time, the evidence log after confirmation — so on restart
@@ -143,17 +141,22 @@ The remaining honest limitations are operational, not "unrun":
   mainnet. Durable order rows close it; see [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) §1. Together with the
   single-process lock above, this is why "durable store" is a mainnet prerequisite rather than a nicety.
 - **The engineering gaps are enumerated separately.** Restart semantics, the two evidence gaps, late sequence
-  allocation, log rotation, the unauthenticated `/intent`, the refill mint's crash window, the escalate path that
-  never latches, and the detection paths that are proven by tests rather than by the chain (including
-  `ROGUE PAYOUT`, which has never fired against a real unauthorized outflow) are each stated in full — with why
-  they are money-safe and what closes them — in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). They are listed there rather
-  than here because none of them changes whether this project is worth building, and putting them beside the risks
-  that do would misstate their weight. Nothing has been dropped in the move.
+  allocation, log rotation, the unauthenticated `/intent`, and the refill mint's crash window are each stated in
+  full — with why they are money-safe and what closes them — in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). They are
+  listed there rather than here because none of them changes whether this project is worth building, and putting
+  them beside the risks that do would misstate their weight. Nothing has been dropped in the move.
 
-None of these blocks the proof story above. The live end-to-end path is demonstrated twice; what remains is
-hardening — load/soak, the reverted-transaction read path, and a shared lock before the backend is ever run in
-more than one copy. Those are engineering, and they are enumerated one by one in
-[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) rather than summarised away.
+- **What testnet has, and has not, proven live.** The end-to-end money path is demonstrated on chain, twice; so are
+  the two sharpest detectors — the revert-code read and `ROGUE PAYOUT` (an unauthorized outflow flagged by the live
+  payout tail), both fired on `2026-07-14` (see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)). What is **built and unit-tested
+  but not yet fired on chain** — a testing-maturity gap, not a defect, since the code is there and green — is: the
+  `CHAIN_DIVERGENCE` verdict (a different transaction settled this order) and the payout tail's two blind spots
+  (`never-watched`, `aged-out`), exercised by unit tests only; a **positive** contract `upgrade()` (only the
+  auth gate is tested — a real second wasm to upgrade to is Phase-2 work, and it must never be rehearsed on the live
+  pool, where a bad wasm would brick it); and **load/soak** (the solvency race is proven offline, including the
+  mutation check that removing the lock over-commits, but never against the live rails — what is untested there is
+  throughput, not correctness). None of these blocks the proof story; each would turn a tested sentence into a
+  chain fact, and all are Phase-2.
 
 ---
 
@@ -168,7 +171,7 @@ more than one copy. Those are engineering, and they are enumerated one by one in
   (the agent owns the _decision_, the on/off-ramp owns the real fiat↔USDC _execution_); on mainnet that seam
   replaces the testnet SAC mint with no change to the backend or the money-first core. The `poolLowWatermarkStroops`
   low-water mark only **warns** (`/intent → poolLow:true`) — it is **not** the trigger. See the treasury cash-flow
-  cycle + timing (rebalance runs on iyzico's valör cadence, not pool drainage) in **ARCHITECTURE §5a**.
+  cycle + timing (rebalance runs on iyzico's valör cadence, not pool drainage) in **ARCHITECTURE §6a**.
 - **KYC** — the mainnet plan, not a testnet seam. There is no package, no port and no no-op implementation in the
   code today: unlike the three items below, this boundary does not exist yet, and the hosted form carries a fixed
   buyer record (the "KYC-stub" in the composition root). It arrives with the regulated mainnet phase (ADR-10),

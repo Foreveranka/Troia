@@ -1,12 +1,13 @@
-// scripts/probe-revert.mjs <txHash> — flag-1 LIVE CHECK for the revert-read path. Given the tx hash of a
-// LANDED-and-REVERTED pay() (e.g. a CLI double-pay that reverts AlreadyProcessed), it reports whether the node
-// populated diagnostic events on the FAILED tx and what OUR contract-scoped parser (readContractErrorCode) reads —
-// the one shape only a live reverted tx can confirm. Money-safety note: a null classification is SAFE (re-drive;
-// the on-chain Processed(tx_id) guard is the real double-pay shield), so this is a LIVENESS/observability check,
-// not a money-path assertion. Requires `just fund` (deployment.testnet.json). Usage:
+// scripts/probe-revert.mjs <txHash> — LIVE CHECK for the revert-read path. Given the tx hash of a
+// LANDED-and-REVERTED pay(), it reports whether the node populated diagnostic events on the FAILED tx and what OUR
+// contract-scoped parser (readContractErrorCode) reads — the one shape only a live reverted tx can confirm.
+// Money-safety note: a null classification is SAFE (re-drive; the on-chain Processed(tx_id) guard is the real
+// double-pay shield), so this is a LIVENESS/observability check, not a money-path assertion. Requires
+// deployment.testnet.json. Usage:
 //   node scripts/probe-revert.mjs <txHash>
-// To produce a reverted tx for the check: run a second `stellar contract invoke ... pay --tx_id <same>` (the
-// contract reverts AlreadyProcessed, Error(Contract, #1)) and pass that invocation's tx hash here.
+// To PRODUCE a reverted tx: run `node --env-file=.env scripts/stage-revert.mjs`, which prints a hash to pass here.
+// (Note: a double-pay does NOT work — a deterministically-reverting pay() fails simulation and is never submitted,
+// so no reverted tx is created. stage-revert lands one by pausing the pool between simulation and inclusion.)
 
 import { readFileSync } from 'node:fs';
 import { testnetConfig } from '../packages/config/dist/index.js';
@@ -45,9 +46,9 @@ console.log(
   `  readContractErrorCode  ${c === null ? 'null' : `${c} (${NAMED[c] ?? 'unknown'})`}\n`,
 );
 
-if (c === 1) {
+if (c !== null) {
   console.log(
-    '  OK — the contract-scoped revert-read works end-to-end on a live reverted tx (flag-1 confirmed).\n',
+    `  OK — the contract-scoped revert-read works end-to-end on a live reverted tx (read code ${c} = ${NAMED[c] ?? 'unknown'}).\n`,
   );
 } else if (r.status === 'FAILED' && r.topDiagnosticEvents > 0) {
   console.log(

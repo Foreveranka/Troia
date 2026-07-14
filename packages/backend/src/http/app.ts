@@ -19,7 +19,9 @@ import { advance, start } from '../engine/driver.js';
 import type { EngineDeps } from '../engine/events.js';
 import { KeyedMutex } from '../store/mutex.js';
 import type { OrderRegistry } from './order-registry.js';
+import type { State } from '@troia/core';
 import { toPublicStatus } from './public-status.js';
+import type { PublicStatus } from './public-status.js';
 
 /** The server-side price for one order. Money-first + zero-trust: the BACKEND prices every order (commission +
  *  spot mid), never a client-supplied paidPrice. Shape matches @troia/pricing quoteUsdc; the impl is INJECTED
@@ -141,7 +143,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // Rate limiting is opt-in per route (`global: false`), and only POST /intent opts in — it is the one route that
   // reserves the pool and initializes a hosted charge, so it is the one worth defending; GET /status is polled every
   // 3s by the extension and must never be throttled. The counter is in-memory, i.e. PER PROCESS — consistent with
-  // the single-backend-process constraint (KNOWN_ISSUES §4); a second process would keep its own count. The key is
+  // the single-backend-process constraint (KNOWN_ISSUES); a second process would keep its own count. The key is
   // request.ip, which under trustProxy honors X-Forwarded-For: behind a proxy that sets and sanitizes XFF this is the
   // real client, but on a direct public exposure a client can spoof XFF and rotate the key. So this bounds a naive
   // single-source flood; it is not a defense against a distributed or XFF-spoofing attacker.
@@ -370,6 +372,22 @@ export function createApp(deps: AppDeps): FastifyInstance {
   });
 
   // GET /status/:orderId — coarse public status; NEVER the internal crypto state.
+  /**
+   * The coarse status of an order, with the quarantine override.
+   *
+   * `toPublicStatus` is total over the 12 States and stays that way. But `applyEscalate` records a loss flag and
+   * has NO core event to transition on, so a quarantined order keeps an in-flight State — one that maps to
+   * `processing`. A charged order whose USDC fate is genuinely unknown must never keep telling the customer
+   * "confirming…": it is waiting on a human, and that is exactly what `review` means.
+   *
+   * The override is safe because a quarantine is one-way. Nothing can advance such an order behind the flag: the
+   * poll worker latches it out of its work-list, the webhook's guard only accepts `SolvencyReserved`, and the live
+   * reconciler's work-list is the evidence log — which an order that never reached `UsdcConfirmed` never joined.
+   * So `review` is not just correct, it is stable.
+   */
+  const publicStatusOf = (orderId: string, state: State): PublicStatus =>
+    engine.store.isLossFlagged(orderId) ? 'review' : toPublicStatus(state);
+
   app.get('/status/:orderId', async (request, reply) => {
     const params = request.params as { orderId?: string };
     const rawOrderId = params.orderId;
@@ -379,7 +397,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const orderId = tryCanonicalizeOrderId(rawOrderId);
     if (orderId === null) return reply.code(400).send({ error: 'OrderIdMalformed' });
     const rec = registry.getByOrderId(orderId);
-    if (rec !== undefined) return reply.send({ orderId, status: toPublicStatus(rec.state) });
+    if (rec !== undefined)
+      return reply.send({ orderId, status: publicStatusOf(orderId, rec.state) });
     // The registry is memory, and a restart erases it. The evidence log is not. A row exists only for an order
     // whose USDC leg was witnessed on chain (Store.settledEvidence), so answering from it cannot overstate the
     // case. Derive the status from the map rather than writing 'completed' here, so the two never drift apart.
@@ -403,7 +422,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     if (rec !== undefined)
       return reply.send({
         orderId,
-        status: toPublicStatus(rec.state),
+        status: publicStatusOf(orderId, rec.state),
         txHash: rec.ctx.hashHex, // the on-chain USDC pay() witness (null until it lands)
         paidPriceTry: rec.ctx.paidPriceTry,
       });

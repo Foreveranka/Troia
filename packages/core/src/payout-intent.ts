@@ -7,7 +7,7 @@ import type { Result } from './result.js';
 
 // Invariant ① — MEMO FAIL-CLOSED. A PayoutIntent cannot exist unless order_id, address, memo,
 // amount, issuer, and trustline are all valid. Any miss returns a BuildError; nothing partial is
-// ever constructed. See docs/ARCHITECTURE.md §6.
+// ever constructed. See docs/ARCHITECTURE.md §7.
 
 /** Flat taxonomy (no nesting). The order below is the DETERMINISTIC control order build() uses. */
 export type BuildError =

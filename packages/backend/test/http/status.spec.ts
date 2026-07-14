@@ -64,4 +64,71 @@ describe('GET /status/:orderId — coarse public status (no crypto-state leak)',
       });
     }
   });
+
+  // The quarantine has to SURFACE. `applyEscalate` records a loss flag but has no core event to transition on, so
+  // the order keeps its in-flight State — which maps to 'processing'. A charged order whose USDC fate is genuinely
+  // unknown must not keep telling the customer "confirming…" forever: it is under manual review, and the endpoints
+  // must say so. The State map stays total and untouched; the flag is an OVERRIDE read at the boundary.
+  describe('a quarantined order surfaces as review, whatever its in-flight State says', () => {
+    for (const state of ['UsdcSubmitted', 'UsdcPending'] as const) {
+      it(`${state} + a loss flag -> review, not processing`, async () => {
+        const h = makeHttpHarness();
+        await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+        const ctx = h.registry.getByOrderId('order-1')?.ctx;
+        expect(ctx).toBeDefined();
+        h.registry.put(ctx!, state);
+
+        // before the quarantine it is honestly still in flight
+        const before = await h.app.inject({ method: 'GET', url: '/status/order-1' });
+        expect(before.json()).toEqual({ orderId: 'order-1', status: 'processing' });
+
+        await h.store.flagLoss('order-1', 'indeterminateLossReview', 'hash-1');
+
+        const after = await h.app.inject({ method: 'GET', url: '/status/order-1' });
+        expect(after.statusCode).toBe(200);
+        expect(after.json()).toEqual({ orderId: 'order-1', status: 'review' });
+        expect(JSON.stringify(after.json())).not.toContain(state); // still no crypto-state leak
+      });
+    }
+
+    it('/receipt agrees, and still carries the witness a reviewer takes to the explorer', async () => {
+      const h = makeHttpHarness();
+      await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+      const ctx = h.registry.getByOrderId('order-1')?.ctx;
+      expect(ctx).toBeDefined();
+      h.registry.put({ ...ctx!, hashHex: 'deadbeef' }, 'UsdcSubmitted');
+      await h.store.flagLoss('order-1', 'indeterminateLossReview', 'deadbeef');
+
+      const res = await h.app.inject({ method: 'GET', url: '/receipt/order-1' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        orderId: 'order-1',
+        status: 'review',
+        txHash: 'deadbeef',
+      });
+    });
+
+    it('the reversalExhausted bucket surfaces too (LossReview already said review — this must not regress)', async () => {
+      const h = makeHttpHarness();
+      await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+      const ctx = h.registry.getByOrderId('order-1')?.ctx;
+      h.registry.put(ctx!, 'LossReview');
+      await h.store.flagLoss('order-1', 'reversalExhausted', null);
+
+      const res = await h.app.inject({ method: 'GET', url: '/status/order-1' });
+      expect(res.json()).toEqual({ orderId: 'order-1', status: 'review' });
+    });
+
+    it('SHIELD: an unflagged order is untouched — every other State still answers exactly as before', async () => {
+      // The override must fire ONLY on a quarantine. Nothing else on the map may move.
+      for (const state of ALL_STATES) {
+        const h = makeHttpHarness();
+        await h.app.inject({ method: 'POST', url: '/intent', payload: intentBody('order-1') });
+        const ctx = h.registry.getByOrderId('order-1')?.ctx;
+        h.registry.put(ctx!, state);
+        const res = await h.app.inject({ method: 'GET', url: '/status/order-1' });
+        expect(res.json()).toEqual({ orderId: 'order-1', status: EXPECTED[state] });
+      }
+    });
+  });
 });

@@ -42,6 +42,11 @@ Per order, three independent records — deliberately from three different trust
 | **(b) `ledger_evidence`** | `signed_xdr` + its Stellar `hash`                                                     | **Frozen cryptographic witness.** "This is what we signed and submitted." Never re-serialized from (a) — corrupting the local record cannot silently rewrite the signature. |
 | **(c) `chain_evidence`**  | `tx_hash` + `fetched_at_ledger` + a normalized `horizon_snapshot` of the `pay()` call | **Frozen chain observation.** "This is what the chain looked like when we watched it."                                                                                      |
 
+The `hash` in **(b)** is the **real Stellar transaction hash** — `hex(Transaction(signed_xdr, passphrase).hash())`
+= `sha256(networkId ‖ ENVELOPE_TYPE_TX(0x00000002) ‖ xdr(innerTx))`, **not** `sha256(envelope)` nor
+`sha256(decoded tx)` (empirically distinct). An optional `blob_sha256` is a pure integrity tripwire, never equated
+to the tx hash (identity ≠ integrity).
+
 The signed blob **(b)** is the cryptographic tiebreaker between the mutable local row **(a)** and the observed
 chain **(c)**. The report carries two top-level fields, read as **data**, never from the mutable XDR:
 
@@ -65,8 +70,9 @@ same rule as the first (`TROIA_TROY_POOL`, else `deployment.testnet.json`'s `tro
 Anything else fails the report. Signature ∧ contract: authorship _and_ destination, both pinned to a record the
 report cannot touch.
 
-`applied_rate` is carried in the snapshot but **excluded** from the diff — the accounting ledger is its audit
-source, not the reconciler.
+The diff maps `business_intent.destination ⇄ pay() merchant` (arg 3), `amount_stroops ⇄ i128` (arg 1), and
+`memo_hex ⇄ BytesN<32>` (arg 4). `applied_rate` is carried in the snapshot but **excluded** from the diff — the
+accounting ledger is its audit source, not the reconciler.
 
 ---
 
@@ -225,18 +231,34 @@ just-verify family touches Horizon, so confirming the tx actually landed stays a
 ## 6. The other reconciliation: the one the server does to itself
 
 Everything above is the **artifact** a reviewer verifies offline, after the fact. The running server also
-reconciles **continuously, against the live chain**, and does not trust anything it announced: a payout tail that
-calls any outflow whose hash is missing from the durable write-ahead journal a `ROGUE PAYOUT`, and a live
-reconciler that finds each order's settlement through the contract-indexed `tx_id` (not the hash we recorded) and
-gates `Reconciled` on five checks, the last of which is §3's exact `resolveGroundTruth` cascade. Full mechanics
-are in ARCHITECTURE §8a.
+reconciles **continuously, against the live chain**, and does not trust anything it announced. Two loops do this —
+a **payout tail** that attributes every outflow, and a **live reconciler** that confirms each settlement. Their
+operational mechanics (attribution, coverage, alarm latching, the RPC facts they are built on) are in §8; this
+section is the reconciler's **decision**: did each order's settlement actually happen, and was it the one we
+announced?
 
-Both loops have run against the live chain. On `2026-07-10` the audit reconciled a real payout (order
-`ST-7SRI0YDF`, 80 USDC, tx `d47f7fb9…`) by finding it under `tx_id = f11336a3e231fde6…` — the value
-`deriveIds(order_id, destination, amount)` computes independently, binding the identifier to all three, which is
-what makes the lookup independent of our records — with no false theft accusation, including after a restart
-that erased the in-memory order registry. Details and what the run did **not** prove are in
-[`DEPLOYMENTS.md`](DEPLOYMENTS.md).
+It finds each order's settlement through the contract-indexed **`tx_id`** — the identifier the _contract_ indexes,
+derived from `order_id` alone (`sha256(lp("troia.txid.v1") ‖ lp(order_id))`) and recomputed independently by
+`deriveIds` — **not** the transaction hash we recorded. Looking up by our own hash would only check our record
+against itself, which is what made `CHAIN_DIVERGENCE` unreachable in practice.
+
+**Five checks, all of which must pass before an order is marked `Reconciled`:**
+
+1. The settlement is **found under that `tx_id`.** Not found is not an accusation — it is a coverage / blind case
+   (§8) or still-waiting, never a theft claim.
+2. The pool's code was **never replaced** — an `upgrade()` latches `POOL CODE REPLACED`, and past announcements
+   stop being proofs.
+3. The **announced amount equals what the token contract actually moved** (`payment_made.amount` ⇄ Σ `transfer`).
+4. The transaction is **still live on chain** (`checkTxLiveness`; `ABSENT` ⇒ `UNSETTLED`).
+5. `resolveGroundTruth` (§3, the same cascade) returns `MATCHED`.
+
+An unreachable chain (`UNKNOWN`) **never concludes anything** — it re-polls, never guesses. `reconciled.mark()` is
+written durably **before** the order advances, so a crash between the two re-marks rather than double-advances.
+
+Both loops have run against the live chain, reconciling a real payout by finding it under its contract-indexed
+`tx_id` (`f11336a3e231fde6…`, recomputed independently by `deriveIds`, so the lookup is independent of our own
+records) — with no false theft accusation, including after a restart that erased the in-memory order registry. The
+concrete run (order, amount, tx hash) and what it did **not** prove are in [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 
 ---
 
@@ -259,3 +281,51 @@ inner verifier exits `1`; the check itself exits `0` because catching the forger
 Together they prove the reconciler logic offline, in seconds. Then run `just verify-live`: it re-derives a REAL
 payout pinned to our canonical operator (from the committed `deployment.testnet.json`), leaving one check the
 offline run cannot do for you — open that `tx_hash` on the explorer to confirm it landed (`signed ≠ settled`).
+
+---
+
+## 8. The live loops — payout tail & reconciler
+
+§6 is the reconciler's verdict. This is how the two running-server loops _operate_ against the live chain, and how
+they handle the one thing an honest monitor must never fake: uncertainty. Both read the chain; neither trusts what
+we announced.
+
+**The payout tail (`tailOutflows`, `OUTFLOW_INTERVAL_MS`, default 20s)** — attribution for money leaving the pool.
+
+- It watches the **USDC SAC's `transfer` events with `from == pool`**, not the pool's own `payment_made` event. An
+  `upgrade()` could let replaced contract code drain the pool without ever emitting `payment_made`; the token
+  contract cannot be talked out of emitting `transfer`.
+- **Why it may accuse.** The write-ahead journal (`authorized.log`) is durable and is awaited **strictly before**
+  `send`, so a `pay()` cannot land — and so cannot emit an outflow — unless its hash was already on disk. An outflow
+  whose hash is absent was **never authorized** — not "not yet witnessed", not "still settling". There is no timing
+  window to get wrong and no in-memory allowlist for a restart to erase. That outflow is a `ROGUE PAYOUT`.
+- Grace (chain **close time**, never the local clock; `outflowGraceSecs`, default **60s**) is a margin, not the
+  correctness mechanism; a suspect is re-judged each tick and pages exactly **once**. Do not confuse it with the
+  reconciler's `unsettledGraceSecs` (default 600s), which bounds how long an announced settlement may stay
+  unobserved before `SETTLEMENT UNOBSERVABLE`.
+- **Durable order per tick:** record the observation → mark the suspect → tombstone the cleared → _save the cursor
+  last_. A crash mid-tick re-reads a page (harmless); a cursor advanced past an unrecorded suspect would lose a
+  theft forever.
+- It complements the solvency drift tripwire rather than replacing it. Drift is windowless and always right about
+  the **total** but cannot name a transaction; the tail names it, and pays with a window — Soroban RPC retains
+  events for a rolling ~7 days **that moves**, so a tail down longer than the window has a gap. The gap is declared
+  (`TAIL BLIND SPOT` / `TAIL STALLED`), never hidden, and drift covers it.
+
+**"We cannot see" is not "it is not there."** The tail durably records a **coverage floor**: the instant it began
+(or, after a retention re-anchor, resumed) watching. An order witnessed before that floor settled in ledgers nobody
+read, so its missing announcement is a fact about us — reported as `blind / never-watched`, never `SETTLEMENT
+UNOBSERVABLE`. Likewise, when we hold the pool's announcement but the RPC will no longer return the transaction
+(retention, a reset, or it never landed — `NOT_FOUND` cannot tell them apart), that is `blind / aged-out`, not an
+accusation. Only silence **inside** the watched window, past the grace, is an alarm; the drift tripwire remains the
+cover for value that actually went missing.
+
+**Alarms latch.** The audit re-derives every verdict each tick, so a stuck order would otherwise restate its problem
+forever, and a page repeated forever is a page nobody reads. `observeReconcile` (pure, mirroring `observeDrift` /
+`observeTailHealth`) pages each order **once per problem**, keyed on _what_ is wrong — so silence that becomes a
+divergence pages again — and logs one line when the problem clears. `unreachable` is deliberately neither: it cannot
+raise a page, and it cannot forge an all-clear for an alarm it was unable to re-check.
+
+**RPC facts these loops are built on, measured against live testnet, not read from a doc:** a topic filter with the
+wrong arity returns an **empty page with no error** (a silent all-clear — hence contract-id-only filters); `-32600`
+means **both** "below retention" and "ahead of head", so the range is probed **structurally** rather than matched
+against the message text; a cursor resumes **strictly after** its ledger.

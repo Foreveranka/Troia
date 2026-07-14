@@ -85,9 +85,17 @@ export class FakeStore implements Store {
     this.trace.push(`store.releaseReservation:${reason}`);
     this.releases.push({ orderId, reason });
   }
+  private readonly lossBuckets = new Map<string, Set<LossBucket>>();
   async flagLoss(orderId: string, bucket: LossBucket, usdcTxHash: string | null): Promise<void> {
     this.trace.push(`store.flagLoss:${bucket}`);
+    const buckets = this.lossBuckets.get(orderId) ?? new Set<LossBucket>();
+    if (buckets.has(bucket)) return; // idempotent per (orderId, bucket) — mirrors InMemoryStore
+    buckets.add(bucket);
+    this.lossBuckets.set(orderId, buckets);
     this.losses.push({ orderId, bucket, usdcTxHash });
+  }
+  isLossFlagged(orderId: string): boolean {
+    return this.lossBuckets.has(orderId);
   }
   async markWebhookSeen(): Promise<'first' | 'duplicate'> {
     return 'first';

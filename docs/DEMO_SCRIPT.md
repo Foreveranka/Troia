@@ -164,6 +164,26 @@ Optional trust beat: _"And if anything stalls, the banner never lies about money
 
 ---
 
+## Act 5 — Catch a thief, live (~60s) **[runs live — stack up]** — optional, the sharpest beat
+
+> "The whole point is that we don't ask you to trust the operator — not even ourselves. Watch what happens when
+> USDC leaves the pool through a transaction the backend never authorized."
+
+With `just serve` running, send a `pay()` **directly by CLI, bypassing the backend** — so its hash never reaches
+the pre-broadcast journal. Within the grace window the payout tail pages it, unprompted:
+
+```
+ROGUE PAYOUT: 10000000 stroops of USDC left the pool to GA4WBDAN… in transaction d946c02e…
+which this operator never authorized — its hash was never written to the pre-broadcast journal.
+```
+
+Say: _"Nobody told it to look for that transaction. The tail watches every outflow from the pool and matches it
+against the journal of payouts we pre-authorized. An outflow with no matching authorization is flagged and recorded
+durably — and the record survives even after the balance is made whole again. Proven on chain (see
+DEPLOYMENTS.md)."_ Restore the balance afterward (the issuer mints the amount back); the suspect record stays.
+
+---
+
 ## What runs today vs. what is phase-gated
 
 | Beat                                                                    | Status                                                                                 |
@@ -173,12 +193,13 @@ Optional trust beat: _"And if anything stalls, the banner never lies about money
 | Money-first flow **narration** + public-status mapping                  | ✅ **runs today** (design + tests)                                                     |
 | `just bootstrap` (friendbot + USDC SAC deploy + mint)                   | ✅ done — but it now **refuses** while the recorded pool is live (reset recovery only) |
 | Live storefront (`app/storefront`, SEP-7 pay URI)                       | ✅ built                                                                               |
-| "Pay with Troy card" extension → real charge → real `pay()`             | ✅ **proven live** (tx `cd643d71…`) — needs stack up to re-run                         |
+| "Pay with Troy card" extension → real charge → real `pay()`             | ✅ **proven live** — see DEPLOYMENTS.md; needs stack up to re-run                      |
 | `DEPLOYMENTS.md` explorer table (real deployed addresses + settlements) | ✅ done                                                                                |
 | Automatic TRY-driven pool rebalance (`settleTick` + issuer-signed mint) | ✅ built (compressed valör 30s; real-CEX buy is Phase-2)                               |
+| `ROGUE PAYOUT` on a real unauthorized outflow (Act 5)                   | ✅ **fired live** — see DEPLOYMENTS.md; needs stack up to re-run                       |
 
 Acts 1–3 run today with zero setup; Act 2 (the offline, zero-trust proof) is the reproducible centerpiece. Act 4
-is proven — a real Troy sandbox card charge auto-drove a real on-chain `pay()` (74 USDC, tx `cd643d71…`) — but
+is proven — a real Troy sandbox card charge auto-drove a real on-chain `pay()` (74 USDC) — but
 re-running it live needs the stack up (`just serve` + storefront + extension). The remaining
 polish is a public shareable deploy so Act 4 runs without a local machine.
 
@@ -189,5 +210,5 @@ polish is a public shareable deploy so Act 4 runs without a local machine.
 - Keep it to ~5 minutes; Act 2 gets the most time, Act 4 is the payoff.
 - Show the terminal exit codes explicitly (`echo $?` after `just verify` and after the tampered run).
 - In Act 4, show the real explorer tx — do not fake a charge. If the stack isn't up, narrate over confirmation
-  screenshots + the on-chain `pay()` (tx `cd643d71…`) rather than staging a fake payment.
+  screenshots + the on-chain `pay()` (proven live — see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) rather than staging a fake payment.
 - Two undeniable beats to land: the tampered-report **failure** (Act 2) and the real settlement **tx** (Act 4).

@@ -4,7 +4,7 @@ import { canonicalizeOrderId } from './derive-ids.js';
 // (Stellar tx seqNum = account seq + 1, strictly sequential). This allocator is the DB-authoritative,
 // single-writer owner of that space: sequences are handed out monotonically and NEVER read from the
 // network (allocation is authoritative; whether a seq actually burned on-chain is a separate, network
-// concern handled by the deadness path). See docs/ARCHITECTURE.md §5.
+// concern handled by the deadness path). See docs/ARCHITECTURE.md §6.
 //
 // Two on-chain outcomes drive the seq lifecycle, and they are OPPOSITE — the allocator enforces the
 // distinction so a state-machine bug cannot mix them:

@@ -77,6 +77,10 @@ export class InMemoryStore implements Store {
   private readonly webhooks = new Map<string, { orderId: string; seenAtMs: number }>();
   private readonly evidence: EvidenceRow[] = [];
   private readonly losses: LossRow[] = [];
+  /** The buckets already recorded per order — the (orderId, bucket) dedup key, and the quarantine latch the
+   *  poll worker reads. Nested rather than a flattened string key, so an orderId (canonical Unicode, not a
+   *  restricted charset) can never collide with a separator. */
+  private readonly lossBuckets = new Map<string, Set<LossBucket>>();
   private readonly deadRetries = new Map<string, number>();
   private readonly reversalRetries = new Map<string, number>();
   private readonly revertOtherRetries = new Map<string, number>();
@@ -157,8 +161,28 @@ export class InMemoryStore implements Store {
     this.orders.set(orderId, row);
   }
 
+  /**
+   * Record the quarantine, once. The flag is a MARKER a human (and the poll worker's latch) reads, not an event
+   * stream: the escalate path can be reached on every recovery tick for the same order, and an unconditional push
+   * would grow one row per tick and bury the single row that matters. Keyed on (orderId, bucket) — the two buckets
+   * are different facts about the same order and must both survive. The FIRST witness wins: a later call may carry
+   * a null hash (the crash-recovery path has no witness), and forgetting a hash we already hold would be a
+   * regression, never a correction.
+   */
   async flagLoss(orderId: string, bucket: LossBucket, usdcTxHash: string | null): Promise<void> {
+    const buckets = this.lossBuckets.get(orderId) ?? new Set<LossBucket>();
+    if (buckets.has(bucket)) return;
+    buckets.add(bucket);
+    this.lossBuckets.set(orderId, buckets);
     this.losses.push({ orderId, bucket, usdcTxHash, atMs: 0 });
+  }
+
+  /** Has this order been quarantined, in any bucket? The poll worker's work-list skips it if so — an escalated
+   *  order has no core event to transition on, so it keeps its in-flight state and would otherwise be re-driven
+   *  (and re-escalated) forever. This is where the driver's "recovery must not re-drive a loss-flagged order" is
+   *  enforced. */
+  isLossFlagged(orderId: string): boolean {
+    return this.lossBuckets.has(orderId);
   }
 
   async markWebhookSeen(

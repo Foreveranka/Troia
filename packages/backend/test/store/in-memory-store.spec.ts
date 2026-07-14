@@ -99,4 +99,46 @@ describe('InMemoryStore — Store interface conformance', () => {
     expect(s.sequences.allocate('o1')).toBe(1001n);
     expect(s.sequences.allocate('o1')).toBe(1001n); // idempotent per order
   });
+
+  // The loss flag is a QUARANTINE marker, not an event stream: the poll worker reads it to keep an escalated
+  // order out of its work-list. A non-idempotent push would grow one row per tick for the same order and make the
+  // loss report — the thing a human is supposed to read — useless.
+  describe('flagLoss — an idempotent quarantine marker', () => {
+    it('records one row per (orderId, bucket), however many times it is called', async () => {
+      const s = mk();
+      await s.flagLoss('o1', 'indeterminateLossReview', 'hash-1');
+      await s.flagLoss('o1', 'indeterminateLossReview', 'hash-1');
+      await s.flagLoss('o1', 'indeterminateLossReview', 'hash-1');
+      expect(s.lossRecords()).toHaveLength(1);
+      expect(s.lossRecords()[0]).toMatchObject({
+        orderId: 'o1',
+        bucket: 'indeterminateLossReview',
+        usdcTxHash: 'hash-1',
+      });
+    });
+
+    it('keeps the FIRST witness — a later null must not erase the hash we already recorded', async () => {
+      const s = mk();
+      await s.flagLoss('o1', 'indeterminateLossReview', 'hash-1');
+      await s.flagLoss('o1', 'indeterminateLossReview', null);
+      expect(s.lossRecords()).toHaveLength(1);
+      expect(s.lossRecords()[0]?.usdcTxHash).toBe('hash-1');
+    });
+
+    it('the two buckets are distinct, and distinct orders never collide', async () => {
+      const s = mk();
+      await s.flagLoss('o1', 'indeterminateLossReview', null);
+      await s.flagLoss('o1', 'reversalExhausted', null);
+      await s.flagLoss('o2', 'indeterminateLossReview', null);
+      expect(s.lossRecords()).toHaveLength(3);
+    });
+
+    it('isLossFlagged answers for the order, in any bucket', async () => {
+      const s = mk();
+      expect(s.isLossFlagged('o1')).toBe(false);
+      await s.flagLoss('o1', 'reversalExhausted', null);
+      expect(s.isLossFlagged('o1')).toBe(true);
+      expect(s.isLossFlagged('o2')).toBe(false); // never flagged
+    });
+  });
 });

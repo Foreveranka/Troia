@@ -1,4 +1,4 @@
-// resolveGroundTruth — the total, ordered, role-split decision procedure (docs/ARCHITECTURE §8 §4).
+// resolveGroundTruth — the total, ordered, role-split decision procedure (docs/ARCHITECTURE §8 §5).
 // (b) the signed XDR is the cryptographic tiebreaker between the mutable local row (a) and the observed
 // chain (c). The ordering is load-bearing: tamper (HB) is split from divergence (BC) so CHAIN_DIVERGENCE
 // stays reachable, and CORRUPT_LOCAL is reached ONLY after S∧HB∧BC∧DC — so it always carries a valid

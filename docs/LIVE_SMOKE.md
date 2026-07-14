@@ -1,8 +1,8 @@
 # Troia — Live-Smoke Runbook (Phase 4.5 end-to-end)
 
 > **✅ Executed.** This is the operational script for a real iyzico charge automatically driving a real on-chain
-> `TroyPool.pay()` on testnet — this doc is how a human drives it. Honest boundary: **`signed ≠ settled`** — we
-> prove what we signed cryptographically and what settled while the chain remembers it. Nothing here runs in the
+> `TroyPool.pay()` on testnet — this doc is how a human drives it. Honest boundary: **`signed ≠ settled`**
+> (see [`RECONCILIATION.md`](RECONCILIATION.md)). Nothing here runs in the
 > offline gate: it uses the network and the iyzico **sandbox** (valueless test cards); the USDC is our own testnet
 > mint. No real money moves.
 
@@ -30,10 +30,30 @@ hit a real RPC / the real sandbox. This run smokes:
    worker's authenticated pull, not a configured server-to-server webhook).
 3. **The live oracle inputs** — the CEX spot mid (Binance/Bybit/OKX) and the Yahoo daily-close history, now behind
    per-attempt timeouts + bounded retry (a hung source drops fail-closed, a transient blip retries).
-4. **The revert-read shape** (optional, flag-1) — whether a landed-and-reverted `pay()` carries the diagnostic
-   events `readContractErrorCode` reads. Only a live reverted tx can confirm this (Step 7).
+4. **The revert-read shape** — whether a landed-and-reverted `pay()` carries the diagnostic events
+   `readContractErrorCode` reads. Confirmed on chain (Step 7); reproducible with `scripts/stage-revert.mjs`.
 
 ---
+
+## Who can run this?
+
+This runbook is for the **operator who holds the deployment's keys**. `just serve` boots fail-closed on
+`TROIA_OPERATOR_SECRET` and `TROIA_ISSUER_SECRET`, and those must be the **same** keys the deployed `TroyPool`
+(`CCVNY6H…`, see [`DEPLOYMENTS.md`](DEPLOYMENTS.md)) was constructed with — any other operator key fails the
+operator's on-chain `require_auth()`, so `pay()` can never be authorized. Those secrets live only in a git-ignored
+`.env`; they are never shared.
+
+**A reviewer who does not hold them has two honest paths, neither of which needs our secrets:**
+
+- **Reproduce the proof offline** — `just verify` / `just verify-live` / `just verify-tampered` re-derive every
+  verdict from embedded evidence with no keys, no network, and no live services (see
+  [`RECONCILIATION.md`](RECONCILIATION.md)). This is the reviewer-verifiable centerpiece, and it is why it exists.
+  The live runs are then **watched**, not re-run: the explorer links in [`DEPLOYMENTS.md`](DEPLOYMENTS.md) and the
+  proof video.
+- **Or stand up an entirely fresh deployment of your own** — a free iyzico sandbox account
+  (`sandbox-merchant.iyzipay.com`) for the fiat leg, plus your own testnet pool via `just bootstrap`. Note that
+  `just bootstrap` refuses while the committed `deployment.testnet.json` names a live pool (the one-pool guard), so
+  this means pointing that record at your own fresh deployment first — a deliberate act, not a clone-and-run.
 
 ## Prerequisites
 
@@ -150,19 +170,26 @@ parentheses on the verification screen — enter what it displays).
 - **The explorer** confirms the on-chain truth: the pool balance drops by the amount, the merchant receives USDC,
   and `PaymentMade` carries the derived `tx_id`/`memo`. See [`DEPLOYMENTS.md`](DEPLOYMENTS.md) for the address table.
 
-## Step 7 — (optional) Confirm the revert-read shape (flag-1)
+## Step 7 — Confirm the revert-read shape (done on chain; reproducible)
 
-Only a live reverted `pay()` can confirm the diagnostic-event shape `readContractErrorCode` parses. Force one with
-the CLI (a second `pay()` with the same `tx_id` reverts `AlreadyProcessed`), then:
+Only a live reverted `pay()` can confirm the diagnostic-event shape `readContractErrorCode` parses. A double-pay
+does **not** produce one: a deterministically-reverting `pay()` fails simulation, so the CLI never submits it and
+no reverted tx is created. The way to land one is to change state between simulation and inclusion —
+`stage-revert.mjs` does exactly that, pausing the pool (which `pay()` checks first, before any transfer, so no USDC
+moves and the books are untouched) and sending a pre-signed `pay()` that then reverts `Paused`:
 
 ```bash
-node scripts/probe-revert.mjs <txHashOfTheRevertedInvocation>
+node --env-file=.env scripts/stage-revert.mjs   # prints the reverted tx hash (guarantees unpause on every exit)
+node scripts/probe-revert.mjs <that hash>
 ```
 
-Expect it to print `readContractErrorCode  1 (AlreadyProcessed)`. If it prints `null` while the tx is `FAILED` with
-diagnostics, the code sits on a different contractId (SAC vs TroyPool) or nested in the soroban meta — investigate
-`collectDiagnosticEvents`. **Either way the money path is safe**: a `null` re-drives, and the on-chain
-`Processed(tx_id)` guard is the real double-pay shield.
+Expect it to print `readContractErrorCode  3 (Paused)` (any non-`null` code confirms the read). If it prints
+`null` while the tx is `FAILED` with diagnostics, the code sits on a different contractId (SAC vs TroyPool) or
+nested in the soroban meta — investigate `collectDiagnosticEvents`. **Either way the money path is safe**: a
+`null` re-drives, and the on-chain `Processed(tx_id)` guard is the real double-pay shield.
+
+This was run on 2026-07-14; the reverted tx and the read code are recorded in
+[`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 
 ---
 

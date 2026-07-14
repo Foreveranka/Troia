@@ -1,7 +1,7 @@
 // Deterministic FX oracle (ADR-2: no AI). The network is NOT here — quotes are injected and a live-CEX
 // OracleProvider impl arrives in Phase 4. Per source TRY/USDC = (TRY/USDT) × (USDT/USDC). All prices are
 // bigint scaled by RATE_SCALE (fixed-point; money never touches floating point). Fail-closed: an
-// under-quorum or over-deviation read returns an error, never a guessed price. See docs/ARCHITECTURE.md §7.
+// under-quorum or over-deviation read returns an error, never a guessed price. See docs/ARCHITECTURE.md §3.
 
 export const RATE_SCALE = 10_000_000n; // a rate of X TRY-per-USDC is stored as X * 1e7
 

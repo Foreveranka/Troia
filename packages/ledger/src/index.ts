@@ -1,4 +1,4 @@
-// Double-entry, append-only settlement ledger (ADR-4 spread transparency; ARCHITECTURE §7 packages).
+// Double-entry, append-only settlement ledger (ADR-4 spread transparency; ARCHITECTURE §3 packages).
 // Pure and deterministic — fixed-point bigint only, no clock, no network. It records where the money
 // went: fiat_in (TRY collected), crypto_out (USDC paid), spread (margin), fee (PSP cost). The reporting
 // (functional) currency is kuruş; every leg carries its NATIVE amount (kuruş or stroops) AND its value

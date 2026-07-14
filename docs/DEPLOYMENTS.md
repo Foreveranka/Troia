@@ -98,7 +98,7 @@ An operator-signed `pay()` moved USDC from the pool to a merchant end-to-end, us
 - **Order:** `order_id = troia-smoke-0001`, amount **1 USDC** (`10000000` stroops), `applied_rate = 411075000`.
 - **Merchant:** `GDF7V2G5FB5UF4AT7ZQ2A4L3YFG44UVJW3APSZWDN3FCI3HJCCMMGOXN` — a fresh account with a USDC trustline
   ([trustline tx](https://stellar.expert/explorer/testnet/tx/d2b120f2f258f35474a3f08704639c381136a973215af114cdefbc82c59bbd49)).
-- **Derived identity** (`deriveIds(order_id, destination, amount)`, byte-exact — ARCHITECTURE §4):
+- **Derived identity** (`deriveIds(order_id, destination, amount)`, byte-exact — ARCHITECTURE §5):
   - `tx_id = fdce630a4557f4bb37a6d7c1d3e011f0749b1f2e0de54be336e8d4ee789876cf`
   - `memo  = 6115721c3f246433a851a959ba9b0bc8c3de9bc486f5da2cdd0f022bad30c5a9`
 
@@ -145,20 +145,21 @@ money-good order and, after the compressed demo valör (`DEMO_VALOR_SECS`, defau
 **~21 days**), mints USDC into the pool from that order's collected TRY at the live oracle rate by signing a **real
 USDC-SAC mint with the issuer key** (`SimulatedRebalance` → `createSacMintClient`). This exercises the issuer-signed
 mint path automatically — no dedicated rebalance-mint tx hash is recorded here. The system is seamed for a future
-**agent + on/off-ramp service**; on mainnet the same seam becomes a real CEX buy. See **ARCHITECTURE §5a**.
+**agent + on/off-ramp service**; on mainnet the same seam becomes a real CEX buy. See **ARCHITECTURE §6a**.
 
 ## Durable state + chain-authoritative detection, proven live
 
 A second full-stack run, `2026-07-10`, drove the same storefront → extension → iyzico → `pay()` path, but this time
-against the durable logs (ARCHITECTURE §7b) and the two chain-reading loops (§8a). It is the stronger proof, because
+against the durable logs (ARCHITECTURE §3b) and the two chain-reading loops (RECONCILIATION.md §8). It is the stronger proof, because
 nothing in it is asserted by the system about itself.
 
 - **Order `ST-7SRI0YDF`** — customer paid **4 019.46 TRY**; settlement **80 USDC** (`800000000` stroops).
 - **Operator-signed `pay()`:** [tx `d47f7fb9…`](https://stellar.expert/explorer/testnet/tx/d47f7fb92a149d61a6f576aa7f803d75e6d3b3dcb6b0119e5a12a7387683d1a5)
   — ledger `3530567`, `2026-07-10T07:33:21Z`, merchant `GA4WBDAN…` (the then-current demo payee) credited 80 USDC.
 - **The audit found the settlement by the contract's own index, not by our record.** The pool announced it under
-  `tx_id = f11336a3e231fde6…`; `deriveIds(order_id, destination, amount).txIdHex` computes the same value
-  independently — the `tx_id` commits to all three, which is exactly what makes the lookup independent of our
+  `tx_id = f11336a3e231fde6…` — the identifier the contract indexes, derived from `order_id` alone
+  (`sha256(lp("troia.txid.v1") ‖ lp(order_id))`) and recomputed independently by `deriveIds`. Looking it up by that
+  contract-side identifier, not by the transaction hash we recorded, is what makes the check independent of our own
   records. All five gates passed (the settlement was found under the order's own `tx_id`; no `upgrade()`; the
   announced amount == the amount the token contract moved; the tx still live and successful;
   `resolveGroundTruth → MATCHED`), and the order was marked `Reconciled`.
@@ -179,18 +180,52 @@ nothing in it is asserted by the system about itself.
 Record counts in `data/<troyPool>/` after the run — `ledger-journal` 3, `evidence` 1, `authorized` 1,
 `chain-observations` 3, `reconciled` 1, `outflow-cursor` last-wins, `outflow-suspects` **0 bytes**. (The directory
 is git-ignored: it holds a live deployment's state, not a fixture.) The coverage floor, framed exactly as
-ARCHITECTURE §7b describes — `L<payload bytes>,<crc32>|<payload>`:
+ARCHITECTURE §3b describes — `L<payload bytes>,<crc32>|<payload>`:
 
 ```
 L35,3499d6da|{"v":1,"t":"cov","unix":1783668512}
 ```
 
-**What this run did _not_ prove.** No unauthorized outflow was staged, so `ROGUE PAYOUT` has still never fired
-against a real thief — only the negative (an authorized payout is not accused) is demonstrated. `CHAIN_DIVERGENCE`
-and both blind-spot states (`never-watched`, `aged-out`) remain exercised by tests only. The run also surfaced a
+**What this run did _not_ prove.** `ROGUE PAYOUT` is proven separately below (it fired live on `2026-07-14`).
+`CHAIN_DIVERGENCE` and both blind-spot states (`never-watched`, `aged-out`) remain exercised by tests only. The run
+also surfaced a
 real defect: `GET /status/<orderId>` answered `NotFound` after the restart, because the order rows are in memory.
 Both `/status` and `/receipt` now answer a **settled** order from the durable evidence log instead; an order still
 in flight is still an honest `404`. See [`SCOPE_AND_LIMITATIONS.md`](SCOPE_AND_LIMITATIONS.md) §4.
+
+## The revert-read path, proven on a live reverted `pay()`
+
+`readContractErrorCode` parses a contract error code out of a **failed** transaction's diagnostic events — a shape
+no fake can stand in for. Confirmed on chain `2026-07-14` (`scripts/stage-revert.mjs` → `scripts/probe-revert.mjs`):
+
+- **Reverted tx:** [`249862ed…`](https://stellar.expert/explorer/testnet/tx/249862edac65d4a006d56a8825ade62ae8b7486c6a282fcdfaad3f9745d0f134)
+  — `status FAILED`, 22 diagnostic events, all scoped to `TroyPool` (`CCVNY6H…`), and `readContractErrorCode` read
+  **`3` (`Paused`)**.
+- **How it was staged.** A double-pay cannot produce a reverted tx (a deterministic revert fails simulation and is
+  never submitted). Instead the pool was `pause()`d and a pre-signed `pay()` sent: `pay()` checks `paused` **before**
+  the `Processed` write and the transfer, so the revert moved **no USDC**, marked **no** `tx_id` (`is_processed`
+  stayed `false` — the `Err` rolled the whole invocation back), emitted **no** `transfer` event, and left the pool
+  balance byte-identical (`994599590499` before and after). The pool was unpaused immediately, by a guard that runs
+  on every exit path.
+
+## `ROGUE PAYOUT`, fired live against a real unauthorized outflow
+
+The payout tail's sharpest claim — that USDC leaving the pool through a transaction the operator never wrote to
+the pre-broadcast journal is caught, not just the negative (an authorized payout is not accused). Demonstrated on
+chain `2026-07-14`, against a **live backend** (`just serve`, so the real tail was watching), in an **isolated data
+dir** so this deployment's own operating history stays clean:
+
+- **The staged outflow.** The operator called `pay()` **directly by CLI, bypassing the backend**, sending 1 USDC
+  (`10000000` stroops) to a testnet merchant —
+  [tx `d946c02e…`](https://stellar.expert/explorer/testnet/tx/d946c02ea7f69e93160d9e631ceda88e7bb17a262c24f8a22c81b162a0e8c78f),
+  ledger 3604686. Because it never went through the backend, its hash was never written to `authorized.log`.
+- **The tail caught it.** After the 60-second grace, the live tail paged: _"ROGUE PAYOUT: 10000000 stroops of USDC
+  left the pool … which this operator never authorized — its hash was never written to the pre-broadcast journal."_
+  The suspect log recorded the case durably — a `seen` entry, then an `alarmed` entry, both keyed to the tx hash.
+- **It self-heals the balance, never the evidence.** The issuer minted the 1 USDC back, so the pool ended
+  byte-identical (`994599590499` before, `994599590499` after). The suspect record **stays** in the append-only log:
+  the balance tripwire clears on re-sync, but the outflow ledger never forgets an unauthorized payout. No money was
+  at risk (testnet USDC), and the real deployment's `outflow-suspects.log` remained `0` bytes throughout.
 
 ## Working against this deployment
 

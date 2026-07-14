@@ -1,4 +1,4 @@
-// Settlement state machine — the single source of truth (docs/ARCHITECTURE.md §3).
+// Settlement state machine — the single source of truth (docs/ARCHITECTURE.md §4).
 // A PURE, TOTAL reducer: transition(state, event) returns a result and NEVER throws. Side effects are
 // returned as descriptors (data), not executed here — the backend (Phase 4) performs them and feeds the
 // results back as the next event.

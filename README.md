@@ -21,6 +21,7 @@ the operator settles the merchant in USDC from a Stellar pool that is pre-funded
 | ------------------------------------------ | -------------------------------------------------------------------- |
 | evaluate this in 5 minutes                 | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md), then run `just verify` |
 | clone and run it live                      | [`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)                           |
+| install & use the browser extension        | [`docs/EXTENSION.md`](docs/EXTENSION.md)                             |
 | understand the trust model (`just verify`) | [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)                   |
 | understand the design                      | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                       |
 | see the known engineering gaps             | [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)                       |
@@ -49,12 +50,13 @@ that lies about its own outcome cannot pass. A real `pay()` has settled USDC poo
 [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md).
 `just ci` runs the full gate — every suite this repo owns.
 
-The **live stack** (`just serve` + storefront + extension) is the **operator's** path, not a reviewer's: it boots
-on the deployment's own operator/issuer keys, which are never shared, so any other key fails the operator's on-chain
-`require_auth()` and `pay()` can never be authorized. A reviewer reproduces the proof offline (above) and
-**watches** the live runs via
-[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md); to drive it live yourself, stand up your own testnet deployment (see
-[`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md)).
+The **live stack** (backend + storefront + extension) settles on the deployment's own operator/issuer keys, which
+are never shared: the on-chain `pay()` is authorized by the operator's key behind the backend, and any other key
+fails its `require_auth()`. While the stack runs only on the operator's own machine, a reviewer reproduces the proof
+offline (above) and **watches** the live runs via [`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md); once it is publicly
+deployed, a reviewer can drive the hosted storefront directly — the settlement is still authorized by the operator's
+key behind the backend, never the reviewer's. To stand up your own testnet deployment instead, see
+[`docs/LIVE_SMOKE.md`](docs/LIVE_SMOKE.md).
 
 ## Toolchain
 

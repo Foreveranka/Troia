@@ -181,18 +181,20 @@ The remaining honest limitations are operational, not "unrun":
 - **Channel accounts for concurrency** (the single-writer sequence allocator is today's seam; a channel pool is
   Phase-2 with the allocator interface unchanged).
 - **StellarPay / Beans extension adapters** (bonus rail; the demo storefront does not depend on them).
-- **Extension origin scope.** The browser extension is deliberately scoped to **localhost / 127.0.0.1 on any
-  port** (port-less `matches`/`host_permissions`), not `<all_urls>` and not a specific storefront origin. This
-  keeps the reviewer's Chrome permission prompt honest and the attack surface small. A production build widens the
-  allowlist to any storefront emitting a USDC SEP-7 — the DOM-scan mechanism is unchanged; only the manifest match
-  patterns change. But widening it to a storefront we do not control first requires **SEP-7 request signing**,
-  which is not built — see the next item.
+- **Extension origin scope.** The content script is allowlisted to the storefront origin(s) in the deployment
+  record (`deployment.generated.ts`), **never `<all_urls>`**. In local dev that record holds `localhost` /
+  `127.0.0.1`, so the manifest uses a port-less `http://localhost/*` pattern; a public deploy of our own storefront
+  pins that specific origin instead. Either way it is one origin we control, which keeps the Chrome permission prompt
+  honest and the attack surface small. Widening the allowlist to a storefront **we do not control** (the "works on
+  any store" goal) is a separate step — the DOM-scan mechanism is unchanged, only the manifest match patterns — but
+  it first requires **SEP-7 request signing**, which is not built — see the next item.
 - **SEP-7 request signing (`origin_domain` + `signature`) — the prerequisite for "works on any store".** Today the
   adapter validates the payee's _shape_ (valid strkey, allowlisted USDC issuer) but never its _authorship_, so a DOM
   injection on an allowlisted storefront origin could name any destination and all six checks would still pass. Not
-  exploitable now: the only allowlisted origins are the local demo storefront, and an attacker who can inject there
-  already owns the machine. It becomes real the moment a third-party origin joins the allowlist — which is exactly
-  what "works on any store" means. The fix keeps the no-registry design (Troia never records a merchant): verify the
+  exploitable now: the only allowlisted origin is Troia's own demo storefront — `localhost` in dev, our own deployed
+  origin in a public build — a storefront we control, so an injection there means compromising that storefront
+  itself, not a bystander site. It becomes real the moment a third-party origin joins the allowlist — which is
+  exactly what "works on any store" means. The fix keeps the no-registry design (Troia never records a merchant): verify the
   request's `signature` against the `URI_REQUEST_SIGNING_KEY` published at
   `https://<origin_domain>/.well-known/stellar.toml`, **and** require `origin_domain` to equal the origin of the page
   the request was found on — `sender.origin` in the background worker is the unforgeable source. Both halves are

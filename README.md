@@ -1,6 +1,6 @@
 # Troia
 
-**Documentation:** https://troiadocs.vercel.app
+**Documentation:** https://troia-docs.vercel.app
 
 Custodial TRY→USDC settlement bridge on Stellar (testnet PoC). A Turkish user pays TRY with a Troy card;
 the operator settles the merchant in USDC from a Stellar pool that is pre-funded and automatically topped up from the collected TRY. The spread is revenue.

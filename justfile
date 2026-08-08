@@ -247,3 +247,22 @@ verify-tampered:
 # A-5: create + fund N channel accounts (default 5) and print the TROIA_CHANNEL_SECRETS .env line.
 add-channels count='5':
     node scripts/add-channels.mjs {{count}}
+
+# Per-feature proof: run each production-path item's dedicated suites with a labeled header. One command,
+# one green wall — the presentation artifact for "prove the six items work". (Full gate stays `just ci`.)
+verify-features:
+    @echo "── A-1  durable order store (crash recovery, reservations, counters) ──"
+    pnpm vitest run packages/composition/test/sqlite-order-store.spec.ts packages/composition/test/sqlite-order-registry.spec.ts packages/composition/test/order-recovery.spec.ts packages/composition/test/sqlite-sequence-store.spec.ts
+    @echo "── A-2  mint write-ahead journal (no double mint across a crash) ──"
+    pnpm vitest run packages/backend/test/settlement/settlement-worker.spec.ts packages/composition/test/mint-intent-journal.spec.ts
+    @echo "── A-5  channel accounts (pool, signing, reconciler witness) ──"
+    pnpm vitest run packages/core/test/channel-pool.spec.ts packages/stellar-client/test/channel-submit.spec.ts packages/reconciler/test/channel-witness.spec.ts packages/backend/test/engine/channel-alloc.spec.ts
+    @echo "── B-11 manual payment wizard (validation, cap, SEP-29 rejection) ──"
+    pnpm vitest run packages/stellar-client/test/account-snapshot.spec.ts
+    cd app/extension && npx vitest run test/wizard-core.spec.ts test/background.spec.ts
+    @echo "── C-13 /intent session gate (401/429, budget, idempotent replay) ──"
+    pnpm vitest run packages/backend/test/http/session.spec.ts packages/composition/test/server-smoke.spec.ts
+    @echo "── D-17 observability (metrics exposition, alert cooldown) ──"
+    pnpm vitest run packages/composition/test/observability.spec.ts
+    @echo ""
+    @echo "ALL SIX FEATURES PROVEN ✔  (live-chain evidence: docs/DEPLOYMENTS.md 'Channel accounts live drill')"

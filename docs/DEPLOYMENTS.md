@@ -227,6 +227,27 @@ dir** so this deployment's own operating history stays clean:
   the balance tripwire clears on re-sync, but the outflow ledger never forgets an unauthorized payout. No money was
   at risk (testnet USDC), and the real deployment's `outflow-suspects.log` remained `0` bytes throughout.
 
+## Channel accounts live drill (A-5, `2026-08-08`)
+
+The parallel-payout design (`CHANNEL_ACCOUNTS_DESIGN.md`) was fired live against this pool. Five channel
+accounts (`troia-channel-1..5`, friendbot-funded fee payers with no USDC and no contract authority) were armed
+via `TROIA_CHANNEL_SECRETS`; the boot logged `[channels] 5 channel account(s) armed`. Two concurrent 5-USDC
+orders were charged on the sandbox hosted form and settled through TWO DIFFERENT channel tx sources:
+
+- `drill-b…`: tx `56457a19…`, source `GAQFBKFG…` (**channel-1**), ledger `4035197`, successful.
+- `drill-a…`: tx `cad50dff…`, source `GCEBPKYR…` (**channel-2**), ledger `4035200`, successful.
+
+That is the live proof of the whole mechanism: the network accepted the operator's authorization as a SIGNED
+address-credential auth entry inside a channel-sourced transaction. Both pool refills booked
+(`troia_settlements_total 2`), the transient post-payout drift closed to `0`, and a full restart replayed the
+durable store (`2 settled row(s) dropped`, both orders still answering `completed`).
+
+The drill also caught a real gap, fixed the same day: the live reconciler's P2 predicate verified the ENVELOPE
+signature against the operator, so both channel payouts flagged `EVIDENCE_TAMPERED (signature_valid=false)`.
+P2 now verifies the operator's auth-entry signature over the SorobanAuthorization preimage for channel-sourced
+transactions (`packages/reconciler/src/verify-crypto.ts`, with a forged-witness rejection test); after the fix
+both orders reconciled: `the chain agrees — reconciled`.
+
 ## Working against this deployment
 
 ```bash

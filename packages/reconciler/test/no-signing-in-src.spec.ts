@@ -18,6 +18,15 @@ const FORBIDDEN = [
   'process.env',
 ];
 
+// The ONE sanctioned exception, explicit so it cannot spread silently. Channel-mode P2 (A-5) verifies the
+// operator's auth-entry signature over the SorobanAuthorization HASH-ID PREIMAGE, and computing that payload
+// requires serializing the preimage (`preimage.toXDR()`) to hash it. That is VERIFICATION: no key material,
+// no signing, and the serialized bytes are hashed-and-compared, never emitted as evidence. The invariant's
+// teeth — the Keypair/sign bans that make forging impossible — remain global and unexceptioned.
+const ALLOWED: readonly { readonly file: string; readonly token: string }[] = [
+  { file: 'verify-crypto.ts', token: '.toXDR(' },
+];
+
 const srcDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
 function tsFiles(dir: string): string[] {
@@ -35,6 +44,8 @@ describe('reconciler src is keyless & buildless by construction', () => {
     for (const file of tsFiles(srcDir)) {
       const body = readFileSync(file, 'utf8');
       for (const bad of FORBIDDEN) {
+        const allowed = ALLOWED.some((a) => file.endsWith(a.file) && a.token === bad);
+        if (allowed) continue;
         expect(body.includes(bad), `${file} contains forbidden "${bad}"`).toBe(false);
       }
     }

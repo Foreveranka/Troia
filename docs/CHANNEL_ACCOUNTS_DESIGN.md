@@ -1,6 +1,11 @@
 # Channel accounts — the parallel-payout design (A-5)
 
-> Status: **implemented and wired, awaiting the live testnet drill.** Everything on this page is built and
+> Status: **LIVE-PROVEN on testnet, `2026-08-08`** — two concurrent payouts settled through two different
+> channel tx sources (ledgers `4035197`/`4035200`; see DEPLOYMENTS.md "Channel accounts live drill" for the
+> transaction evidence and the reconciler gap the drill caught and fixed). The one drill variant still open
+> is the MID-FLIGHT crash (kill between charge and settlement) — the offline restart suites cover it; a live
+> rehearsal remains on the D-18 list. Original pre-drill status, kept for history:
+> implemented and wired, awaiting the live testnet drill. Everything on this page is built and
 > offline-tested: the pool provider, the channel-sourced signing path (operator auth as signed
 > address-credential entries), the per-channel deadness reads, the durable seq snapshots + sticky
 > order->channel map in `orders.db`, the `TROIA_CHANNEL_SECRETS` wiring and the `just add-channels`

@@ -27,7 +27,16 @@
   satır kilidi hâlâ YOK (tek process varsayımı sürüyor — KNOWN_ISSUES §3); canlı testnet'te
   crash/restart tatbikatı henüz yapılmadı. Runtime `node:sqlite` kullanıyor (Node ≥ 22.5;
   "experimental" uyarısı zararsız).
-- **A-5 — KOD TAMAM (2026-08-08): canlı testnet provası bekliyor.** İmza yarısı da bitti:
+- **A-5 — CANLIDA KANITLANDI (2026-08-08).** Tatbikat koşuldu: 5 kanal fonlandı, iki eşzamanlı
+  sipariş sandbox kartla ödendi ve **iki farklı kanal hesabından** zincire indi (ledger
+  4035197/4035200; kanıtlar DEPLOYMENTS.md'de). Refill'ler defterlendi, geçici drift 0'a kapandı,
+  restart sonrası kalıcı store iki siparişi de geri getirdi. Tatbikat gerçek bir eksik de yakaladı
+  ve aynı gün düzeltildi: canlı denetçi zarf imzasını operator'e karşı doğruluyordu → kanal
+  tanıkları yanlışlıkla EVIDENCE_TAMPERED işaretlendi; P2 artık kanal-source'lu tx'te operator'ün
+  auth-entry imzasını preimage üzerinden doğruluyor (sahte-tanık ret testiyle). Düzeltme sonrası
+  iki sipariş de "the chain agrees — reconciled". Açık kalan tek varyant: uçuş-ortası kill provası
+  (D-18 listesinde; offline restart testleri kapsıyor).
+- **A-5 arşiv notu (aynı gün, önceki durumlar): kod tamam → tasarım+çekirdek.** İmza yarısı da bitti:
   kanal-source'lu `pay()`'de operator yetkisi imzalı address-credential auth entry olarak taşınıyor
   (`signAuthEntry` + `assembleWithSignedAuth`, imzasız/yabancı/yanlış-şekilli entry'ler assemble
   edilmeden reddedilir); write-ahead disiplini korunuyor (persist → send, imzalı entry'ler tx

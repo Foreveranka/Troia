@@ -74,3 +74,10 @@ function requestState(): void {
 }
 
 requestState();
+
+// Open the manual-payment wizard in its own tab (B-11): for stores that accept USDC on Stellar but publish no
+// SEP-7 — the user pastes the recipient address there. A popup closes itself after opening the tab.
+el('manual').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('src/wizard/index.html') });
+  window.close();
+});

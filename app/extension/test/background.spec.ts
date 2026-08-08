@@ -112,6 +112,48 @@ describe('background message router — who may speak to it', () => {
     expect(getStatus).not.toHaveBeenCalled();
     expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'forbidden_origin' });
   });
+
+  // B-11: the manual-payment wizard runs on the extension's OWN page and speaks the same protocol.
+  it("accepts the extension's own page (the wizard): own id AND own chrome-extension origin", async () => {
+    getStatus.mockResolvedValue({ ok: true, status: 'pending' });
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    const own = {
+      id: 'troia-test-extension-id',
+      origin: 'chrome-extension://troia-test-extension-id',
+    };
+    const kept = handler({ type: 'TROIA_STATUS', orderId: 'o1' }, own, sendResponse);
+    expect(kept).toBe(true);
+    await flush();
+    expect(getStatus).toHaveBeenCalledWith('o1');
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true, status: 'pending' });
+  });
+
+  it('refuses ANOTHER extension, even with a chrome-extension origin (id must match too)', async () => {
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    const foreignExt = { id: 'evil-extension-id', origin: 'chrome-extension://evil-extension-id' };
+    handler({ type: 'TROIA_STATUS', orderId: 'o1' }, foreignExt, sendResponse);
+
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'forbidden_origin' });
+  });
+
+  it('refuses a spoofed own-origin whose sender id is missing', async () => {
+    const handler = await loadRouter();
+    const sendResponse = vi.fn();
+
+    handler(
+      { type: 'TROIA_STATUS', orderId: 'o1' },
+      { origin: 'chrome-extension://troia-test-extension-id' },
+      sendResponse,
+    );
+
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: false, error: 'forbidden_origin' });
+  });
 });
 
 describe('background message router', () => {

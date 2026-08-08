@@ -37,10 +37,36 @@ describe('toAccountSnapshot — Horizon balances -> core AccountSnapshot -> Payo
 
   it('a missing account (null) yields a fail-closed snapshot -> TrustlineMissing', () => {
     const snapshot: AccountSnapshot = toAccountSnapshot(null);
-    expect(snapshot).toEqual({ exists: false, trustlines: [] });
+    expect(snapshot).toEqual({ exists: false, trustlines: [], memoRequired: false });
 
     const res = PayoutIntent.build(raw(), { snapshot, allowedIssuers: [ISSUER] });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toBe('TrustlineMissing');
+  });
+
+  // SEP-29: an exchange deposit address flags itself `config.memo_required`. Our Soroban settlement is
+  // protocol-forced to MEMO_NONE, so the credit could never be attributed — build must fail closed with its
+  // own error code (the manual wizard's explicit "exchange addresses unsupported" message keys on it).
+  it('a memo-required account (SEP-29) is rejected with DestinationMemoRequired, even with the trustline', () => {
+    const json = {
+      balances: [{ asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: ISSUER }],
+      data: { 'config.memo_required': 'MQ==' }, // base64("1"), the SEP-29 canonical value
+    };
+    const snapshot: AccountSnapshot = toAccountSnapshot(json);
+    expect(snapshot.memoRequired).toBe(true);
+
+    const res = PayoutIntent.build(raw(), { snapshot, allowedIssuers: [ISSUER] });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe('DestinationMemoRequired');
+  });
+
+  it('other data entries do NOT trip the SEP-29 rejection', () => {
+    const json = {
+      balances: [{ asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: ISSUER }],
+      data: { unrelated: 'eA==' },
+    };
+    const snapshot: AccountSnapshot = toAccountSnapshot(json);
+    expect(snapshot.memoRequired).toBe(false);
+    expect(PayoutIntent.build(raw(), { snapshot, allowedIssuers: [ISSUER] }).ok).toBe(true);
   });
 });

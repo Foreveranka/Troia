@@ -54,6 +54,8 @@ export function installChromeStub(script: Partial<ChromeStubScript> = {}): Chrom
   let messageHandler: MessageHandler | undefined;
 
   const runtime = {
+    /** the extension's own id — background's own-page sender check compares against it. */
+    id: 'troia-test-extension-id',
     lastError: undefined as { message: string } | undefined,
     onInstalled: { addListener: vi.fn() },
     onMessage: {

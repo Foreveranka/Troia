@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Troia — Manual payment</title>
+    <link rel="stylesheet" href="./wizard.css" />
+  </head>
+  <body>
+    <main class="wiz">
+      <header class="hd">
+        <img class="logo" src="../popup/assets/logo.png" alt="Troia logo" />
+        <div>
+          <h1>Manual payment</h1>
+          <p class="tag">Pay any USDC-on-Stellar address with your Troy card</p>
+        </div>
+      </header>
+
+      <!-- STEP 1: details -->
+      <section id="step-details">
+        <label class="field">
+          <span class="k">Recipient’s Stellar address</span>
+          <input
+            id="destination"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="G…"
+          />
+        </label>
+        <label class="field">
+          <span class="k">Amount (USDC)</span>
+          <input
+            id="amount"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="25.00"
+          />
+          <span class="hint" id="cap-hint"></span>
+        </label>
+
+        <div class="notice">
+          <b>No memo support.</b> Exchange deposit addresses (Binance, Coinbase, …) require a
+          deposit memo and <b>cannot be paid</b> — the address is checked and refused before any
+          charge. Use a personal or merchant wallet address.
+        </div>
+
+        <p class="error" id="details-error" hidden></p>
+        <button class="primary" id="continue" type="button">Continue</button>
+      </section>
+
+      <!-- STEP 2: confirm -->
+      <section id="step-confirm" hidden>
+        <div class="review">
+          <div class="row"><span class="k">Paying to</span><code class="v" id="c-dest"></code></div>
+          <div class="row"><span class="k">Amount</span><span class="v" id="c-amount"></span></div>
+          <div class="row">
+            <span class="k">You’ll pay about</span><span class="v" id="c-try">…</span>
+          </div>
+        </div>
+        <div class="notice">
+          The final lira price is fixed when the card form opens. The recipient gets exactly the
+          USDC amount above; delivery is on-chain and verifiable.
+        </div>
+        <p class="error" id="confirm-error" hidden></p>
+        <div class="actions">
+          <button class="ghost" id="back" type="button">Back</button>
+          <button class="primary" id="pay" type="button">Pay with Troy card</button>
+        </div>
+      </section>
+
+      <!-- STEP 3: status -->
+      <section id="step-status" hidden>
+        <div class="status">
+          <span class="spinner" id="spinner"></span>
+          <p id="status-text">Opening the secure card form…</p>
+        </div>
+        <div class="receipt" id="receipt" hidden>
+          <div class="row"><span class="k">Order</span><code class="v" id="r-order"></code></div>
+          <div class="row"><span class="k">Charged</span><span class="v" id="r-try"></span></div>
+          <div class="row">
+            <span class="k">On-chain proof</span><code class="v" id="r-tx"></code>
+          </div>
+        </div>
+        <p class="error" id="status-error" hidden></p>
+        <div class="actions">
+          <button class="ghost" id="again" type="button" hidden>Make another payment</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./wizard.ts"></script>
+  </body>
+</html>

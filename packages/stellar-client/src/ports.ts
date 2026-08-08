@@ -28,6 +28,10 @@ export interface HorizonBalanceLine {
 }
 export interface AccountSnapshotJson {
   readonly balances: readonly HorizonBalanceLine[];
+  /** Horizon's account data entries (base64 values). Carried for SEP-29: `config.memo_required` marks an
+   *  exchange deposit address our MEMO_NONE Soroban settlement could never credit. Optional — older callers
+   *  and fixtures without it behave as "no data entries". */
+  readonly data?: Readonly<Record<string, string>>;
 }
 
 /** All Soroban-RPC I/O. network:true, keyless. Every method returns a normalized outcome ADT, never a

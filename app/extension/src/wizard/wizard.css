@@ -1,0 +1,162 @@
+/* Manual-payment wizard — deliberately plain: a focused form page, not a marketing surface. */
+:root {
+  --ink: #16233b;
+  --sub: #5b6b85;
+  --line: #dbe3ef;
+  --brand: #1f4fd8;
+  --bad: #b3261e;
+  --ok: #1a7f37;
+  --bg: #f5f7fb;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+.wiz {
+  max-width: 34rem;
+  margin: 3rem auto;
+  padding: 1.75rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.hd {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+.hd .logo {
+  width: 40px;
+  height: 40px;
+}
+.hd h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.hd .tag {
+  margin: 0.15rem 0 0;
+  color: var(--sub);
+  font-size: 0.85rem;
+}
+.field {
+  display: block;
+  margin-bottom: 1rem;
+}
+.field .k {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--sub);
+  margin-bottom: 0.3rem;
+}
+.field input {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: ui-monospace, monospace;
+}
+.field .hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--sub);
+}
+.notice {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.83rem;
+  color: var(--sub);
+  margin: 1rem 0;
+}
+.error {
+  color: var(--bad);
+  font-size: 0.85rem;
+}
+button {
+  font: inherit;
+  border-radius: 8px;
+  padding: 0.65rem 1.1rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+button.primary {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+button.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+button.ghost {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line);
+}
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.review .row,
+.receipt .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px dashed var(--line);
+  font-size: 0.9rem;
+}
+.review .k,
+.receipt .k {
+  color: var(--sub);
+  white-space: nowrap;
+}
+.review .v,
+.receipt .v {
+  word-break: break-all;
+  text-align: right;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 1rem 0;
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  flex: none;
+}
+.spinner.done {
+  animation: none;
+  border-color: var(--ok);
+}
+.spinner.bad {
+  animation: none;
+  border-color: var(--bad);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -496,3 +496,15 @@ body {
   outline-offset: 3px;
   border-radius: 4px;
 }
+
+/* ---- manual payment link (B-11) ---- */
+.ft .manual {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--teal, #1f4fd8);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}

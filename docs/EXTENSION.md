@@ -66,6 +66,22 @@ so you just open the deployed storefront with the extension loaded. Either way:
 4. On completion the extension shows the on-chain settlement receipt (transaction hash + TRY charged) and the order
    is placed at the settled amount.
 
+## Manual payment (the wizard)
+
+For a store that accepts USDC-on-Stellar but publishes no SEP-7 request, the extension carries a **manual-payment
+wizard**: click the toolbar icon → **"Manual payment →"**. It opens in the extension's own tab (no storefront, no
+extra host permissions) and walks address → amount → confirm → the same iyzico hosted form → the same status/receipt
+polling. It is the SAME money path as the storefront flow — the backend cannot tell the two apart, so every guard
+(server-side pricing, solvency reserve, trustline preflight, session gate) applies unchanged. Its own rules:
+
+- **No memo, by design.** Troia settles via a Soroban invocation, which the protocol forces to `MEMO_NONE` — so
+  **exchange deposit addresses cannot be paid**. The backend checks the destination's SEP-29 `config.memo_required`
+  flag on chain and refuses (`DestinationMemoRequired`) before any charge; the wizard explains why in plain words.
+- **Per-transaction cap** (`MANUAL_MAX_USDC`, 500 USDC): a pasted address has no storefront context vouching for
+  it, so a manual payment is bounded.
+- Classic `G…` addresses only (a pasted `C…` contract address is far more likely a mistake than a merchant), and
+  every attempt is a fresh `manual-…` order id — visible as such in every log and ledger row.
+
 ## Good to know
 
 - It is **scoped to the deployment's own storefront origin(s)**, never `<all_urls>`: the content script runs only on

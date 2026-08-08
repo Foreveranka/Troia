@@ -27,6 +27,16 @@
   satır kilidi hâlâ YOK (tek process varsayımı sürüyor — KNOWN_ISSUES §3); canlı testnet'te
   crash/restart tatbikatı henüz yapılmadı. Runtime `node:sqlite` kullanıyor (Node ≥ 22.5;
   "experimental" uyarısı zararsız).
+- **B-11 — YAPILDI (2026-08-08).** Manuel ödeme wizard'ı extension'ın kendi sekmesinde
+  (`src/wizard/`; popup'taki "Manual payment →" ile açılır): adres + tutar → offline doğrulama
+  (strkey, işlem başına 500 USDC üst limit — C-14 kalıntısı) → ≈₺ önizleme → onay → aynı iyzico
+  akışı → durum + zincir makbuzu. SEP-7 yolundaki money path'in aynısı — backend ikisini ayırt
+  edemez. **SEP-29 reddi uçtan uca gerçek:** Horizon snapshot'ı `config.memo_required` data
+  girdisini taşıyor, `PayoutIntent.build` yeni `DestinationMemoRequired` hatasıyla fail-closed
+  reddediyor, wizard bunu "borsa deposit adresi ödenemez" diliyle açıklıyor. Manifest genişlemedi
+  (kendi sekmesi); background artık kendi extension sayfalarını da (id + origin çifte kontrolüyle)
+  kabul ediyor. Testler: wizard-core sözleşmesi, SEP-29 snapshot→build zinciri, background sender
+  kuralları.
 - **C-13 — YAPILDI (2026-08-08).** `/intent` artık kısa ömürlü HMAC oturum token'ı istiyor
   (token'sız → 401; `POST /session` mint ediyor, IP başına limitli) ve her YENİ sipariş oturum
   bütçesinden düşülüyor (bütçe bitince → 429). Bütçe IP'ye değil sunucunun verdiği kimliğe bağlı;

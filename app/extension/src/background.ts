@@ -24,10 +24,26 @@ const formTabByStorefront = new Map<number, number>();
  * The manifest's match pattern carries no port, so `http://localhost/*` lets the content script run on ANY local
  * port — any other dev server on this machine could serve a page that looks like the storefront. The exact-origin
  * allowlist is what makes that not enough. A sender with no origin is not a content script at all.
+ *
+ * The extension's OWN pages (the manual-payment wizard) are also allowed: their origin is our own
+ * chrome-extension:// origin AND the sender id is our own id — both checked, so neither a web page nor another
+ * extension can imitate them.
  */
 function isAllowedSender(sender: chrome.runtime.MessageSender): boolean {
   const origin = sender.origin ?? (sender.url === undefined ? undefined : safeOrigin(sender.url));
-  return origin !== undefined && (ALLOWED_ORIGINS as readonly string[]).includes(origin);
+  if (origin === undefined) return false;
+  // Own-page check: BOTH the sender id and the origin must name this very extension, and the id must actually
+  // exist — comparing two undefineds must never pass.
+  const ownId = chrome.runtime.id;
+  if (
+    typeof ownId === 'string' &&
+    ownId.length > 0 &&
+    sender.id === ownId &&
+    origin === `chrome-extension://${ownId}`
+  ) {
+    return true; // our own wizard/popup pages
+  }
+  return (ALLOWED_ORIGINS as readonly string[]).includes(origin);
 }
 
 function safeOrigin(url: string): string | undefined {

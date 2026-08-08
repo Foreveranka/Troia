@@ -9,4 +9,11 @@ import manifest from './manifest.config';
 export default defineConfig({
   plugins: [react(), crx({ manifest })],
   server: { port: 5174, strictPort: true },
+  build: {
+    rollupOptions: {
+      // The manual-payment wizard is an extension page reached via chrome.runtime.getURL, not via the
+      // manifest, so it must be named as a build input explicitly (crx bundles only manifest-referenced pages).
+      input: { wizard: 'src/wizard/index.html' },
+    },
+  },
 });

@@ -20,7 +20,12 @@ export type BuildError =
   | 'MemoMismatch' // 32 non-zero bytes but != deriveMemo(order_id)
   | 'AmountNonPositive' // amount <= 0, or above the i128 max (not a valid positive payable amount)
   | 'IssuerNotAllowlisted'
-  | 'TrustlineMissing'; // classic destination lacks the USDC trustline
+  | 'TrustlineMissing' // classic destination lacks the USDC trustline
+  // SEP-29: the destination account flags itself memo-required (`config.memo_required` data entry — exchange
+  // deposit addresses do this). Troia's settlement is a Soroban invocation, which the protocol forces to
+  // MEMO_NONE, so the credit could never be attributed at the receiver. Fail closed: better no payment than
+  // USDC lost in an exchange's unattributed-deposit queue.
+  | 'DestinationMemoRequired';
 
 // Largest representable i128 (Soroban amount type). Amounts must be a positive i128 so the later
 // deriveIds call (which enforces the same bound) can never throw — build() stays total.
@@ -37,6 +42,7 @@ const BUILD_ERROR_ORDER: readonly BuildError[] = [
   'AmountNonPositive',
   'IssuerNotAllowlisted',
   'TrustlineMissing',
+  'DestinationMemoRequired',
 ];
 
 /** Exposed so tests / callers can reason about the control order without duplicating it. */
@@ -60,6 +66,9 @@ export interface Trustline {
 export interface AccountSnapshot {
   readonly exists: boolean;
   readonly trustlines: readonly Trustline[];
+  /** SEP-29: the account carries the `config.memo_required` data entry. Optional so existing snapshot
+   *  producers/fixtures stay valid; only an explicit `true` rejects (absent/false both mean payable). */
+  readonly memoRequired?: boolean;
 }
 
 export interface BuildContext {
@@ -159,6 +168,10 @@ export class PayoutIntent {
           (t) => t.assetCode === assetCode && t.assetIssuer === raw.assetIssuer,
         );
       if (!hasTrustline) return err('TrustlineMissing');
+      // 11) SEP-29 — a memo-required destination can never be credited by a MEMO_NONE Soroban settlement
+      // (ADR-11: the "memo" is a pay() argument, not a tx memo). Exchange deposit addresses fail here, by
+      // design and with their own error code so the wizard can say exactly why.
+      if (ctx.snapshot.memoRequired === true) return err('DestinationMemoRequired');
     }
 
     const ids = deriveIds(canonicalOrderId, raw.destination, raw.amount);

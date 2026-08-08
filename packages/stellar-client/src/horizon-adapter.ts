@@ -31,7 +31,7 @@ export class HorizonAdapter implements HorizonPort {
         this.timeoutMs,
         'horizon.loadAccount',
       );
-      return { balances: account.balances };
+      return { balances: account.balances, data: account.data_attr };
     } catch (e) {
       if (isNotFound(e)) return null;
       throw e;

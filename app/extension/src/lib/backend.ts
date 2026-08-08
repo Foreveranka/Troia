@@ -74,26 +74,92 @@ async function fetchWithTimeout(
   }
 }
 
+// --- C-13: the /intent session token ---
+//
+// The backend requires a short-lived session token on POST /intent (its anti-flood gate). The background
+// worker caches one here and refreshes it on expiry or on a 401 — one extra round-trip per ~15 minutes, and
+// after a backend restart (which invalidates all tokens) the 401-retry below self-heals. Module state in an
+// MV3 service worker dies whenever the worker idles out; that just means a fresh /session next time.
+
+interface CachedSession {
+  readonly token: string;
+  readonly expiresAtUnix: number;
+}
+let cachedSession: CachedSession | null = null;
+/** Refresh margin: treat a token this close to expiry as already dead, so an /intent never sails out with a
+ *  token that expires mid-flight. */
+const SESSION_EXPIRY_MARGIN_SECS = 30;
+
+/** Test seam: the cache is module state, so specs reset it between cases. */
+export function resetSessionCache(): void {
+  cachedSession = null;
+}
+
+type SessionResult =
+  { readonly ok: true; readonly token: string } | { readonly ok: false; readonly error: string };
+
+async function fetchSessionToken(
+  baseUrl: string,
+  doFetch: typeof fetch,
+  timeoutMs: number,
+): Promise<SessionResult> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedSession !== null && cachedSession.expiresAtUnix > now + SESSION_EXPIRY_MARGIN_SECS) {
+    return { ok: true, token: cachedSession.token };
+  }
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(doFetch, `${baseUrl}/session`, { method: 'POST' }, timeoutMs);
+  } catch (e) {
+    // keep the failure vocabulary the caller already speaks: a dead network at /session IS a dead network
+    return { ok: false, error: isTimeout(e) ? 'timeout' : 'network' };
+  }
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok || !isRecord(json) || typeof json.token !== 'string') {
+    return { ok: false, error: 'session_unavailable' };
+  }
+  cachedSession = {
+    token: json.token,
+    expiresAtUnix: typeof json.expiresAtUnix === 'number' ? json.expiresAtUnix : now,
+  };
+  return { ok: true, token: json.token };
+}
+
 export async function postIntent(
   body: IntentBody,
   opts: PostIntentOptions = {},
 ): Promise<IntentOutcome> {
   const baseUrl = opts.baseUrl ?? BACKEND_BASE_URL;
   const doFetch = opts.fetchImpl ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? INTENT_TIMEOUT_MS;
 
-  let res: Response;
-  try {
-    res = await fetchWithTimeout(
+  const attempt = async (sessionToken: string): Promise<Response> =>
+    fetchWithTimeout(
       doFetch,
       `${baseUrl}/intent`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-troia-session': sessionToken },
         // The client sends no IP — the backend derives the buyer IP server-side from the request (zero-trust).
         body: JSON.stringify(body),
       },
-      opts.timeoutMs ?? INTENT_TIMEOUT_MS,
+      timeoutMs,
     );
+
+  const session = await fetchSessionToken(baseUrl, doFetch, timeoutMs);
+  if (!session.ok) return { ok: false, status: null, error: session.error };
+
+  let res: Response;
+  try {
+    res = await attempt(session.token);
+    // A 401 means OUR token went stale (expiry, or a backend restart rotated the secret) — never the order's
+    // fault. Refresh once and retry once; a second 401 is surfaced.
+    if (res.status === 401) {
+      resetSessionCache();
+      const fresh = await fetchSessionToken(baseUrl, doFetch, timeoutMs);
+      if (!fresh.ok) return { ok: false, status: null, error: fresh.error };
+      res = await attempt(fresh.token);
+    }
   } catch (e) {
     return { ok: false, status: null, error: isTimeout(e) ? 'timeout' : 'network' };
   }

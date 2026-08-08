@@ -7,7 +7,7 @@ import { deriveIds, deriveMemo } from '@troia/core';
 import type { FastifyInstance } from 'fastify';
 import { quoteUsdc } from '../../../pricing/src/index.js';
 import { createApp } from '../../src/http/app.js';
-import type { IntentRateLimit, QuoteFn } from '../../src/http/app.js';
+import type { IntentAuthConfig, IntentRateLimit, QuoteFn } from '../../src/http/app.js';
 import { InMemoryOrderRegistry } from '../../src/http/order-registry.js';
 import { InMemoryStore } from '../../src/store/in-memory-store.js';
 import { FakeClock, FakePspPort, FakeStellarPort, makeConfig } from '../fakes/harness.js';
@@ -52,6 +52,7 @@ export function makeHttpHarness(
   quoteFn: QuoteFn = quote,
   rateLimit: IntentRateLimit = NO_LIMIT,
   quoteRateLimit: IntentRateLimit = NO_LIMIT,
+  intentAuth?: IntentAuthConfig, // C-13: omitted by the general suite (gate off); the session spec passes one
 ): HttpHarness {
   const trace: Trace = [];
   const stellar = new FakeStellarPort(trace);
@@ -67,6 +68,7 @@ export function makeHttpHarness(
     webhookSigningSecret: WEBHOOK_SECRET,
     rateLimit,
     quoteRateLimit,
+    ...(intentAuth === undefined ? {} : { intentAuth }),
   });
   return { app, store, stellar, psp, clock, registry, trace };
 }

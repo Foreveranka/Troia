@@ -75,11 +75,26 @@ describe('the composed server boots from buildTestnetServerDeps (offline fail-cl
     expect(r.statusCode).toBe(401);
   });
 
-  it('POST /intent with a malformed body -> 400 (fail-closed before any network call)', async () => {
+  it('POST /intent without a session token -> 401 (C-13: the gate is ON in the composed server)', async () => {
     const server = await makeServer();
     const r = await server.app.inject({
       method: 'POST',
       url: '/intent',
+      payload: { orderId: 'x' },
+    });
+    expect(r.statusCode).toBe(401);
+    expect(r.json()).toEqual({ error: 'SessionRequired' });
+  });
+
+  it('POST /intent with a session but a malformed body -> 400 (fail-closed before any network call)', async () => {
+    const server = await makeServer();
+    const session = await server.app.inject({ method: 'POST', url: '/session' });
+    expect(session.statusCode).toBe(200);
+    const token = (session.json() as { token: string }).token;
+    const r = await server.app.inject({
+      method: 'POST',
+      url: '/intent',
+      headers: { 'x-troia-session': token },
       payload: { orderId: 'x' },
     });
     expect(r.statusCode).toBe(400);

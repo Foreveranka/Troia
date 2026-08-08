@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getQuote, getReceipt, getStatus, postIntent } from '../src/lib/backend';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getQuote, getReceipt, getStatus, postIntent, resetSessionCache } from '../src/lib/backend';
 import type { IntentBody } from '../src/lib/intent';
 
 const BODY: IntentBody = {
@@ -11,6 +11,9 @@ const BODY: IntentBody = {
   memoHex: 'e01397d329505f05c70b253c3f2e925f488cd5b07a9d9336e36c463f96020db0',
 };
 
+// The C-13 session mint the backend answers on POST /session (postIntent fetches one before every intent).
+const SESSION_JSON = { token: 'sess_1', expiresAtUnix: 4_000_000_000 };
+
 function fakeFetch(status: number, jsonBody: unknown): typeof fetch {
   return (async () => ({
     ok: status >= 200 && status < 300,
@@ -19,10 +22,27 @@ function fakeFetch(status: number, jsonBody: unknown): typeof fetch {
   })) as unknown as typeof fetch;
 }
 
+/** URL-routed fake for postIntent: answers /session with a valid mint, everything else with the given result.
+ *  Session-flow tests build their own spies instead. */
+function routedFetch(status: number, jsonBody: unknown): typeof fetch {
+  return (async (url: string) => {
+    if (String(url).endsWith('/session')) {
+      return { ok: true, status: 200, json: async () => SESSION_JSON };
+    }
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => jsonBody,
+    };
+  }) as unknown as typeof fetch;
+}
+
+beforeEach(() => resetSessionCache()); // the session cache is module state; isolate every case
+
 describe('postIntent', () => {
   it('returns ok with the response on 200', async () => {
     const r = await postIntent(BODY, {
-      fetchImpl: fakeFetch(200, {
+      fetchImpl: routedFetch(200, {
         orderId: 'ST-AB12CD',
         token: 'tok_1',
         paidPriceTry: '42.50',
@@ -38,10 +58,12 @@ describe('postIntent', () => {
     expect(r.response.checkoutFormContent).toContain('iyzico');
   });
 
-  it('sends exactly the intent body as JSON to /intent (no client IP — the backend derives it)', async () => {
-    let captured: { url: string; init: RequestInit } | null = null;
+  it('mints a session first, then sends exactly the intent body with the session header (no client IP)', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
     const spy = (async (url: string, init: RequestInit) => {
-      captured = { url, init };
+      calls.push({ url, init });
+      if (url.endsWith('/session'))
+        return { ok: true, status: 200, json: async () => SESSION_JSON };
       return {
         ok: true,
         status: 200,
@@ -51,22 +73,72 @@ describe('postIntent', () => {
 
     await postIntent(BODY, { fetchImpl: spy, baseUrl: 'http://localhost:3000' });
 
-    expect(captured).not.toBeNull();
-    const cap = captured as unknown as { url: string; init: RequestInit };
-    expect(cap.url).toBe('http://localhost:3000/intent');
-    expect(cap.init.method).toBe('POST');
-    const sent = JSON.parse(String(cap.init.body));
+    expect(calls.map((c) => c.url)).toEqual([
+      'http://localhost:3000/session',
+      'http://localhost:3000/intent',
+    ]);
+    const intent = calls[1]!;
+    expect(intent.init.method).toBe('POST');
+    expect((intent.init.headers as Record<string, string>)['x-troia-session']).toBe('sess_1');
+    const sent = JSON.parse(String(intent.init.body));
     expect(sent).toEqual(BODY);
     expect(sent.ip).toBeUndefined();
   });
 
+  it('caches the session: two intents cost ONE /session round-trip', async () => {
+    const urls: string[] = [];
+    const spy = (async (url: string) => {
+      urls.push(url);
+      if (url.endsWith('/session'))
+        return { ok: true, status: 200, json: async () => SESSION_JSON };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ orderId: 'ST-AB12CD', token: 't', paidPriceTry: '1.00' }),
+      };
+    }) as unknown as typeof fetch;
+    await postIntent(BODY, { fetchImpl: spy });
+    await postIntent(BODY, { fetchImpl: spy });
+    expect(urls.filter((u) => u.endsWith('/session'))).toHaveLength(1);
+    expect(urls.filter((u) => u.endsWith('/intent'))).toHaveLength(2);
+  });
+
+  it('heals a stale token: on 401 it refreshes the session once and retries the intent', async () => {
+    let intentCalls = 0;
+    const spy = (async (url: string, init: RequestInit) => {
+      if (String(url).endsWith('/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ token: `sess_${intentCalls + 1}`, expiresAtUnix: 4_000_000_000 }),
+        };
+      }
+      intentCalls += 1;
+      // the backend restarted: the FIRST token is refused, the refreshed one is accepted
+      if ((init.headers as Record<string, string>)['x-troia-session'] === 'sess_1') {
+        return { ok: false, status: 401, json: async () => ({ error: 'SessionRequired' }) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ orderId: 'ST-AB12CD', token: 't', paidPriceTry: '1.00' }),
+      };
+    }) as unknown as typeof fetch;
+
+    const r = await postIntent(BODY, { fetchImpl: spy });
+    expect(r.ok).toBe(true);
+    expect(intentCalls).toBe(2); // refused once, healed once — never a loop
+  });
+
   it('maps a 409 PoolInsufficient to a fail outcome carrying the reason', async () => {
-    const r = await postIntent(BODY, { fetchImpl: fakeFetch(409, { error: 'PoolInsufficient' }) });
+    const r = await postIntent(BODY, {
+      fetchImpl: routedFetch(409, { error: 'PoolInsufficient' }),
+    });
     expect(r).toEqual({ ok: false, status: 409, error: 'PoolInsufficient' });
   });
 
   it('maps a 400 to the backend fail-closed reason string', async () => {
-    const r = await postIntent(BODY, { fetchImpl: fakeFetch(400, { error: 'MemoMismatch' }) });
+    const r = await postIntent(BODY, { fetchImpl: routedFetch(400, { error: 'MemoMismatch' }) });
     expect(r).toEqual({ ok: false, status: 400, error: 'MemoMismatch' });
   });
 
@@ -78,8 +150,19 @@ describe('postIntent', () => {
     expect(r).toEqual({ ok: false, status: null, error: 'network' });
   });
 
+  it('surfaces an unusable /session answer as session_unavailable (fail-closed, no intent sent)', async () => {
+    const urls: string[] = [];
+    const spy = (async (url: string) => {
+      urls.push(url);
+      return { ok: false, status: 503, json: async () => ({ error: 'nope' }) };
+    }) as unknown as typeof fetch;
+    const r = await postIntent(BODY, { fetchImpl: spy });
+    expect(r).toEqual({ ok: false, status: null, error: 'session_unavailable' });
+    expect(urls.some((u) => u.endsWith('/intent'))).toBe(false); // never fired without a token
+  });
+
   it('rejects a malformed 200 that lacks a token', async () => {
-    const r = await postIntent(BODY, { fetchImpl: fakeFetch(200, { orderId: 'ST-AB12CD' }) });
+    const r = await postIntent(BODY, { fetchImpl: routedFetch(200, { orderId: 'ST-AB12CD' }) });
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error('unreachable');
     expect(r.error).toBe('malformed_response');
@@ -87,7 +170,7 @@ describe('postIntent', () => {
 
   it('carries the iyzico paymentPageUrl through on success', async () => {
     const r = await postIntent(BODY, {
-      fetchImpl: fakeFetch(200, {
+      fetchImpl: routedFetch(200, {
         orderId: 'ST-AB12CD',
         token: 't',
         paidPriceTry: '1.00',

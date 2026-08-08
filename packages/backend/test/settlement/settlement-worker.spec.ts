@@ -278,3 +278,126 @@ describe('settleAndRebalance — the TRY-driven settlement-sim worker', () => {
     expect(r.ledger.booked).toHaveLength(1);
   });
 });
+
+// --- A-2: the mint write-ahead journal (KNOWN_ISSUES §2) ---
+//
+// The double-spend window is the gap between the mint landing and its booking. These tests pin the WAL
+// discipline that closes it: intent BEFORE the mint, resolution AFTER the booking, and a hard refusal to
+// mint any ref a previous life left unresolved.
+
+class FakeMintIntents {
+  readonly openRefs = new Set<string>();
+  /** refs "left open by a previous life" — what a restart would find on disk. */
+  readonly blocked = new Set<string>();
+  constructor(private readonly events: string[]) {}
+  isBlocked(ref: string): boolean {
+    return this.blocked.has(ref);
+  }
+  open(ref: string): void {
+    this.events.push(`open:${ref}`);
+    this.openRefs.add(ref);
+  }
+  close(ref: string): void {
+    this.events.push(`close:${ref}`);
+    this.openRefs.delete(ref);
+    this.blocked.delete(ref); // resolution: the durable ledger answered the question
+  }
+}
+
+/** rig() + a journal + event-ordered spies on the mint and the booking. */
+function walRig(): { r: Rig; deps: SettlementDeps; journal: FakeMintIntents; events: string[] } {
+  const r = rig();
+  const events: string[] = [];
+  const journal = new FakeMintIntents(events);
+  const deps: SettlementDeps = {
+    ...r,
+    mintIntents: journal,
+    rebalance: {
+      topUp: async (req: TopUpRequest) => {
+        events.push(`mint:${req.ref}`);
+        return r.rebalance.topUp(req);
+      },
+    },
+    ledger: {
+      hasRef: (ref: string) => r.ledger.hasRef(ref),
+      recordSettlement: (input) => r.ledger.recordSettlement(input),
+      recordTopUp: (input) => {
+        events.push(`book:${input.ref}`);
+        return r.ledger.recordTopUp(input);
+      },
+    },
+  };
+  return { r, deps, journal, events };
+}
+
+describe('settleAndRebalance — mint write-ahead journal (A-2)', () => {
+  it('(wal-a) write-ahead ordering: intent on disk BEFORE the mint, resolved only AFTER the booking', async () => {
+    const { r, deps, journal, events } = walRig();
+    putOrder(r, 'good', 'UsdcConfirmed');
+    await settleAndRebalance(deps); // arm
+    r.clock.now = 1_045;
+    const rep = await settleAndRebalance(deps);
+    expect(events).toEqual([
+      'open:topup:good',
+      'mint:topup:good',
+      'book:topup:good',
+      'close:topup:good',
+    ]);
+    expect(journal.openRefs.size).toBe(0); // nothing left open after a clean settle
+    expect(rep.settled).toBe(1);
+    expect(rep.mintBlocked).toBe(0);
+  });
+
+  it("(wal-b) a previous life's unresolved intent BLOCKS the ref: no mint, surfaced, retriable", async () => {
+    const { r, deps, journal } = walRig();
+    putOrder(r, 'good', 'UsdcConfirmed');
+    journal.blocked.add('topup:good'); // what a restart finds after a crash inside the mint window
+    await settleAndRebalance(deps); // arm
+    r.clock.now = 1_045;
+    const rep = await settleAndRebalance(deps);
+    expect(r.rebalance.calls).toHaveLength(0); // NOTHING minted — that is the whole point
+    expect(r.store.credits).toEqual([]);
+    expect(rep.mintBlocked).toBe(1);
+
+    // a human resolves it ("the mint never landed — clear the intent"); the next tick mints normally
+    journal.blocked.delete('topup:good');
+    await settleAndRebalance(deps);
+    expect(r.rebalance.mintCount).toBe(1);
+    expect(r.store.credits).toEqual([EXPECTED_MINT]);
+    expect(r.pending.get('good')?.status).toBe('settled');
+  });
+
+  it('(wal-c) a stale intent whose booking DID land is resolved, not blocked (crash after recordTopUp)', async () => {
+    const { r, deps, journal, events } = walRig();
+    putOrder(r, 'good', 'UsdcConfirmed');
+    // the previous life booked the top-up, then died before closing the intent:
+    r.ledger.recordTopUp({ ref: 'topup:good', usdcStroops: EXPECTED_MINT, valueKurus: 340_000n });
+    journal.blocked.add('topup:good');
+    await settleAndRebalance(deps); // arm
+    r.clock.now = 1_045;
+    const rep = await settleAndRebalance(deps);
+    expect(events).toContain('close:topup:good'); // the answered question is tidied away
+    expect(events.filter((e) => e.startsWith('mint:'))).toEqual([]); // and nothing minted twice
+    expect(journal.blocked.size).toBe(0);
+    expect(r.pending.get('good')?.status).toBe('settled');
+    expect(rep.mintBlocked).toBe(0);
+  });
+
+  it('(wal-d) a clean SAME-life mint failure retries without tripping the block (idempotent re-open)', async () => {
+    const { r, deps, journal, events } = walRig();
+    putOrder(r, 'good', 'UsdcConfirmed');
+    await settleAndRebalance(deps); // arm
+    r.clock.now = 1_045;
+    r.rebalance.throwOnce = true;
+    let rep = await settleAndRebalance(deps); // mint throws; intent stays open in THIS life
+    expect(rep.failed).toBe(1);
+    expect(journal.openRefs.has('topup:good')).toBe(true);
+    expect(journal.isBlocked('topup:good')).toBe(false); // same life -> not a block
+
+    rep = await settleAndRebalance(deps); // retry succeeds
+    expect(rep.settled).toBe(1);
+    expect(r.rebalance.mintCount).toBe(1);
+    expect(events.filter((e) => e.startsWith('open:'))).toHaveLength(2); // re-opened, harmlessly
+    expect(journal.openRefs.size).toBe(0);
+  });
+});

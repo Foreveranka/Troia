@@ -64,6 +64,15 @@ restart. All three counters must move onto the durable `OrderRow` alongside the 
   idempotent), or void it. It changes the money path's crash semantics, so it belongs to the mainnet build, not a
   testnet patch — but it is the one gap on this page that is not merely tidiness, and it is the reason mainnet is a
   deliberate later phase.
+- **Status (2026-08-08): closed in code, not yet live-proven.** `@troia/composition` now wires a SQLite-backed
+  `Store` + `OrderRegistry` (`order-db.ts`, `sqlite-order-store.ts`, `sqlite-order-registry.ts`) whenever a
+  `TROIA_DATA_DIR` is set: order rows, the reservation ledger, the retry counters, the webhook dedup set, the loss
+  flags and the poll worker's work-list all survive a restart, and boot replays unsettled reservations as held
+  (fail-closed) while dropping settled ones (their payout is already in the fresh chain read). An order parked in
+  `SolvencyReserved` at the crash is re-driven by the existing poll worker paths — the charged-and-forgotten window
+  above no longer exists on the durable deployment. Covered by unit + factory-level restart tests; a deliberate
+  crash/restart drill against the live testnet has not been run yet, and the multi-instance half (§3) remains open —
+  the reserve CHECK→COMMIT is still serialized by the in-process mutex, not a cross-process lock.
 
 ## 2. `[mainnet-blocker]` The pool refill can mint twice across a crash
 
@@ -90,6 +99,14 @@ the process exits by design (§1), with the mint unbooked.
   precedes `submitPay`, ARCHITECTURE §4). The mint path has no write-ahead journal today. Safe to defer only because
   the window is unreachable in practice on the PoC (it needs a crash in the sub-second gap between the mint landing
   and its booking), not because it will be rewritten away.
+- **Status (2026-08-08): closed in code, not yet live-proven.** The settlement worker now takes an optional
+  `MintIntentJournal` (durable deploy: `SqliteMintIntentJournal` in the same `orders.db` as §1's store): the intent
+  is written **before** `topUp` and cleared **after** `recordTopUp`. A ref left open by a previous life is refused —
+  no second mint, ever — and surfaced at boot (`[mint-wal] UNRESOLVED MINT INTENT`) and per tick (`MINT BLOCKED`,
+  edge-triggered) for a human to reconcile: if the mint landed, book it and `hasRef` auto-resolves the stale intent;
+  if it never landed, clear the intent and the next tick mints normally. A clean same-life retry is not blocked (the
+  rebalance provider's per-ref idempotency covers it). Pinned by worker-ordering tests and two-life journal tests;
+  the CEX swap can now land behind this guard, not before it.
 
 ---
 
@@ -107,6 +124,13 @@ reserve the same last coin.**
 - **Interim, for a public demo deploy.** Run exactly **one** backend instance: no autoscaling, and no overlapping a
   new instance with the old one during a redeploy. The single-process assumption then holds, and the contract guard
   covers the rest. A platform that quietly runs two instances removes the backend half of invariant ③a.
+- **Status (2026-08-08): the SOLVENCY half is closed on the durable deployment.** The SQLite-backed store (§1's
+  status note) runs reserve()'s CHECK→COMMIT inside one `BEGIN IMMEDIATE` transaction, so two processes sharing the
+  same `orders.db` serialize at the database's write lock and cannot both reserve the same last coin — a blocked
+  instance waits (busy_timeout) or fails fast, never interleaves. Pinned by two-connection tests. Running two
+  instances remains **unsupported** for the rest of the system: the per-order locks and the operator sequence
+  allocator are still per-process, so the one-instance rule above still stands — this closes the money-arithmetic
+  hazard, not the deployment mode.
 
 ## 4. `[public-deploy]` `/intent` is unauthenticated; rate limiting is per-IP
 
@@ -130,6 +154,15 @@ each accepted intent reserves the pool and opens a hosted form.
   per-IP cap stays and, if the backend is exposed directly, front it with a proxy that sanitizes `X-Forwarded-For`
   so the cap key cannot be spoofed. Accept the residual reservation-flood risk knowingly — it costs nothing but a
   `409`.
+- **Status (2026-08-08): the session gate is in.** A deployed server (`buildTestnetServerDeps`) now requires a
+  short-lived HMAC session token on `POST /intent` (`401 SessionRequired` without one; `POST /session` mints them,
+  per-IP limited) and counts accepted NEW orders against a per-session budget (`429 SessionBudgetExceeded`) — the
+  reservation cost is keyed on a server-issued identity, not the caller's self-chosen IP, and the gate runs before
+  any snapshot/oracle work. The idempotent duplicate-click replay burns no budget. The extension mints and caches
+  the token transparently (one extra round-trip per ~15 min; self-heals on 401 after a backend restart — the secret
+  is per-boot random on purpose). The per-IP caps stay as the outer layer. Honest residual: a distributed attacker
+  can still farm sessions from many IPs — the budget bounds each one, but this raises cost rather than closing the
+  distributed case; the offline suite keeps the gate off (`intentAuth` unset) by design.
 
 ## 5. `[housekeeping]` No log rotation
 

@@ -30,6 +30,11 @@ import { SimulatedRebalance } from '@troia/rebalance';
 import { Ledger } from '@troia/ledger';
 import { buildDurableBundle } from './durable-bundle.js';
 import { buildOutflowTail } from './outflow-port.js';
+import { openOrderDb } from './order-db.js';
+import { SqliteOrderStore } from './sqlite-order-store.js';
+import { SqliteOrderRegistry } from './sqlite-order-registry.js';
+import { SqliteMintIntentJournal } from './mint-intent-journal.js';
+import { randomBytes } from 'node:crypto';
 import { deriveIds } from '@troia/core';
 import { resolveGroundTruth } from '@troia/reconciler';
 import type { EvidenceRow, ReconcileDeps } from '@troia/backend';
@@ -286,19 +291,61 @@ export async function buildTestnetServerDeps(
     );
   }
 
-  const store = new InMemoryStore(
-    durable === null
-      ? { balanceStroops, baseSeq }
-      : {
+  // The durable deployment gets the SQLite-backed Store + registry (A-1): order rows, reservations, retry
+  // counters, webhook dedup, loss flags and the poll worker's work-list all survive a restart — the fix for
+  // KNOWN_ISSUES §1's charged-but-forgotten crash window. Offline (no dataDir) stays pure in-memory.
+  const orderDb = cfg.dataDir === undefined ? null : openOrderDb(cfg.dataDir);
+  const store =
+    orderDb === null || durable === null
+      ? new InMemoryStore({ balanceStroops, baseSeq })
+      : new SqliteOrderStore({
+          db: orderDb,
           balanceStroops,
           baseSeq,
           evidenceLog: durable.evidenceLog,
           seedEvidence: durable.seedEvidence,
-        },
-  );
+        });
+  let registry: SqliteOrderRegistry | undefined;
+  if (orderDb !== null && store instanceof SqliteOrderStore) {
+    registry = new SqliteOrderRegistry(orderDb, store);
+    const boot = registry.recoverAtBoot();
+    const sr = store.bootReport();
+    if (sr.settledReservationsDropped > 0 || sr.heldReservationsReplayed > 0) {
+      console.log(
+        `[order-db] reservations at boot: ${sr.heldReservationsReplayed} replayed as held (in-flight, ` +
+          `fail-closed), ${sr.settledReservationsDropped} settled row(s) dropped (already in the chain read)`,
+      );
+    }
+    for (const p of boot.purgedReserved) {
+      console.warn(
+        `[order-db] purged pre-charge leftover order ${p} — its /intent died before a form URL could reach ` +
+          `a customer, so nothing was charged; its rows and any reservation were released`,
+      );
+    }
+    for (const r of boot.recovered) {
+      console.log(
+        `[order-db] recovered in-flight order ${r.orderId} (${r.state}) — the poll worker will drive it`,
+      );
+    }
+  }
+
+  // The mint write-ahead journal (A-2, KNOWN_ISSUES §2) lives in the same orders.db. An intent left open by a
+  // previous life means a mint may be on chain unbooked — say so at boot, loudly, before the settle tick
+  // starts refusing that ref.
+  let mintIntents: SqliteMintIntentJournal | undefined;
+  if (orderDb !== null) {
+    mintIntents = new SqliteMintIntentJournal(orderDb);
+    for (const ref of mintIntents.unresolvedAtBoot()) {
+      console.error(
+        `[mint-wal] UNRESOLVED MINT INTENT ${ref}: a previous life died between minting and booking. No new ` +
+          `mint will run for this ref. Check the chain: if the mint landed, book it (recordTopUp ${ref}); if ` +
+          `it never landed, clear the intent. The settle tick reports it as mintBlocked until resolved.`,
+      );
+    }
+  }
 
   const clock = new SystemClock(); // shared: the app/worker clock AND the mint client's timebounds source
-  const settlement = buildSettlementBundle(
+  const settlementBase = buildSettlementBundle(
     network,
     cfg.secrets.issuerSecret,
     clock,
@@ -310,6 +357,8 @@ export async function buildTestnetServerDeps(
     durable?.ledger ?? new Ledger(),
     cfg.opts,
   );
+  const settlement =
+    mintIntents === undefined ? settlementBase : { ...settlementBase, mintIntents };
 
   // The payout tail. It needs the durable stores AND the durable write-ahead journal, so it exists only when a
   // data dir does: without a journal that predates every broadcast there is no honest way to accuse anyone.
@@ -366,6 +415,11 @@ export async function buildTestnetServerDeps(
       all: () => store.confirmedOrders(),
       get: (orderId) => store.confirmedOrder(orderId),
     },
+    ...(registry === undefined ? {} : { registry }),
+    // C-13: the /intent session gate is ALWAYS on for a deployed server. The secret is per-boot random on
+    // purpose: token verification is stateless, so nothing durable depends on it — a restart merely sends
+    // clients through one extra /session round-trip (they already re-fetch on 401).
+    intentAuth: { secret: randomBytes(32).toString('hex') },
     quote,
     webhookSigningSecret: cfg.secrets.webhookSigningSecret,
     settlement,

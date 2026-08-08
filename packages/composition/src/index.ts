@@ -42,3 +42,15 @@ export { buildOutflowTail } from './outflow-port.js';
 export type { OutflowTail } from './outflow-port.js';
 export { FileCursorStore, FileSuspectStore, OutflowCodecError } from './outflow-stores.js';
 export { FileWriteAheadJournal } from './file-journal.js';
+
+// A-1: the durable order store — SQLite-backed Store + OrderRegistry, so orders, reservations, retry
+// counters and the recovery work-list survive a restart (closes KNOWN_ISSUES §1's charge-window gap).
+export { OrderDb, openOrderDb, ORDER_DB_FILE } from './order-db.js';
+export { SqliteOrderStore } from './sqlite-order-store.js';
+export type { SqliteOrderStoreOptions, StoreBootReport } from './sqlite-order-store.js';
+export { SqliteOrderRegistry } from './sqlite-order-registry.js';
+export type { RegistryBootReport } from './sqlite-order-registry.js';
+export { encodeOrderCtx, decodeOrderCtx, OrderCtxCodecError } from './order-ctx-codec.js';
+// A-2: the mint write-ahead journal — a durable intent written before every pool-refill mint, so a crash
+// between the mint landing and its booking can never turn into a second mint (KNOWN_ISSUES §2).
+export { SqliteMintIntentJournal } from './mint-intent-journal.js';

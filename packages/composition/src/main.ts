@@ -119,10 +119,24 @@ async function main(): Promise<void> {
   const settleTick = server.settleTick;
   if (settleTick !== undefined) {
     let settling = false;
+    let mintBlockAlarmed = false; // page once when blocked refs appear, once when they clear — never every tick
     setInterval(() => {
       if (settling) return;
       settling = true;
       void settleTick()
+        .then((r) => {
+          if (r.mintBlocked > 0 && !mintBlockAlarmed) {
+            mintBlockAlarmed = true;
+            console.error(
+              `MINT BLOCKED: ${r.mintBlocked} pool refill(s) refused because a previous life left their mint ` +
+                `intent unresolved — the mint may be on chain unbooked. See the [mint-wal] boot log for the ` +
+                `ref(s); book the landed mint or clear the intent. Nothing was minted twice.`,
+            );
+          } else if (r.mintBlocked === 0 && mintBlockAlarmed) {
+            mintBlockAlarmed = false;
+            console.log('[mint-wal] blocked refill(s) resolved — settlement is flowing again');
+          }
+        })
         .catch((err: unknown) => tickFailed('settleTick', err))
         .finally(() => {
           settling = false;

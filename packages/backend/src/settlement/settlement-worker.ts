@@ -49,6 +49,26 @@ export interface TopUpExecution {
   readonly txHash: string;
 }
 
+/**
+ * The mint write-ahead journal (KNOWN_ISSUES §2). The pool refill's double-spend window is the gap between
+ * `topUp` landing on chain and `recordTopUp` reaching the ledger: a crash inside it leaves the mint real and
+ * unbooked, `hasRef` still false, and the next life mints AGAIN — on mainnet, the same fiat spent twice. The
+ * fix is the same discipline the pay() path uses (persistInFlight precedes submitPay): a durable intent is
+ * written BEFORE the mint and cleared only after the booking, so a restart can see the open question.
+ *
+ * Semantics: `open` is the write-ahead ("about to mint this ref") — it must be DURABLE before returning, and
+ * is idempotent within one process life (a clean same-life retry re-opens it). `close` resolves it (the
+ * booking landed). `isBlocked` is true only for a ref left open by a PREVIOUS life: the mint may or may not
+ * be on chain, nobody in this process can know, so the worker refuses to mint that ref and surfaces it —
+ * the mint path's equivalent of LossReview. A same-life open ref is NOT blocked (the rebalance provider's
+ * per-ref idempotency makes the in-process retry safe).
+ */
+export interface MintIntentJournal {
+  isBlocked(ref: string): boolean;
+  open(ref: string): void;
+  close(ref: string): void;
+}
+
 /** Narrow injected collaborators (interface-typed; concretes wired at the composition root, like ports.ts). */
 /** One money-good payout, as remembered on disk. Everything the worker needs; nothing it does not. */
 export interface ConfirmedOrder {
@@ -85,6 +105,9 @@ export interface SettlementDeps {
   /** the LIVE rate (TRY per USDC, 7-decimal stroops) read at settle time — the oracle. Throws => fail-closed. */
   readonly rate: { liveRateStroops(): Promise<bigint> };
   readonly demoValorSecs: number;
+  /** the mint write-ahead journal. OPTIONAL: absent offline (pure in-memory, exactly as before); the durable
+   *  deployment injects it, and only then does the §2 crash window actually close. */
+  readonly mintIntents?: MintIntentJournal;
 }
 
 export interface SettleReport {
@@ -95,11 +118,22 @@ export interface SettleReport {
   readonly skipped: number;
   /** orders whose USDC outflow was booked into the double-entry ledger for the first time. */
   readonly booked: number;
+  /** refs refused because a PREVIOUS life opened a mint intent and never resolved it — the mint may be on
+   *  chain unbooked. Nothing is minted for them; a human must reconcile (book it or clear the intent). */
+  readonly mintBlocked: number;
 }
 
 export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleReport> {
   const { confirmed, orderLocks, clock, pending } = deps;
-  const report = { armed: 0, settled: 0, voided: 0, failed: 0, skipped: 0, booked: 0 };
+  const report = {
+    armed: 0,
+    settled: 0,
+    voided: 0,
+    failed: 0,
+    skipped: 0,
+    booked: 0,
+    mintBlocked: 0,
+  };
 
   // Phase A — ARM (discovery): one pending settlement per money-good payout, due at now + demo valör. A row in
   // the evidence log means the pay() was witnessed on chain, and UsdcConfirmed is forward-only — so a row IS the
@@ -176,10 +210,26 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
         // The pool base was re-seeded from the chain at boot and already includes that mint, so nothing is
         // credited here either — only the bookkeeping is closed.
         if (deps.ledger.hasRef(req.ref)) {
+          // Already booked. A still-open intent here is the benign tail of the WAL (crash between the booking
+          // and the close): the question it asked is answered, so resolve it rather than block forever.
+          deps.mintIntents?.close(req.ref);
           pending.markSettled(dueRec.orderId);
           report.skipped += 1;
           return;
         }
+        // THE §2 GUARD. An intent left open by a PREVIOUS life means a mint may be sitting on chain unbooked —
+        // hasRef cannot know (the crash was before the booking), and minting again is exactly the double-spend
+        // this journal exists to prevent. Refuse, surface, and let a human reconcile: if the mint landed, they
+        // book it (hasRef then short-circuits above and resolves the intent); if it never landed, they clear
+        // the intent and the next tick mints normally.
+        if (deps.mintIntents?.isBlocked(req.ref) === true) {
+          pending.markFailed(dueRec.orderId); // stays visible and retriable — resolution unblocks it
+          report.mintBlocked += 1;
+          return;
+        }
+        // WRITE-AHEAD: the intent hits the disk BEFORE the mint can exist. A throw here aborts with nothing
+        // minted (and, being a durable-log failure, takes the process down — same rule as every other sink).
+        deps.mintIntents?.open(req.ref);
         const result = await deps.rebalance.topUp(req); // mint (idempotent per ref, within this process)
         try {
           deps.ledger.recordTopUp({
@@ -190,6 +240,7 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
         } catch (e) {
           if (!isDuplicateRef(e)) throw e; // already booked (restart replay) -> proceed idempotently
         }
+        deps.mintIntents?.close(req.ref); // the booking is durable — the write-ahead question is answered
         // creditPool is NOT ref-idempotent, so markSettled is adjacent (no await between): within a process the
         // pair is atomic under the per-order lock, so a re-tick can never double-credit.
         await deps.store.creditPool(result.usdcStroops);

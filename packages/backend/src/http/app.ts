@@ -22,6 +22,13 @@ import type { OrderRegistry } from './order-registry.js';
 import type { State } from '@troia/core';
 import { toPublicStatus } from './public-status.js';
 import type { PublicStatus } from './public-status.js';
+import {
+  DEFAULT_SESSION_MAX_INTENTS,
+  DEFAULT_SESSION_TTL_SECS,
+  mintSessionToken,
+  SessionBudget,
+  verifySessionToken,
+} from './session.js';
 
 /** The server-side price for one order. Money-first + zero-trust: the BACKEND prices every order (commission +
  *  spot mid), never a client-supplied paidPrice. Shape matches @troia/pricing quoteUsdc; the impl is INJECTED
@@ -54,7 +61,24 @@ export interface AppDeps {
   readonly rateLimit?: IntentRateLimit;
   /** per-IP cap on GET /quote. Omitted -> DEFAULT_QUOTE_RATE_LIMIT. Tests inject a tiny cap. */
   readonly quoteRateLimit?: IntentRateLimit;
+  /** C-13: when present, POST /session mints short-lived tokens and POST /intent requires one (401 without),
+   *  with accepted NEW orders counted against a per-session budget (429 when spent). Omitted -> /intent stays
+   *  open exactly as before (the offline suite's default); the durable deployment always wires this. */
+  readonly intentAuth?: IntentAuthConfig;
 }
+
+/** Configuration for the /intent session gate (C-13). The secret may be per-boot random: verification is
+ *  stateless, so a restart only forces clients through one extra /session round-trip. */
+export interface IntentAuthConfig {
+  readonly secret: string;
+  readonly ttlSecs?: number; // default DEFAULT_SESSION_TTL_SECS
+  readonly maxIntentsPerSession?: number; // default DEFAULT_SESSION_MAX_INTENTS
+  /** per-IP cap on POST /session. Omitted -> DEFAULT_SESSION_RATE_LIMIT. */
+  readonly sessionRateLimit?: IntentRateLimit;
+}
+
+/** 10 sessions/min per IP: an honest client needs ONE per 15 minutes; a farm burns its IP budget fast. */
+export const DEFAULT_SESSION_RATE_LIMIT: IntentRateLimit = { max: 10, timeWindowMs: 60_000 };
 
 /** A per-IP request cap for the one expensive money-path route, POST /intent. */
 export interface IntentRateLimit {
@@ -167,8 +191,28 @@ export function createApp(deps: AppDeps): FastifyInstance {
     },
   );
 
+  // C-13 session gate state. Verification is stateless (HMAC); only the budget counter lives here.
+  const intentAuth = deps.intentAuth;
+  const sessionTtlSecs = intentAuth?.ttlSecs ?? DEFAULT_SESSION_TTL_SECS;
+  const sessionBudget =
+    intentAuth === undefined
+      ? null
+      : new SessionBudget(intentAuth.maxIntentsPerSession ?? DEFAULT_SESSION_MAX_INTENTS);
+
   // POST /intent — the fail-closed ① gate. A rejected intent consumes NO sequence and starts NO order.
   const handleIntent = async (request: FastifyRequest, reply: FastifyReply) => {
+    // C-13: the session gate runs FIRST — before any parse-derived work — so a tokenless caller costs one
+    // header check and nothing else. One uniform 401 for missing/malformed/expired: the caller's remedy is
+    // identical (fetch a fresh /session), and an attacker learns nothing about which check tripped.
+    let session = null;
+    if (intentAuth !== undefined) {
+      const header = headerStr(request.headers['x-troia-session']);
+      session =
+        header === null
+          ? null
+          : verifySessionToken(intentAuth.secret, header, engine.clock.nowUnix());
+      if (session === null) return reply.code(401).send({ error: 'SessionRequired' });
+    }
     const raw = request.body;
     if (typeof raw !== 'object' || raw === null)
       return reply.code(400).send({ error: 'BadRequest' });
@@ -199,6 +243,20 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // (a double pool-reserve + a second charge surface). One identity for every per-order guard.
     const orderId = tryCanonicalizeOrderId(rawOrderId);
     if (orderId === null) return reply.code(400).send({ error: 'OrderIdMalformed' }); // fail-closed ①
+
+    // C-13: one budget unit per NEW order, taken BEFORE the expensive work (snapshot + live-rate quote), so a
+    // spent session cannot even farm oracle calls. An idempotent replay of an existing order burns nothing —
+    // the extension's retry path stays free. The unit is not refunded on a later 4xx/409: a session throwing
+    // rejectable bodies at the gate is exactly what the budget should be counting.
+    if (
+      sessionBudget !== null &&
+      session !== null &&
+      registry.getByOrderId(orderId) === undefined
+    ) {
+      if (!sessionBudget.take(session, engine.clock.nowUnix())) {
+        return reply.code(429).send({ error: 'SessionBudgetExceeded' });
+      }
+    }
 
     let amount: bigint;
     try {
@@ -369,6 +427,28 @@ export function createApp(deps: AppDeps): FastifyInstance {
       { config: { rateLimit: { max: quoteLimit.max, timeWindow: quoteLimit.timeWindowMs } } },
       handleQuote,
     );
+    // POST /session (C-13) — mints the short-lived token /intent requires. Cheap (one HMAC, no I/O), but
+    // per-IP limited so a session farm burns its IP budget quickly; the real defense is that each session's
+    // intent budget is small and the token expires.
+    if (intentAuth !== undefined) {
+      const sessionLimit = intentAuth.sessionRateLimit ?? DEFAULT_SESSION_RATE_LIMIT;
+      app.post(
+        '/session',
+        {
+          config: {
+            rateLimit: { max: sessionLimit.max, timeWindow: sessionLimit.timeWindowMs },
+          },
+        },
+        async (_request, reply) => {
+          const minted = mintSessionToken(
+            intentAuth.secret,
+            engine.clock.nowUnix(),
+            sessionTtlSecs,
+          );
+          return reply.send({ token: minted.token, expiresAtUnix: minted.claims.expUnix });
+        },
+      );
+    }
   });
 
   // GET /status/:orderId — coarse public status; NEVER the internal crypto state.

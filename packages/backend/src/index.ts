@@ -38,6 +38,7 @@ export type {
   InFlightPatch,
   EvidenceRecord,
   EvidenceRow,
+  OrderFacts,
   DurableLog,
 } from './ports.js';
 
@@ -57,8 +58,16 @@ export type { Reservation } from './store/reservation-ledger.js';
 export { InMemoryStore } from './store/in-memory-store.js';
 export type { InMemoryStoreOptions } from './store/in-memory-store.js';
 
-export { createApp } from './http/app.js';
-export type { AppDeps, Quote, QuoteFn } from './http/app.js';
+export { createApp, DEFAULT_SESSION_RATE_LIMIT } from './http/app.js';
+export type { AppDeps, IntentAuthConfig, Quote, QuoteFn } from './http/app.js';
+export {
+  mintSessionToken,
+  verifySessionToken,
+  SessionBudget,
+  DEFAULT_SESSION_TTL_SECS,
+  DEFAULT_SESSION_MAX_INTENTS,
+} from './http/session.js';
+export type { SessionClaims } from './http/session.js';
 export { InMemoryOrderRegistry } from './http/order-registry.js';
 export type { OrderRegistry, OrderRecord } from './http/order-registry.js';
 export { toPublicStatus } from './http/public-status.js';
@@ -80,6 +89,7 @@ export { TryDrivenRebalancePolicy } from './settlement/rebalance-policy.js';
 export type { RebalancePolicy, TopUpRequest } from './settlement/rebalance-policy.js';
 export { settleAndRebalance, tryToKurus } from './settlement/settlement-worker.js';
 export type {
+  MintIntentJournal,
   SettleReport,
   SettlementDeps,
   TopUpExecution,

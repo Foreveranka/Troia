@@ -45,9 +45,16 @@ const amountStroops = String(Math.round(usdc * 10_000_000));
 const d = deriveIds(orderId, merchant, BigInt(amountStroops));
 
 console.log(`intent: order ${orderId} | ${usdc} USDC | merchant ${merchant}`);
+// C-13: /intent requires a short-lived session token; mint one first (the storefront/extension do the same).
+const sessionRes = await fetch(`http://localhost:${PORT}/session`, { method: 'POST' });
+const session = await sessionRes.json().catch(() => ({}));
+if (!sessionRes.ok || typeof session.token !== 'string') {
+  console.error(`  /session -> ${sessionRes.status} ${JSON.stringify(session)}`);
+  process.exit(1);
+}
 const res = await fetch(`http://localhost:${PORT}/intent`, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: { 'Content-Type': 'application/json', 'x-troia-session': session.token },
   body: JSON.stringify({
     orderId,
     destination: merchant,

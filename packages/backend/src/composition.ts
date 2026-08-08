@@ -10,7 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import type { EngineConfig, EnginePspConfig } from './engine/config.js';
 import type { EngineDeps } from './engine/events.js';
 import { createApp } from './http/app.js';
-import type { QuoteFn } from './http/app.js';
+import type { IntentAuthConfig, QuoteFn } from './http/app.js';
 import { InMemoryOrderRegistry } from './http/order-registry.js';
 import type { OrderRegistry } from './http/order-registry.js';
 import type { PolicyConfig } from './policy.js';
@@ -27,7 +27,11 @@ import { reconcileOrders } from './settlement/reconcile-worker.js';
 import type { ReconcileDeps, ReconcileReport } from './settlement/reconcile-worker.js';
 import type { ConfirmedOrder } from './settlement/settlement-worker.js';
 import type { OutflowTailDeps, OutflowTickReport } from './settlement/outflow-worker.js';
-import type { SettleReport, TopUpExecution } from './settlement/settlement-worker.js';
+import type {
+  MintIntentJournal,
+  SettleReport,
+  TopUpExecution,
+} from './settlement/settlement-worker.js';
 import type { PendingSettlementStore } from './settlement/pending-settlement-store.js';
 import type { RebalancePolicy, TopUpRequest } from './settlement/rebalance-policy.js';
 
@@ -107,6 +111,8 @@ export interface SettlementBundle {
   readonly ledger: SettlementBook;
   readonly rate: { liveRateStroops(): Promise<bigint> };
   readonly demoValorSecs: number;
+  /** the durable mint write-ahead journal (KNOWN_ISSUES §2); absent offline, injected on the durable deploy. */
+  readonly mintIntents?: MintIntentJournal;
 }
 
 export interface ServerDeps {
@@ -121,6 +127,11 @@ export interface ServerDeps {
   /** The durable roll of money-good payouts, read from the evidence log. The settlement worker's work-list, and
    *  the reason a crash between confirmation and the next tick no longer strands an order's accounting. */
   readonly confirmed: ConfirmedOrders;
+  /** The per-order registry. Optional: offline suites omit it and get the in-memory one, exactly as before;
+   *  the durable deployment injects a DB-backed registry so the poll worker's work-list survives a restart. */
+  readonly registry?: OrderRegistry;
+  /** C-13: the /intent session gate. Optional (offline suites omit it); the deployment always wires it. */
+  readonly intentAuth?: IntentAuthConfig;
   /** the TRY-driven rebalance bot's collaborators; omit to build a server with no rebalance (no settleTick). */
   readonly settlement?: SettlementBundle;
   /** the rogue-payout tail's collaborators; omit to build a server with no tail (no outflowTick). */
@@ -157,13 +168,14 @@ export function createServer(d: ServerDeps): Server {
     config,
   };
   const orderLocks = new KeyedMutex(); // ONE lock shared by the app AND the worker(s) (load-bearing per SPIKE-2)
-  const registry = new InMemoryOrderRegistry();
+  const registry = d.registry ?? new InMemoryOrderRegistry();
   const app = createApp({
     engine,
     registry,
     quote: d.quote,
     webhookSigningSecret: d.webhookSigningSecret,
     orderLocks,
+    ...(d.intentAuth === undefined ? {} : { intentAuth: d.intentAuth }),
   });
   const pollTick = (): Promise<PollReport> => pollInFlight(registry, orderLocks, engine);
 
@@ -223,6 +235,7 @@ export function createServer(d: ServerDeps): Server {
       ledger: settlement.ledger,
       rate: settlement.rate,
       demoValorSecs: settlement.demoValorSecs,
+      ...(settlement.mintIntents === undefined ? {} : { mintIntents: settlement.mintIntents }),
     });
   return {
     app,

@@ -309,6 +309,21 @@ export class SqliteOrderStore implements Store {
     };
   }
 
+  /** The open quarantines, for the ops surface (the D-17 review gauge + the admin panel to come). */
+  lossRecords(): readonly {
+    orderId: string;
+    bucket: LossBucket;
+    usdcTxHash: string | null;
+    atMs: number;
+  }[] {
+    return this.db.all('SELECT order_id, bucket, usdc_tx_hash, at_ms FROM losses').map((r) => ({
+      orderId: r.order_id as string,
+      bucket: r.bucket as LossBucket,
+      usdcTxHash: r.usdc_tx_hash as string | null,
+      atMs: Number(r.at_ms),
+    }));
+  }
+
   /** A frozen snapshot copy — the append-only log can never be spliced through this accessor. */
   evidenceRecords(): readonly EvidenceRow[] {
     return Object.freeze([...this.evidence]);

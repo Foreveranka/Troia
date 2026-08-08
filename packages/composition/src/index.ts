@@ -54,3 +54,14 @@ export { encodeOrderCtx, decodeOrderCtx, OrderCtxCodecError } from './order-ctx-
 // A-2: the mint write-ahead journal — a durable intent written before every pool-refill mint, so a crash
 // between the mint landing and its booking can never turn into a second mint (KNOWN_ISSUES §2).
 export { SqliteMintIntentJournal } from './mint-intent-journal.js';
+
+// D-17: observability — the hand-rolled Prometheus registry served on GET /metrics and the webhook alert
+// notifier main.ts fires from the same edge-triggered branches that print the alarms.
+export {
+  MetricsRegistry,
+  metricsExposition,
+  WebhookAlertNotifier,
+  NULL_ALERT_SINK,
+  DEFAULT_ALERT_COOLDOWN_MS,
+} from './observability.js';
+export type { AlertSink } from './observability.js';

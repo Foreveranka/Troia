@@ -21,6 +21,13 @@ import { LiveCexOracle, YahooUsdTryHistory } from '@troia/oracle';
 import { intEnv, parseDeployment, requireEnv } from './env.js';
 import { buildTestnetServerDeps } from './testnet-deps.js';
 import type { TestnetSecrets } from './testnet-deps.js';
+import {
+  MetricsRegistry,
+  metricsExposition,
+  NULL_ALERT_SINK,
+  WebhookAlertNotifier,
+} from './observability.js';
+import type { AlertSink } from './observability.js';
 
 /** A poisoned durable log means nothing can be booked any more: every later tick would re-run the effects that
  *  precede the write — including on-chain mints — and record none of them. There is no safe way to continue, so
@@ -96,8 +103,32 @@ async function main(): Promise<void> {
   });
 
   const server = createServer(deps);
+
+  // D-17: metrics + alerting. GET /metrics serves the Prometheus text format; TROIA_ALERT_WEBHOOK_URL
+  // (optional, Slack-style incoming webhook) gets the SAME edge-triggered alarms the console gets. Neither can
+  // touch the money path: gauges are reads, the notifier is fire-and-forget with a per-key cooldown.
+  const metrics = new MetricsRegistry();
+  const alertUrl = env.TROIA_ALERT_WEBHOOK_URL?.trim();
+  const alerts: AlertSink =
+    alertUrl !== undefined && alertUrl.length > 0
+      ? new WebhookAlertNotifier(alertUrl)
+      : NULL_ALERT_SINK;
+  server.app.get('/metrics', async (_request, reply) => {
+    const e = metricsExposition(metrics);
+    return reply.type(e.contentType).send(e.body);
+  });
+  // The store's read-side surface the gauges sample. lossRecords is on both concrete stores but not on the
+  // Store port (it is an ops read, not a money method) — probe it structurally.
+  const store = deps.ports.store;
+  const lossCount = (): number =>
+    'lossRecords' in store && typeof store.lossRecords === 'function'
+      ? (store.lossRecords() as readonly unknown[]).length
+      : 0;
+  let lastLossCount = 0;
+
   await server.app.listen({ port, host });
   console.log(`troia backend listening on ${host}:${port} — webhook -> ${callbackUrl}`);
+  if (alertUrl) console.log('troia alert webhook armed');
 
   // Poll/recovery loop with an in-flight guard: skip a new tick while the previous one is still running, so
   // neither a fast interval nor a slow tick can STACK passes (which would storm iyzico + Stellar RPC).
@@ -105,8 +136,51 @@ async function main(): Promise<void> {
   setInterval(() => {
     if (polling) return;
     polling = true;
+    const startedAt = Date.now();
     void server
       .pollTick()
+      .then((r) => {
+        metrics.setGauge(
+          'troia_poll_tick_duration_ms',
+          Date.now() - startedAt,
+          'wall-clock duration of the last poll/recovery pass',
+        );
+        metrics.addCounter(
+          'troia_poll_polled_total',
+          r.polled,
+          'orders examined by the poll worker',
+        );
+        metrics.addCounter(
+          'troia_poll_advanced_total',
+          r.advanced,
+          'orders advanced by the poll worker',
+        );
+        metrics.addCounter(
+          'troia_poll_failed_total',
+          r.failed,
+          'per-order drive failures (retried next tick)',
+        );
+        metrics.setGauge(
+          'troia_pool_available_stroops',
+          store.availableStroops(),
+          'pool balance minus held reservations (the /intent gate reads this)',
+        );
+        const losses = lossCount();
+        metrics.setGauge(
+          'troia_loss_review_open',
+          losses,
+          'orders quarantined for human review (LossReview / reversal-exhausted)',
+        );
+        // The quarantine gauge is also an alarm on its rising edge: an order waiting on a human that nobody
+        // hears about is exactly the failure mode D-17 exists to close.
+        if (losses > lastLossCount) {
+          alerts.alert(
+            'loss-review',
+            `LOSS REVIEW: ${losses} order(s) are quarantined and waiting for a human decision.`,
+          );
+        }
+        lastLossCount = losses;
+      })
       .catch((err: unknown) => tickFailed('pollTick', err))
       .finally(() => {
         polling = false;
@@ -125,13 +199,20 @@ async function main(): Promise<void> {
       settling = true;
       void settleTick()
         .then((r) => {
+          metrics.addCounter('troia_settlements_total', r.settled, 'pool refills completed');
+          metrics.setGauge(
+            'troia_mint_blocked',
+            r.mintBlocked,
+            'refills refused because a previous life left a mint intent unresolved',
+          );
           if (r.mintBlocked > 0 && !mintBlockAlarmed) {
             mintBlockAlarmed = true;
-            console.error(
+            const msg =
               `MINT BLOCKED: ${r.mintBlocked} pool refill(s) refused because a previous life left their mint ` +
-                `intent unresolved — the mint may be on chain unbooked. See the [mint-wal] boot log for the ` +
-                `ref(s); book the landed mint or clear the intent. Nothing was minted twice.`,
-            );
+              `intent unresolved — the mint may be on chain unbooked. See the [mint-wal] boot log for the ` +
+              `ref(s); book the landed mint or clear the intent. Nothing was minted twice.`;
+            console.error(msg);
+            alerts.alert('mint-blocked', msg);
           } else if (r.mintBlocked === 0 && mintBlockAlarmed) {
             mintBlockAlarmed = false;
             console.log('[mint-wal] blocked refill(s) resolved — settlement is flowing again');
@@ -159,14 +240,35 @@ async function main(): Promise<void> {
       checking = true;
       void reconTick()
         .then((r) => {
+          metrics.setGauge(
+            'troia_pool_expected_stroops',
+            r.expectedPoolStroops,
+            'the double-entry ledger expectation of the pool balance',
+          );
+          metrics.setGauge(
+            'troia_pool_observed_stroops',
+            r.observedPoolStroops,
+            'the live on-chain pool balance',
+          );
+          metrics.setGauge(
+            'troia_pool_drift_stroops',
+            r.driftStroops,
+            'observed minus expected; a persistent nonzero is the solvency alarm',
+          );
           const o = observeDrift(driftState, r);
           driftState = o.state;
+          metrics.setGauge(
+            'troia_drift_consecutive_out_of_sync',
+            o.state.consecutiveOutOfSync,
+            'consecutive drift checks that disagreed',
+          );
           const amounts = `expected ${r.expectedPoolStroops}, on chain ${r.observedPoolStroops}, drift ${r.driftStroops}`;
           if (o.alarm) {
-            console.error(
+            const msg =
               `SOLVENCY ALARM: the pool has disagreed with the ledger for ${o.state.consecutiveOutOfSync} ` +
-                `consecutive checks — ${amounts}. USDC moved without being recorded. Nothing was re-seeded.`,
-            );
+              `consecutive checks — ${amounts}. USDC moved without being recorded. Nothing was re-seeded.`;
+            console.error(msg);
+            alerts.alert('solvency-drift', msg);
           } else if (o.settling) {
             console.warn(`[solvency] drift observed, may still be settling — ${amounts}`);
           } else if (o.recovered) {
@@ -200,12 +302,18 @@ async function main(): Promise<void> {
           if (r.kind === 'stalled') {
             const o = observeTailHealth(health, true);
             health = o.state;
+            metrics.setGauge(
+              'troia_tail_stalled',
+              1,
+              'the payout tail cannot reach its RPC (1 = stalled)',
+            );
             if (o.alarm) {
-              console.error(
+              const msg =
                 `TAIL STALLED: the payout tail has not reached its RPC for ${o.state.consecutiveStalls} ` +
-                  `consecutive checks (${r.reason}). It is not scanning; the solvency drift tripwire is the ` +
-                  `only cover until it recovers.`,
-              );
+                `consecutive checks (${r.reason}). It is not scanning; the solvency drift tripwire is the ` +
+                `only cover until it recovers.`;
+              console.error(msg);
+              alerts.alert('tail-stalled', msg);
             } else {
               console.warn(`[payout-tail] stalled — ${r.reason}`);
             }
@@ -213,16 +321,22 @@ async function main(): Promise<void> {
           }
           const o = observeTailHealth(health, false);
           health = o.state;
+          metrics.setGauge(
+            'troia_tail_stalled',
+            0,
+            'the payout tail cannot reach its RPC (1 = stalled)',
+          );
           if (o.recovered) console.log('[payout-tail] reached its RPC again, scanning resumed');
 
           if (r.kind === 'blindSpot') {
             // Latched, and never auto-cleared. Those ledgers are unreadable now — by us and by anyone else.
-            console.error(
+            const msg =
               `TAIL BLIND SPOT: the checkpoint at ledger ${r.fromLedger} fell below the RPC's retention floor ` +
-                `(${r.toLedger}). Outflows in [${r.fromLedger}, ${r.toLedger}) can never be fetched again and ` +
-                `were never attributed. Re-anchored at head (${r.latestLedger}). The solvency drift tripwire is ` +
-                `the only cover for that interval.`,
-            );
+              `(${r.toLedger}). Outflows in [${r.fromLedger}, ${r.toLedger}) can never be fetched again and ` +
+              `were never attributed. Re-anchored at head (${r.latestLedger}). The solvency drift tripwire is ` +
+              `the only cover for that interval.`;
+            console.error(msg);
+            alerts.alert('tail-blind-spot', msg);
             return;
           }
 
@@ -232,12 +346,20 @@ async function main(): Promise<void> {
                 `the solvency drift tripwire covers earlier history`,
             );
           }
-          for (const s of r.rogue) {
-            console.error(
-              `ROGUE PAYOUT: ${s.amountStroops} stroops of USDC left the pool to ${s.to} in transaction ` +
-                `${s.txHash} (ledger ${s.ledger}), which this operator never authorized — its hash was never ` +
-                `written to the pre-broadcast journal. Nothing was reversed; a human must look.`,
+          if (r.rogue.length > 0) {
+            metrics.addCounter(
+              'troia_rogue_payouts_total',
+              r.rogue.length,
+              'outflows the pre-broadcast journal never authorized',
             );
+          }
+          for (const s of r.rogue) {
+            const msg =
+              `ROGUE PAYOUT: ${s.amountStroops} stroops of USDC left the pool to ${s.to} in transaction ` +
+              `${s.txHash} (ledger ${s.ledger}), which this operator never authorized — its hash was never ` +
+              `written to the pre-broadcast journal. Nothing was reversed; a human must look.`;
+            console.error(msg);
+            alerts.alert(`rogue:${s.txHash}`, msg);
           }
           if (r.newSuspects > 0 || r.pending > 0) {
             console.warn(
@@ -268,12 +390,25 @@ async function main(): Promise<void> {
         .then((r) => {
           if (r.upgrades.length > 0 && !upgradeAlarmed) {
             upgradeAlarmed = true; // latched: this never becomes true again on its own
-            console.error(
+            const msg =
               `POOL CODE REPLACED: the TroyPool contract was upgraded at ledger ${r.upgrades[0]?.ledger ?? 0} ` +
-                `(tx ${r.upgrades[0]?.txHash ?? '?'}). Everything it announces about its own settlements from now ` +
-                `on is a claim, not a proof. No order will be reconciled against it. A human must look.`,
+              `(tx ${r.upgrades[0]?.txHash ?? '?'}). Everything it announces about its own settlements from now ` +
+              `on is a claim, not a proof. No order will be reconciled against it. A human must look.`;
+            console.error(msg);
+            alerts.alert('pool-upgrade', msg);
+          }
+          if (r.reconciled.length > 0) {
+            metrics.addCounter(
+              'troia_orders_reconciled_total',
+              r.reconciled.length,
+              'orders the live audit closed (the chain agrees)',
             );
           }
+          metrics.setGauge(
+            'troia_reconcile_waiting',
+            r.waiting,
+            'payouts still awaiting their settlement on chain',
+          );
           for (const orderId of r.reconciled) {
             console.log(`[reconcile] ${orderId}: the chain agrees — reconciled`);
           }
@@ -286,18 +421,20 @@ async function main(): Promise<void> {
           }
           for (const p of observed.fresh) {
             if (p.kind === 'diverged') {
-              console.error(
+              const msg =
                 `RECONCILIATION FAILED for ${p.orderId}: ${p.verdict} — ${p.detail}` +
-                  (p.fieldDiff.length > 0
-                    ? ` (${p.fieldDiff.map((d) => `${d.field}: local ${d.local_value} != chain ${d.chain_value}`).join('; ')})`
-                    : ''),
-              );
+                (p.fieldDiff.length > 0
+                  ? ` (${p.fieldDiff.map((d) => `${d.field}: local ${d.local_value} != chain ${d.chain_value}`).join('; ')})`
+                  : '');
+              console.error(msg);
+              alerts.alert(`reconcile-diverged:${p.orderId}`, msg);
             } else if (p.kind === 'unobservable') {
-              console.error(
+              const msg =
                 `SETTLEMENT UNOBSERVABLE for ${p.orderId}: its pay() was witnessed ${p.ageSecs}s ago, inside the ` +
-                  `window the payout tail has been watching, and the pool has still announced no settlement for it ` +
-                  `on chain. The solvency drift tripwire is the only remaining cover.`,
-              );
+                `window the payout tail has been watching, and the pool has still announced no settlement for it ` +
+                `on chain. The solvency drift tripwire is the only remaining cover.`;
+              console.error(msg);
+              alerts.alert(`reconcile-unobservable:${p.orderId}`, msg);
             } else if (p.kind === 'blind') {
               console.warn(
                 p.reason === 'never-watched'

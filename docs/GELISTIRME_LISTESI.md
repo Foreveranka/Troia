@@ -27,6 +27,14 @@
   satır kilidi hâlâ YOK (tek process varsayımı sürüyor — KNOWN_ISSUES §3); canlı testnet'te
   crash/restart tatbikatı henüz yapılmadı. Runtime `node:sqlite` kullanıyor (Node ≥ 22.5;
   "experimental" uyarısı zararsız).
+- **D-17 — YAPILDI (2026-08-08).** Sıfır yeni bağımlılıkla gözlemlenebilirlik:
+  `GET /metrics` Prometheus text formatında pano metrikleri (havuz available/expected/observed/drift,
+  poll süresi ve sayaçları, settlement/mint-blocked, rogue payout, tail-stalled, LossReview açık
+  sayısı, reconcile durumu — stroop'lar tam bigint, float'a asla düşmez); opsiyonel
+  `TROIA_ALERT_WEBHOOK_URL` env'i (Slack/Discord uyumlu) konsoldaki TÜM kritik alarmların ikinci
+  kanalı (SOLVENCY ALARM, ROGUE PAYOUT, TAIL STALLED/BLIND SPOT, MINT BLOCKED, POOL CODE REPLACED,
+  RECONCILIATION FAILED, yeni LOSS REVIEW artış alarmı). Bildirici fire-and-forget + anahtar başına
+  5 dk cooldown — alarm yolu para yolunu asla düşüremez; webhook ölürse konsola geri düşer.
 - **B-11 — YAPILDI (2026-08-08).** Manuel ödeme wizard'ı extension'ın kendi sekmesinde
   (`src/wizard/`; popup'taki "Manual payment →" ile açılır): adres + tutar → offline doğrulama
   (strkey, işlem başına 500 USDC üst limit — C-14 kalıntısı) → ≈₺ önizleme → onay → aynı iyzico

@@ -248,6 +248,13 @@ P2 now verifies the operator's auth-entry signature over the SorobanAuthorizatio
 transactions (`packages/reconciler/src/verify-crypto.ts`, with a forged-witness rejection test); after the fix
 both orders reconciled: `the chain agrees — reconciled`.
 
+**The crash variant (same day):** a third order (`drill-crash…`) was paid on the hosted form while the backend
+was DEAD — the exact KNOWN_ISSUES §1 exposure (charge exists at iyzico, no process alive to record it). On
+restart the durable order store recovered it (`recovered in-flight order … (SolvencyReserved)`, its
+reservation replayed as held), the poll worker re-retrieved the sale, and the payout settled through
+**channel-3**: tx `ec76e640…`, ledger `4035346`, successful — no human touch, no money stranded. The
+charged-but-forgotten crash window is closed by live proof, not just by tests.
+
 ## Working against this deployment
 
 ```bash

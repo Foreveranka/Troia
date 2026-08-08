@@ -34,8 +34,10 @@
   ve aynı gün düzeltildi: canlı denetçi zarf imzasını operator'e karşı doğruluyordu → kanal
   tanıkları yanlışlıkla EVIDENCE_TAMPERED işaretlendi; P2 artık kanal-source'lu tx'te operator'ün
   auth-entry imzasını preimage üzerinden doğruluyor (sahte-tanık ret testiyle). Düzeltme sonrası
-  iki sipariş de "the chain agrees — reconciled". Açık kalan tek varyant: uçuş-ortası kill provası
-  (D-18 listesinde; offline restart testleri kapsıyor).
+  iki sipariş de "the chain agrees — reconciled". **Crash varyantı da aynı gün geçti:** backend
+  tamamen ölüyken ödenen sipariş restart'ta kalıcı store'dan bulundu, tahsilat iyzico'dan doğrulandı
+  ve channel-3 üzerinden teslim edildi (tx `ec76e640…`, ledger 4035346) — KNOWN_ISSUES §1'in
+  "müşteri ödedi, sistem çöktü" penceresi canlı provayla kapandı; denetçi de onayladı, sıfır alarm.
 - **A-5 arşiv notu (aynı gün, önceki durumlar): kod tamam → tasarım+çekirdek.** İmza yarısı da bitti:
   kanal-source'lu `pay()`'de operator yetkisi imzalı address-credential auth entry olarak taşınıyor
   (`signAuthEntry` + `assembleWithSignedAuth`, imzasız/yabancı/yanlış-şekilli entry'ler assemble

@@ -64,6 +64,10 @@ restart. All three counters must move onto the durable `OrderRow` alongside the 
   idempotent), or void it. It changes the money path's crash semantics, so it belongs to the mainnet build, not a
   testnet patch — but it is the one gap on this page that is not merely tidiness, and it is the reason mainnet is a
   deliberate later phase.
+- **Status update (2026-08-08, later the same day): LIVE-PROVEN.** The exact scenario above was rehearsed
+  against the recorded testnet pool: an order was paid on the hosted form while the backend was DEAD, and on
+  restart the durable store recovered it, the poll worker re-retrieved the sale, and the payout settled and
+  reconciled with zero alarms (DEPLOYMENTS.md, "Channel accounts live drill — the crash variant").
 - **Status (2026-08-08): closed in code, not yet live-proven.** `@troia/composition` now wires a SQLite-backed
   `Store` + `OrderRegistry` (`order-db.ts`, `sqlite-order-store.ts`, `sqlite-order-registry.ts`) whenever a
   `TROIA_DATA_DIR` is set: order rows, the reservation ledger, the retry counters, the webhook dedup set, the loss

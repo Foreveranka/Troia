@@ -43,6 +43,14 @@ export default defineManifest({
     service_worker: 'src/background.ts',
     type: 'module',
   },
+  // B-11 UX: the manual-payment wizard lives in Chrome's SIDE PANEL — persistent next to the store page (a
+  // popup would close the moment the iyzico tab takes focus). The only new tab in the flow is iyzico's own
+  // hosted card page; the panel stays open and shows the live status/receipt. `sidePanel` grants access to
+  // no site data — it is a UI-surface permission only.
+  permissions: ['sidePanel'],
+  side_panel: {
+    default_path: 'src/wizard/index.html',
+  },
   content_scripts: [
     {
       matches: STOREFRONT_PATTERNS,

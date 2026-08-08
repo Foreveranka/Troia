@@ -75,9 +75,34 @@ function requestState(): void {
 
 requestState();
 
-// Open the manual-payment wizard in its own tab (B-11): for stores that accept USDC on Stellar but publish no
-// SEP-7 — the user pastes the recipient address there. A popup closes itself after opening the tab.
+// Open the manual-payment wizard (B-11): for stores that accept USDC on Stellar but publish no SEP-7 — the
+// user pastes the recipient address there. Preferred surface is the SIDE PANEL, which stays open next to the
+// store page while the iyzico tab is used (a popup or a plain tab loses that side-by-side quality). The
+// sidePanel.open call must ride the click's user gesture, so the window lookup uses the callback form; any
+// failure (older Chrome, API missing) falls back to the wizard in its own tab — same page either way.
 el('manual').addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('src/wizard/index.html') });
-  window.close();
+  const openAsTab = (): void => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/wizard/index.html') });
+    window.close();
+  };
+  const panel = (chrome as { sidePanel?: { open(o: { windowId: number }): Promise<void> } })
+    .sidePanel;
+  if (panel === undefined) {
+    openAsTab();
+    return;
+  }
+  try {
+    chrome.windows.getCurrent((win) => {
+      if (chrome.runtime.lastError || win.id === undefined) {
+        openAsTab();
+        return;
+      }
+      panel.open({ windowId: win.id }).then(
+        () => window.close(),
+        () => openAsTab(),
+      );
+    });
+  } catch {
+    openAsTab();
+  }
 });

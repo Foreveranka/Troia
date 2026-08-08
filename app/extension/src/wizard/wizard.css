@@ -160,3 +160,27 @@ button.ghost {
     transform: rotate(360deg);
   }
 }
+
+/* SIDE PANEL fit: the same page serves the panel (~340-420px). Drop the card chrome, use the full width,
+   and let the action buttons breathe on one line. */
+@media (max-width: 500px) {
+  body {
+    background: #fff;
+  }
+  .wiz {
+    max-width: none;
+    margin: 0;
+    padding: 1rem;
+    border: none;
+    border-radius: 0;
+  }
+  .hd h1 {
+    font-size: 1.05rem;
+  }
+  .actions {
+    flex-direction: column-reverse;
+  }
+  .actions button {
+    width: 100%;
+  }
+}

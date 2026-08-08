@@ -69,9 +69,11 @@ so you just open the deployed storefront with the extension loaded. Either way:
 ## Manual payment (the wizard)
 
 For a store that accepts USDC-on-Stellar but publishes no SEP-7 request, the extension carries a **manual-payment
-wizard**: click the toolbar icon → **"Manual payment →"**. It opens in the extension's own tab (no storefront, no
-extra host permissions) and walks address → amount → confirm → the same iyzico hosted form → the same status/receipt
-polling. It is the SAME money path as the storefront flow — the backend cannot tell the two apart, so every guard
+wizard**: click the toolbar icon → **"Manual payment →"**. It opens in **Chrome's side panel** — persistent next to
+the store page, so the flow is: copy the store's address → paste in the panel → amount → confirm — and the ONLY new
+tab in the whole flow is iyzico's own hosted card page, while the panel stays open showing the live status and the
+on-chain receipt. (On a Chrome without the side-panel API it falls back to the same page in its own tab. The
+`sidePanel` permission grants access to no site data — it is a UI surface only.) It is the SAME money path as the storefront flow — the backend cannot tell the two apart, so every guard
 (server-side pricing, solvency reserve, trustline preflight, session gate) applies unchanged. Its own rules:
 
 - **No memo, by design.** Troia settles via a Soroban invocation, which the protocol forces to `MEMO_NONE` — so

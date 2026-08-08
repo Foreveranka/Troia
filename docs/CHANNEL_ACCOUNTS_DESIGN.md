@@ -1,10 +1,12 @@
 # Channel accounts — the parallel-payout design (A-5)
 
-> Status: **designed, groundwork landed, NOT wired**. The `ChannelPoolProvider` (per-order sticky channel
-> assignment over per-channel `SequenceAllocator`s, fail-closed bare-seq disambiguation) lives in
-> `@troia/core` with its own suite; the engine still runs the single-operator allocator. This page is the
-> full mechanism and the honest list of what must change before channels go live — the remaining work is a
-> deliberate, separately-reviewed step because it touches the double-pay shield and the signing pipeline.
+> Status: **implemented and wired, awaiting the live testnet drill.** Everything on this page is built and
+> offline-tested: the pool provider, the channel-sourced signing path (operator auth as signed
+> address-credential entries), the per-channel deadness reads, the durable seq snapshots + sticky
+> order->channel map in `orders.db`, the `TROIA_CHANNEL_SECRETS` wiring and the `just add-channels`
+> ceremony. Channel mode turns on only when `TROIA_CHANNEL_SECRETS` is set; without it, the single-operator
+> path is byte-for-byte unchanged (pinned by tests). What remains is the LIVE PROOF on testnet — see "The
+> live drill" at the bottom; until it has been run, do not rely on channel mode.
 
 ## The problem
 
@@ -45,20 +47,39 @@ contract call. K channels ⇒ K payouts per ledger.
    rides the SAME channel. The pool assigns a channel once per order, persists the assignment (it must
    survive a restart exactly like the seq snapshots), and `reallocate` stays on the assigned channel.
 
-### The remaining work, in order
+### How the implementation resolved each point
 
-1. **Signing:** channel `Signer`s (envelope) + operator auth-entry signing in the submit path;
-   `assemble.ts` learns the address-credential shape behind an explicit "channel mode" (the source-account
-   guard stays for the single-operator mode). Re-derive the persist-then-send ordering and its tests.
-2. **Threading:** `channelPublic` through `OrderCtx` / ctx codec / `InFlightPatch` / observe / poll worker.
-3. **Wiring:** `TROIA_CHANNEL_SECRETS` (comma-separated S-keys) → validate against chain, read each
-   channel's live seq at boot (same bootstrap discipline as the operator), build the pool + durable
-   channel-map/seq stores in `orders.db`.
-4. **Ceremony:** `just add-channels N` — create + fund N channel accounts from the operator (XLM for fees
-   only; channels never hold USDC and never gain contract authority — a leaked channel key can burn fees,
-   not move the pool).
-5. **Proof:** live drills on testnet (D-18 scope): parallel payouts landing in one ledger, a channel-side
-   crash/recovery, a dead-then-replaced tx on a channel, ambiguity handling under same-ledger creation.
+1. **Signing** — `Signer.signAuthEntry` (implemented by `LocalKeySigner` via `authorizeEntry`);
+   `assembleWithSignedAuth` accepts ONLY signed, operator-addressed, address-credential entries (unsigned /
+   foreign / source-account entries are refused before anything is hashed); `client.submitPay` in channel
+   mode runs build(source=channel) → simulate → operator-signs each entry (`validUntil = head + 120`
+   ledgers) → assemble → hash → channel-signs the envelope → **persist → send**. The write-ahead contract
+   holds: the persisted artifact includes the signed entries (they are tx body), so it is still byte-exactly
+   resubmittable. The original `assembleFromSimulation` guard is untouched for single-operator mode.
+2. **Threading** — `OrderCtx.channelPublic` (ctx codec v2; v1 rows decode as null), `InFlightPatch` +
+   both stores' order rows, `ReducerState.sourcePublic`, and both observe paths (engine + poll worker) read
+   the channel's account, never the operator's, for a channel-ridden order.
+3. **Wiring** — `TROIA_CHANNEL_SECRETS` (comma/space-separated S-keys) → `buildTestnetServerDeps` builds
+   the pool over per-channel `SqliteSequenceStore`s + the `SqliteChannelMapStore` (both in `orders.db`;
+   channel seqs chain-seeded on first sight, authoritative thereafter) and hands the channel signers to the
+   Stellar client. Channel mode REQUIRES the durable deployment (refused without a dataDir). A side gain:
+   the operator allocator's snapshot is now durable too, which closed A-1's last recovery hole (a restarted
+   allocator could not `reuseOnDead`/`confirmBurned` a seq it had forgotten).
+4. **Ceremony** — `just add-channels N` (default 5): creates + friendbot-funds `troia-channel-<n>` keys via
+   the `stellar` CLI and prints the `TROIA_CHANNEL_SECRETS` line for `.env`.
+
+### The live drill (the one unfinished step — run before relying on channel mode)
+
+On a machine with the repo's `.env` (operator/issuer/iyzico secrets) and `just serve` working:
+
+1. `just add-channels 5` → paste the printed `TROIA_CHANNEL_SECRETS=...` line into `.env`.
+2. `just serve` → expect `[channels] 5 channel account(s) armed — parallel payouts on`.
+3. Fire two+ concurrent orders (`node scripts/intent.mjs a & node scripts/intent.mjs b`), pay both sandbox
+   forms quickly, and verify BOTH `pay()`s land in the same or adjacent ledgers (the explorer shows two
+   different tx source accounts) and both `/receipt`s carry hashes.
+4. Kill `just serve` mid-flight (after a card payment, before settlement) and restart: the order must
+   resume on the SAME channel (boot log + `/status` reaching `completed`).
+5. Only after 3–4 pass: mark this page's status "live-proven" and note the drill date in DEPLOYMENTS.md.
 
 ### Sizing
 

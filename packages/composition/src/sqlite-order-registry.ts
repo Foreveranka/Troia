@@ -139,6 +139,7 @@ export class SqliteOrderRegistry implements OrderRegistry {
     const merged: OrderCtx = {
       ...ctx,
       activeSeq: store?.seq ?? ctx.activeSeq,
+      channelPublic: store?.channelPublic ?? ctx.channelPublic,
       paymentId: store?.paymentId ?? ctx.paymentId,
       hashHex: store?.hashHex ?? ctx.hashHex,
       signedXdr: store?.signedXdr ?? ctx.signedXdr,

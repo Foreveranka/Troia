@@ -78,6 +78,9 @@ export interface SequenceProvider {
   reuseOnDead(seq: bigint, orderId: string): bigint;
   release(seq: bigint, orderId: string): void;
   reallocate(orderId: string): bigint;
+  /** CHANNEL MODE (A-5): the tx-source account this order's sequences belong to. Absent/undefined on the
+   *  single-operator allocator (the operator is always the source). */
+  channelFor?(orderId: string): string | undefined;
 }
 
 function insertSorted(arr: bigint[], value: bigint): void {

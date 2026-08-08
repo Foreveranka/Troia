@@ -73,6 +73,7 @@ function ctxOf(orderId: string): OrderCtx {
     currency: 'TRY',
     ip: '203.0.113.7',
     activeSeq: null,
+    channelPublic: null,
     hashHex: null,
     signedXdr: null,
     payMaxTimeUnix: null,

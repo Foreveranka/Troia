@@ -317,6 +317,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       currency: engine.config.psp.currency, // server-fixed (TRY), never the client's
       ip,
       activeSeq: null,
+      channelPublic: null,
       hashHex: null,
       signedXdr: null,
       payMaxTimeUnix: null,

@@ -50,6 +50,7 @@ function inFlightPatch(ctx: OrderCtx): InFlightPatch {
     ...(ctx.paymentId !== null ? { paymentId: ctx.paymentId } : {}),
     ...(ctx.hashHex !== null ? { hashHex: ctx.hashHex } : {}),
     ...(ctx.signedXdr !== null ? { signedXdr: ctx.signedXdr } : {}),
+    ...(ctx.channelPublic !== null ? { channelPublic: ctx.channelPublic } : {}),
   };
 }
 
@@ -102,6 +103,9 @@ function payRequest(
   const req: PayRequest = {
     orderId: ctx.orderId,
     operatorPublic: deps.config.stellar.operatorPublic,
+    // CHANNEL MODE (A-5): the tx source is the order's sticky channel when it has one; the client then signs
+    // the envelope with the channel key and attaches the operator's auth as signed entries.
+    ...(ctx.channelPublic !== null ? { sourcePublic: ctx.channelPublic } : {}),
     // BuildParams.seq is the account-CURRENT seq; TransactionBuilder increments to seq+1. activeSeq is the
     // allocated TX seqNum, so seq = activeSeq-1 yields tx seqNum == activeSeq (audited, no txBAD_SEQ).
     seq: (ourSeq - 1n).toString(),
@@ -138,7 +142,14 @@ async function doSubmitAndObserve(
     hashHex: submit.hashHex,
     signedXdr: submit.signedXdr,
   });
-  const state: ReducerState = { phase: 'polling', hashHex: submit.hashHex, ourSeq, maxTime };
+  const state: ReducerState = {
+    phase: 'polling',
+    hashHex: submit.hashHex,
+    ourSeq,
+    maxTime,
+    // channel mode: deadness must read the tx SOURCE account's seq, not the operator's
+    ...(ctx.channelPublic !== null ? { sourcePublic: ctx.channelPublic } : {}),
+  };
   const obs = await deps.stellar.observe(state);
   const mapping = verdictToCore(obs.verdict ?? 'STILL_PENDING', coreState);
   // record the maxTime too so the poll/recovery worker can rebuild this exact observe input after a crash.
@@ -231,14 +242,19 @@ export async function perform(
       // durable SequenceStore (Phase 2) closes it by reconciling ctx.activeSeq from activeSeqFor(orderId) on
       // recovery; see docs/SCOPE_AND_LIMITATIONS.md.
       const seq = deps.store.sequences.allocate(ctx.orderId);
-      return { event: null, ctxPatch: { activeSeq: seq.toString() } };
+      // CHANNEL MODE (A-5): record WHICH account's sequence space this seq lives in — the pay() tx source
+      // and the deadness read's target. Null on the single-operator allocator (no channelFor).
+      const channelPublic = deps.store.sequences.channelFor?.(ctx.orderId) ?? null;
+      return { event: null, ctxPatch: { activeSeq: seq.toString(), channelPublic } };
     }
 
     case 'reallocateSeq': {
       // UsdcReverted 'other': the burned seq is abandoned, a fresh one is handed out. The trailing submitPay
-      // in the same effect list feeds the event; this only patches ctx.
+      // in the same effect list feeds the event; this only patches ctx. The channel is STICKY (the pool
+      // reallocates from the same channel), so channelPublic is re-read but cannot change.
       const newSeq = deps.store.sequences.reallocate(ctx.orderId);
-      return { event: null, ctxPatch: { activeSeq: newSeq.toString() } };
+      const channelPublic = deps.store.sequences.channelFor?.(ctx.orderId) ?? ctx.channelPublic;
+      return { event: null, ctxPatch: { activeSeq: newSeq.toString(), channelPublic } };
     }
 
     case 'confirmBurnedSeq': {

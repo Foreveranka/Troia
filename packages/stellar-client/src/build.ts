@@ -18,9 +18,16 @@ import type { UnpreparedTx } from './ports.js';
 import { BuildError } from './errors.js';
 
 export interface BuildParams {
-  /** operator G-address — the tx SOURCE (pay() authorizes via source-account auth). */
+  /** operator G-address — the AUTHORIZER of pay(). Also the tx source unless `sourcePublic` says otherwise. */
   readonly operatorPublic: string;
-  /** the operator account's CURRENT stored sequence; the built tx uses seq+1 (TransactionBuilder increments). */
+  /**
+   * CHANNEL MODE (A-5): the tx SOURCE account — a channel whose sequence the tx consumes and whose key signs
+   * the envelope. Omitted (the default) => the operator is the source and pay() authorizes via
+   * source-account credentials, exactly as before. When set, `seq` is the CHANNEL's sequence and the
+   * operator's authorization must be attached as a signed address-credential entry (assemble.ts).
+   */
+  readonly sourcePublic?: string;
+  /** the SOURCE account's CURRENT stored sequence; the built tx uses seq+1 (TransactionBuilder increments). */
   readonly seq: string;
   /** absolute lower/upper timebounds in unix seconds. maxTime must be finite — never TimeoutInfinite. */
   readonly minTime: number;
@@ -69,7 +76,7 @@ export function buildPayTransaction(p: BuildParams): UnpreparedTx {
   ];
   const op = new Contract(p.troyPool).call('pay', ...args);
 
-  return new TransactionBuilder(new Account(p.operatorPublic, p.seq), {
+  return new TransactionBuilder(new Account(p.sourcePublic ?? p.operatorPublic, p.seq), {
     fee: p.fee,
     networkPassphrase: p.passphrase,
   })

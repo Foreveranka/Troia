@@ -34,6 +34,7 @@ interface OrderRow {
   paymentId?: string;
   hashHex?: string;
   signedXdr?: string;
+  channelPublic?: string;
 }
 
 interface LossRow {
@@ -158,6 +159,7 @@ export class InMemoryStore implements Store {
     if (patch.paymentId !== undefined) row.paymentId = patch.paymentId;
     if (patch.hashHex !== undefined) row.hashHex = patch.hashHex;
     if (patch.signedXdr !== undefined) row.signedXdr = patch.signedXdr;
+    if (patch.channelPublic !== undefined) row.channelPublic = patch.channelPublic;
     this.orders.set(orderId, row);
   }
 

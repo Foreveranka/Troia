@@ -55,6 +55,18 @@ export interface HorizonPort {
 export interface Signer {
   publicKey(): string;
   sign(submittable: SubmittableTx): string;
+  /**
+   * CHANNEL MODE (A-5): sign one SorobanAuthorizationEntry (base64 XDR in/out). When the tx source is a
+   * channel account, the operator's `require_auth` is no longer satisfied by the tx-level signature — it
+   * becomes an address-credential entry that must carry the operator's OWN signature over the auth preimage,
+   * valid until `validUntilLedger`. Optional: only the operator signer needs it, and only in channel mode
+   * (the single-operator deployment never calls it).
+   */
+  signAuthEntry?(
+    entryXdrB64: string,
+    validUntilLedger: number,
+    networkPassphrase: string,
+  ): Promise<string>;
 }
 
 /** Write-ahead persistence: the exact signed envelope + its hash are written BEFORE any send, so a crash

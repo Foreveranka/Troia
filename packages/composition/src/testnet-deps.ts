@@ -34,6 +34,10 @@ import { openOrderDb } from './order-db.js';
 import { SqliteOrderStore } from './sqlite-order-store.js';
 import { SqliteOrderRegistry } from './sqlite-order-registry.js';
 import { SqliteMintIntentJournal } from './mint-intent-journal.js';
+import { SqliteChannelMapStore, SqliteSequenceStore } from './sqlite-sequence-store.js';
+import { ChannelPoolProvider } from '@troia/core';
+import type { SequenceProvider } from '@troia/core';
+import { LocalKeySigner as ChannelKeyProbe } from '@troia/stellar-client/adapters';
 import { randomBytes } from 'node:crypto';
 import { deriveIds } from '@troia/core';
 import { resolveGroundTruth } from '@troia/reconciler';
@@ -100,14 +104,19 @@ export interface TestnetServerConfig {
   readonly unsettledGraceSecs?: number;
   readonly merchant?: MerchantTemplate; // override the KYC-stub buyer/addresses/basket
   readonly opts?: BuildStellarPortOptions;
+  /** CHANNEL MODE (A-5): channel account secrets (env TROIA_CHANNEL_SECRETS). Requires a dataDir (the
+   *  sticky order->channel map and per-channel seq snapshots live in orders.db). Absent => single operator. */
+  readonly channelSecrets?: readonly string[];
 }
 
-/** The two one-time chain reads that seed the store at bootstrap. Injectable so the factory is offline-testable. */
+/** The one-time chain reads that seed the store at bootstrap. Injectable so the factory is offline-testable. */
 export interface BootstrapReads {
   /** the operator account's CURRENT on-chain sequence (the allocator hands out this + 1 as the first tx seqNum). */
   operatorSeqNum(): Promise<bigint>;
   /** the pool contract's live USDC balance in stroops. */
   poolBalanceStroops(): Promise<bigint>;
+  /** CHANNEL MODE: a channel account's current on-chain sequence (same discipline as the operator's). */
+  accountSeqNum?(publicKey: string): Promise<bigint>;
 }
 
 /** A KYC-stub merchant template for the testnet PoC (the real cardholder data never leaves iyzico's hosted form). */
@@ -218,17 +227,17 @@ function defaultBootstrap(
   opts?: BuildStellarPortOptions,
 ): BootstrapReads {
   const rpc = new SorobanRpcAdapter(network.rpcUrl, network.passphrase, opts);
+  const readSeq = async (publicKey: string, what: string): Promise<bigint> => {
+    const r = await rpc.readAccountSeq(publicKey);
+    if (!r.exists) {
+      throw new Error(`${what} ${publicKey} not found on-chain — fund it before serving`);
+    }
+    return BigInt(r.seq);
+  };
   return {
-    async operatorSeqNum() {
-      const r = await rpc.readAccountSeq(network.operatorPublic);
-      if (!r.exists) {
-        throw new Error(
-          `operator account ${network.operatorPublic} not found on-chain — fund it before serving`,
-        );
-      }
-      return BigInt(r.seq);
-    },
+    operatorSeqNum: () => readSeq(network.operatorPublic, 'operator account'),
     poolBalanceStroops: poolBalance,
+    accountSeqNum: (publicKey) => readSeq(publicKey, 'channel account'),
   };
 }
 
@@ -247,11 +256,22 @@ export async function buildTestnetServerDeps(
   const durable = cfg.dataDir === undefined ? null : buildDurableBundle(cfg.dataDir);
   for (const w of durable?.warnings ?? []) console.warn(`[durable-log] ${w}`);
 
+  // CHANNEL MODE (A-5): channel secrets need the durable deployment — the sticky order->channel map and the
+  // per-channel seq snapshots must survive a restart, or a retry could step outside the double-pay shield.
+  const channelSecrets = cfg.channelSecrets ?? [];
+  if (channelSecrets.length > 0 && cfg.dataDir === undefined) {
+    throw new Error(
+      'channel accounts require a dataDir (TROIA_DATA_DIR) — refusing a volatile channel map',
+    );
+  }
+  const channelPublics = channelSecrets.map((s) => new ChannelKeyProbe(s).publicKey());
+
   const stellar = buildStellarPort(
     network,
     cfg.secrets.operatorSecret,
     cfg.opts,
     durable?.authorizedJournal,
+    channelSecrets,
   );
   const psp = createPaymentProvider(network.psp, {
     apiKey: cfg.secrets.iyzicoApiKey,
@@ -295,6 +315,28 @@ export async function buildTestnetServerDeps(
   // counters, webhook dedup, loss flags and the poll worker's work-list all survive a restart — the fix for
   // KNOWN_ISSUES §1's charged-but-forgotten crash window. Offline (no dataDir) stays pure in-memory.
   const orderDb = cfg.dataDir === undefined ? null : openOrderDb(cfg.dataDir);
+
+  // CHANNEL MODE: build the pool provider — per-channel durable seq snapshots (chain-seeded on first
+  // sight, authoritative thereafter) + the durable sticky order->channel map.
+  let channelPool: SequenceProvider | undefined;
+  if (channelPublics.length > 0 && orderDb !== null) {
+    const readChannelSeq = reads.accountSeqNum;
+    if (readChannelSeq === undefined) {
+      throw new Error('bootstrap reads cannot read channel account sequences');
+    }
+    const channelConfigs = await Promise.all(
+      channelPublics.map(async (publicKey) => ({
+        publicKey,
+        baseSeq: await readChannelSeq(publicKey),
+        store: new SqliteSequenceStore(orderDb, publicKey),
+      })),
+    );
+    channelPool = new ChannelPoolProvider(channelConfigs, new SqliteChannelMapStore(orderDb));
+    console.log(
+      `[channels] ${channelPublics.length} channel account(s) armed — parallel payouts on`,
+    );
+  }
+
   const store =
     orderDb === null || durable === null
       ? new InMemoryStore({ balanceStroops, baseSeq })
@@ -304,6 +346,7 @@ export async function buildTestnetServerDeps(
           baseSeq,
           evidenceLog: durable.evidenceLog,
           seedEvidence: durable.seedEvidence,
+          ...(channelPool === undefined ? {} : { sequences: channelPool }),
         });
   let registry: SqliteOrderRegistry | undefined;
   if (orderDb !== null && store instanceof SqliteOrderStore) {

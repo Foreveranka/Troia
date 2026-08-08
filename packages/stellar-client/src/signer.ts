@@ -3,7 +3,13 @@
 // from NetworkConfig (which is secret-free by design). sign() is functional — it signs a COPY parsed from
 // XDR and returns bytes, so the caller's tx object is never mutated.
 
-import { Keypair, Transaction, TransactionBuilder } from '@stellar/stellar-base';
+import {
+  authorizeEntry,
+  Keypair,
+  Transaction,
+  TransactionBuilder,
+  xdr,
+} from '@stellar/stellar-base';
 import type { Signer, SubmittableTx } from './ports.js';
 
 export class LocalKeySigner implements Signer {
@@ -30,5 +36,18 @@ export class LocalKeySigner implements Signer {
     }
     copy.sign(this.keypair);
     return copy.toEnvelope().toXDR('base64');
+  }
+
+  /** CHANNEL MODE: sign one auth entry with this key. `authorizeEntry` re-stamps the credentials with
+   *  `validUntilLedger` and the signature over the SorobanAuthorization preimage — the operator's explicit
+   *  "yes" that a channel-sourced tx must carry (see ports.ts). Functional: parses a copy, returns bytes. */
+  async signAuthEntry(
+    entryXdrB64: string,
+    validUntilLedger: number,
+    networkPassphrase: string,
+  ): Promise<string> {
+    const entry = xdr.SorobanAuthorizationEntry.fromXDR(entryXdrB64, 'base64');
+    const signed = await authorizeEntry(entry, this.keypair, validUntilLedger, networkPassphrase);
+    return signed.toXDR('base64');
   }
 }

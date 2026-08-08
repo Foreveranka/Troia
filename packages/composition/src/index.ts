@@ -55,6 +55,17 @@ export { encodeOrderCtx, decodeOrderCtx, OrderCtxCodecError } from './order-ctx-
 // between the mint landing and its booking can never turn into a second mint (KNOWN_ISSUES §2).
 export { SqliteMintIntentJournal } from './mint-intent-journal.js';
 
+// A-5: the durable sequence machinery — per-scope allocator snapshots (operator + channels) and the sticky
+// order->channel map, all in orders.db. The snapshot store also closes A-1's last recovery hole (a restarted
+// allocator no longer forgets in-flight seqs).
+export {
+  SqliteSequenceStore,
+  SqliteChannelMapStore,
+  encodeSequenceSnapshot,
+  decodeSequenceSnapshot,
+  SeqSnapshotCodecError,
+} from './sqlite-sequence-store.js';
+
 // D-17: observability — the hand-rolled Prometheus registry served on GET /metrics and the webhook alert
 // notifier main.ts fires from the same edge-triggered branches that print the alarms.
 export {

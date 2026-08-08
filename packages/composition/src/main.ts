@@ -87,12 +87,20 @@ async function main(): Promise<void> {
   // books and make the drift alarm scream about money that is not missing — it is in a contract nobody uses.
   const dataDir = join(env.TROIA_DATA_DIR?.trim() || 'data', deployment.troyPool);
 
+  // CHANNEL MODE (A-5): comma/whitespace-separated channel S-keys. Optional; absent => single operator.
+  // Created + funded by `just add-channels N`. Channels hold fee XLM only — never USDC, never authority.
+  const channelSecrets = (env.TROIA_CHANNEL_SECRETS ?? '')
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
   const deps = await buildTestnetServerDeps({
     deployment,
     secrets,
     callbackUrl,
     demoValorSecs,
     dataDir,
+    ...(channelSecrets.length > 0 ? { channelSecrets } : {}),
     // Settlement-rate oracle: sources must agree within 0.5% AND a genuine 3-source majority must be present
     // (minQuorum 3), so a single compromised in-band source cannot move the median — the money-safe default the
     // oracle doc demands. A CEX outage fails a quote CLOSED (retry) rather than settling on a 2-source mid.

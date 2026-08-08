@@ -6,7 +6,7 @@
 
 export { buildPayTransaction } from './build.js';
 export type { BuildParams } from './build.js';
-export { assembleFromSimulation, hashOf } from './assemble.js';
+export { assembleFromSimulation, assembleWithSignedAuth, hashOf } from './assemble.js';
 export { resolveDeadness, deadnessToVerdict } from './deadness.js';
 export type { DeadnessInputs } from './deadness.js';
 export { step, verdictToCore } from './submit-reducer.js';

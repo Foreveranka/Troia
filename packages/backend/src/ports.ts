@@ -60,6 +60,8 @@ export interface InFlightPatch {
   readonly paymentId?: string;
   readonly hashHex?: string;
   readonly signedXdr?: string;
+  /** the seq's channel account (A-5); persisted with the seq so recovery re-targets the right source. */
+  readonly channelPublic?: string;
 }
 
 export interface EvidenceRecord {

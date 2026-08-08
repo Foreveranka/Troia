@@ -117,6 +117,8 @@ export async function pollInFlight(
           hashHex: ctx.hashHex,
           ourSeq: BigInt(ctx.activeSeq),
           maxTime: ctx.payMaxTimeUnix,
+          // channel mode (A-5): the deadness read targets the seq's OWN account — the order's channel
+          ...(ctx.channelPublic !== null ? { sourcePublic: ctx.channelPublic } : {}),
         };
         const obs = await deps.stellar.observe(reducerState);
         const mapping = verdictToCore(obs.verdict ?? 'STILL_PENDING', state);

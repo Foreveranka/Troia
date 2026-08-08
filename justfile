@@ -243,3 +243,7 @@ verify-live:
 verify-tampered:
     pnpm --filter @troia/reconciler build
     TROIA_OPERATOR_PUBLIC={{corpus_operator}} TROIA_TROY_POOL={{corpus_pool}} node scripts/tamper-check.mjs
+
+# A-5: create + fund N channel accounts (default 5) and print the TROIA_CHANNEL_SECRETS .env line.
+add-channels count='5':
+    node scripts/add-channels.mjs {{count}}

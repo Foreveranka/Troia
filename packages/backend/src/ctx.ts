@@ -32,6 +32,10 @@ export interface OrderCtx {
   readonly ip: string;
   /** the order's currently-allocated sequence (decimal string), if any. */
   readonly activeSeq: string | null;
+  /** CHANNEL MODE (A-5): the channel account (G-address) whose sequence space `activeSeq` lives in — the
+   *  pay() tx SOURCE and the account the deadness read targets. Null on the single-operator deployment AND
+   *  before allocation. Sticky per order (the double-pay shield is per account), set at allocateSeq. */
+  readonly channelPublic: string | null;
   /** the landed USDC pay() witness — set by submitPay/submitReplacementSameSeq perform (from SubmitResult)
    *  and consumed by handToReconciler (settlement_evidence) and flagLoss (loss bucket usdcTxHash). Null until
    *  a pay() has been submitted. Threaded through ctx because Store is write-only (no evidence read-back). */

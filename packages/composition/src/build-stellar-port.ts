@@ -27,13 +27,32 @@ export function buildStellarPort(
    *  transaction is broadcast; without it the record dies with the process and a restart can no longer tell a
    *  legitimate payout from a rogue one. Defaults to in-memory for the offline suite. */
   injectedJournal?: WriteAheadJournal,
+  /** CHANNEL MODE (A-5): the channel account secrets. Each becomes an envelope Signer keyed by its
+   *  G-address; the operator signer keeps its role as the auth-entry authorizer. Absent => single-operator. */
+  channelSecrets?: readonly string[],
 ): StellarPort {
   const rpc = new SorobanRpcAdapter(network.rpcUrl, network.passphrase, opts);
   const horizon = new HorizonAdapter(network.horizonUrl, opts);
   const signer = new LocalKeySigner(operatorSecret);
   // SHARED: the client writes it, readRevertErrorCode reads it, the payout tail asks it who was authorized.
   const journal = injectedJournal ?? new InMemoryJournal();
-  const client = createStellarClient({ rpc, horizon, signer, journal, clock: new SystemClock() });
+  const channelSigners =
+    channelSecrets === undefined || channelSecrets.length === 0
+      ? undefined
+      : new Map(
+          channelSecrets.map((secret) => {
+            const s = new LocalKeySigner(secret);
+            return [s.publicKey(), s] as const;
+          }),
+        );
+  const client = createStellarClient({
+    rpc,
+    horizon,
+    signer,
+    journal,
+    clock: new SystemClock(),
+    ...(channelSigners === undefined ? {} : { channelSigners }),
+  });
   return wrapStellarPort(client, rpc, journal, {
     sacContractId: network.usdc.sacContractId,
     troyPool: network.contracts.troyPool,

@@ -324,6 +324,7 @@ export function makePreChargeCtx(_store: FakeStore, overrides: Partial<OrderCtx>
     currency: 'TRY',
     ip: '1.2.3.4',
     activeSeq: null,
+    channelPublic: null,
     hashHex: null,
     signedXdr: null,
     payMaxTimeUnix: null,

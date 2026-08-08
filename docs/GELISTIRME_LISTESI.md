@@ -27,7 +27,17 @@
   satır kilidi hâlâ YOK (tek process varsayımı sürüyor — KNOWN_ISSUES §3); canlı testnet'te
   crash/restart tatbikatı henüz yapılmadı. Runtime `node:sqlite` kullanıyor (Node ≥ 22.5;
   "experimental" uyarısı zararsız).
-- **A-5 — KISMEN (2026-08-08): tasarım + çekirdek hazır, canlıya bağlanmadı.** Keşif, işin backlog
+- **A-5 — KOD TAMAM (2026-08-08): canlı testnet provası bekliyor.** İmza yarısı da bitti:
+  kanal-source'lu `pay()`'de operator yetkisi imzalı address-credential auth entry olarak taşınıyor
+  (`signAuthEntry` + `assembleWithSignedAuth`, imzasız/yabancı/yanlış-şekilli entry'ler assemble
+  edilmeden reddedilir); write-ahead disiplini korunuyor (persist → send, imzalı entry'ler tx
+  gövdesinde); deadness okuması kanal hesabını hedefliyor; kanal kimliği ctx/codec-v2/store/poll
+  boyunca taşınıyor; `TROIA_CHANNEL_SECRETS` + `just add-channels N` hazır. Yan kazanç: operator
+  allocator snapshot'ı da artık kalıcı — A-1'in son recovery deliği (restart sonrası
+  reuseOnDead/confirmBurned UnknownSeq) kapandı. Kanal modu yalnızca env set edilince açılır;
+  edilmezse tek-operator yolu bayt-bayt aynı (testle sabit). **Canlıya güvenmeden önce
+  `docs/CHANNEL_ACCOUNTS_DESIGN.md` sonundaki tatbikat koşulmalı** (5 adım; birlikte koşacağız).
+- **A-5 arşiv notu (aynı gün, önceki durum): tasarım + çekirdek.** Keşif, işin backlog
   tahmininden büyük olduğunu gösterdi: kanal source'lu Soroban tx'inde operator yetkisi **imzalı
   address-credential auth entry**'ye dönüşüyor (bugünkü assemble.ts bunu bilerek fail-closed
   reddediyor), pre-submit hash disiplini yeniden türetilmeli ve deadness kanıtı kanal-başına

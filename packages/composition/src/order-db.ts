@@ -18,12 +18,13 @@ export const ORDER_DB_FILE = 'orders.db';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS store_orders (
-  order_id   TEXT PRIMARY KEY,
-  state      TEXT NOT NULL,
-  seq        TEXT,
-  payment_id TEXT,
-  hash_hex   TEXT,
-  signed_xdr TEXT
+  order_id       TEXT PRIMARY KEY,
+  state          TEXT NOT NULL,
+  seq            TEXT,
+  payment_id     TEXT,
+  hash_hex       TEXT,
+  signed_xdr     TEXT,
+  channel_public TEXT
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS registry_orders (
@@ -69,7 +70,24 @@ CREATE TABLE IF NOT EXISTS mint_intents (
   boot_id      TEXT NOT NULL,
   opened_at_ms INTEGER NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS seq_snapshots (
+  scope         TEXT PRIMARY KEY,
+  snapshot_json TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS channel_map (
+  order_id TEXT PRIMARY KEY,
+  channel  TEXT NOT NULL
+) STRICT;
 `;
+
+/** Additive migrations for databases created before a column existed. Each is applied blindly and its
+ *  "duplicate column" failure swallowed — SQLite has no ADD COLUMN IF NOT EXISTS, and a duplicate is
+ *  precisely the "already migrated" signal. Anything else rethrows via the schema probe below. */
+const MIGRATIONS: readonly string[] = [
+  'ALTER TABLE store_orders ADD COLUMN channel_public TEXT', // A-5
+];
 
 function poisoned(op: string, e: unknown): Error {
   const cause = e instanceof Error ? e.message : String(e);
@@ -98,6 +116,13 @@ export class OrderDb {
       // poisoned() wrapper turns into a fail-fast DurableLogFailure — never a silent skip.
       this.db.exec(`PRAGMA busy_timeout = ${opts?.busyTimeoutMs ?? 5000};`);
       this.db.exec(SCHEMA);
+      for (const migration of MIGRATIONS) {
+        try {
+          this.db.exec(migration);
+        } catch (e) {
+          if (!/duplicate column/i.test(e instanceof Error ? e.message : '')) throw e;
+        }
+      }
     } catch (e) {
       throw poisoned('open/migrate', e);
     }

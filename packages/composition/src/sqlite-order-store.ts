@@ -20,8 +20,9 @@
 // deletes settled rows; unsettled rows are replayed as held — fail-closed: a crashed in-flight order keeps
 // its capacity locked until recovery proves its fate, exactly like the in-memory rule.
 
-import { InMemorySequenceStore, SequenceAllocator } from '@troia/core';
+import { SequenceAllocator } from '@troia/core';
 import type { SequenceProvider, State } from '@troia/core';
+import { SqliteSequenceStore } from './sqlite-sequence-store.js';
 import { Mutex } from '@troia/backend';
 import type {
   DurableLog,
@@ -44,6 +45,7 @@ interface StoreOrderRow {
   paymentId?: string;
   hashHex?: string;
   signedXdr?: string;
+  channelPublic?: string;
 }
 
 export interface SqliteOrderStoreOptions {
@@ -57,6 +59,10 @@ export interface SqliteOrderStoreOptions {
   /** rows replayed from that log at boot; also used to sweep reservations whose payout already landed. */
   readonly seedEvidence?: readonly EvidenceRow[];
   readonly poolMutex?: Lock;
+  /** CHANNEL MODE (A-5): a channel-pool SequenceProvider overrides the default single-operator allocator.
+   *  When omitted, the operator allocator runs over a DURABLE SqliteSequenceStore — so a restarted recovery
+   *  can reuseOnDead/confirmBurned seqs the crash left in flight (the missing piece of A-1). */
+  readonly sequences?: SequenceProvider;
 }
 
 /** What boot recovery found — the composition root logs this so a restart is never silently different. */
@@ -79,7 +85,13 @@ export class SqliteOrderStore implements Store {
   constructor(opts: SqliteOrderStoreOptions) {
     this.db = opts.db;
     this.balanceStroops = opts.balanceStroops;
-    this.sequences = new SequenceAllocator(new InMemorySequenceStore(), opts.baseSeq);
+    // The allocator state is DURABLE (scope 'operator'): a persisted snapshot wins over the chain baseSeq,
+    // which is only the first-boot seed — the allocator is the authoritative owner of the seq space and
+    // never re-reads the network (ARCHITECTURE §6). This closes the post-restart UnknownSeq hole on the
+    // recovery paths that touch an in-flight seq (reuseOnDead / confirmBurned / reallocate).
+    this.sequences =
+      opts.sequences ??
+      new SequenceAllocator(new SqliteSequenceStore(opts.db, 'operator'), opts.baseSeq);
     this.poolMutex = opts.poolMutex ?? new Mutex();
     this.evidenceLog = opts.evidenceLog;
     if (opts.seedEvidence !== undefined) this.evidence.push(...opts.seedEvidence);
@@ -195,20 +207,22 @@ export class SqliteOrderStore implements Store {
 
   async persistState(orderId: string, next: State, patch: InFlightPatch): Promise<void> {
     this.db.run(
-      `INSERT INTO store_orders (order_id, state, seq, payment_id, hash_hex, signed_xdr)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO store_orders (order_id, state, seq, payment_id, hash_hex, signed_xdr, channel_public)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (order_id) DO UPDATE SET
-         state      = excluded.state,
-         seq        = COALESCE(excluded.seq, seq),
-         payment_id = COALESCE(excluded.payment_id, payment_id),
-         hash_hex   = COALESCE(excluded.hash_hex, hash_hex),
-         signed_xdr = COALESCE(excluded.signed_xdr, signed_xdr)`,
+         state          = excluded.state,
+         seq            = COALESCE(excluded.seq, seq),
+         payment_id     = COALESCE(excluded.payment_id, payment_id),
+         hash_hex       = COALESCE(excluded.hash_hex, hash_hex),
+         signed_xdr     = COALESCE(excluded.signed_xdr, signed_xdr),
+         channel_public = COALESCE(excluded.channel_public, channel_public)`,
       orderId,
       next,
       patch.seq ?? null,
       patch.paymentId ?? null,
       patch.hashHex ?? null,
       patch.signedXdr ?? null,
+      patch.channelPublic ?? null,
     );
   }
 
@@ -296,7 +310,7 @@ export class SqliteOrderStore implements Store {
 
   orderRow(orderId: string): Readonly<StoreOrderRow> | undefined {
     const r = this.db.get(
-      'SELECT state, seq, payment_id, hash_hex, signed_xdr FROM store_orders WHERE order_id = ?',
+      'SELECT state, seq, payment_id, hash_hex, signed_xdr, channel_public FROM store_orders WHERE order_id = ?',
       orderId,
     );
     if (r === undefined) return undefined;
@@ -306,6 +320,7 @@ export class SqliteOrderStore implements Store {
       ...(r.payment_id !== null ? { paymentId: r.payment_id as string } : {}),
       ...(r.hash_hex !== null ? { hashHex: r.hash_hex as string } : {}),
       ...(r.signed_xdr !== null ? { signedXdr: r.signed_xdr as string } : {}),
+      ...(r.channel_public !== null ? { channelPublic: r.channel_public as string } : {}),
     };
   }
 

@@ -11,6 +11,9 @@ export interface ReducerState {
   readonly ourSeq: bigint;
   /** the tx timebounds maxTime (unix seconds); always finite (build.ts forbids TimeoutInfinite). */
   readonly maxTime: number;
+  /** CHANNEL MODE (A-5): the tx SOURCE account whose on-chain seq the deadness read must target. Omitted =>
+   *  the operator (single-operator mode, unchanged). */
+  readonly sourcePublic?: string;
 }
 
 export type ReducerAction =

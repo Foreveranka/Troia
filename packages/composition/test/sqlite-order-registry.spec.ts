@@ -51,6 +51,7 @@ function ctxOf(orderId: string, overrides: Partial<OrderCtx> = {}): OrderCtx {
     currency: 'TRY',
     ip: '203.0.113.7',
     activeSeq: null,
+    channelPublic: null,
     hashHex: null,
     signedXdr: null,
     payMaxTimeUnix: null,

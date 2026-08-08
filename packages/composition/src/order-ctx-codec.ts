@@ -9,7 +9,10 @@
 
 import type { OrderCtx } from '@troia/backend';
 
-const CTX_VERSION = 1;
+// v2 added channelPublic (A-5). Decode accepts v1 rows (written before channels existed) as
+// channelPublic:null — exactly what they mean: those orders rode the single-operator source.
+const CTX_VERSION = 2;
+const ACCEPTED_VERSIONS: readonly number[] = [1, 2];
 /** Canonical non-negative decimal: no sign, no exponent, no leading zeros, no whitespace. */
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 
@@ -39,6 +42,7 @@ export function encodeOrderCtx(ctx: OrderCtx): string {
     currency: ctx.currency,
     ip: ctx.ip,
     activeSeq: ctx.activeSeq,
+    channelPublic: ctx.channelPublic,
     hashHex: ctx.hashHex,
     signedXdr: ctx.signedXdr,
     payMaxTimeUnix: ctx.payMaxTimeUnix,
@@ -81,7 +85,9 @@ export function decodeOrderCtx(payload: string): OrderCtx {
   }
   if (typeof raw !== 'object' || raw === null) throw new OrderCtxCodecError('not an object');
   const o = raw as Record<string, unknown>;
-  if (o.v !== CTX_VERSION) throw new OrderCtxCodecError(`unsupported version ${String(o.v)}`);
+  if (!ACCEPTED_VERSIONS.includes(o.v as number)) {
+    throw new OrderCtxCodecError(`unsupported version ${String(o.v)}`);
+  }
   const payMaxTimeUnix = o.payMaxTimeUnix;
   if (payMaxTimeUnix !== null && !Number.isSafeInteger(payMaxTimeUnix)) {
     throw new OrderCtxCodecError('bad payMaxTimeUnix');
@@ -102,6 +108,7 @@ export function decodeOrderCtx(payload: string): OrderCtx {
     currency: str(o.currency, 'currency'),
     ip: str(o.ip, 'ip'),
     activeSeq: strOrNull(o.activeSeq, 'activeSeq'),
+    channelPublic: o.v === 1 ? null : strOrNull(o.channelPublic, 'channelPublic'),
     hashHex: strOrNull(o.hashHex, 'hashHex'),
     signedXdr: strOrNull(o.signedXdr, 'signedXdr'),
     payMaxTimeUnix: payMaxTimeUnix as number | null,

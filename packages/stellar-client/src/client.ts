@@ -3,7 +3,7 @@
 // pure core). It depends only on the injected ports, so it is fully offline-testable with fakes (see
 // write-ahead-ordering and idempotent-resend specs). No @stellar/stellar-sdk type crosses this file.
 
-import { assembleFromSimulation, hashOf } from './assemble.js';
+import { assembleFromSimulation, assembleWithSignedAuth, hashOf } from './assemble.js';
 import { buildPayTransaction } from './build.js';
 import type { BuildParams } from './build.js';
 import { deadnessToVerdict, resolveDeadness } from './deadness.js';
@@ -21,7 +21,15 @@ export interface StellarClientPorts {
   readonly signer: Signer;
   readonly journal: WriteAheadJournal;
   readonly clock: Clock;
+  /** CHANNEL MODE (A-5): envelope signers for the channel accounts, keyed by G-address. Present only on a
+   *  channel deployment; a PayRequest naming a channel absent from this map fails closed before any build. */
+  readonly channelSigners?: ReadonlyMap<string, Signer>;
 }
+
+/** How many ledgers past "now" a channel-mode auth-entry signature stays valid. Comfortably beyond the tx
+ *  timebounds (~45s ≈ 9 ledgers): the auth must never expire before the tx itself can, or a valid resend
+ *  inside the timebound window would fail auth and burn the channel seq for nothing. */
+const AUTH_VALIDITY_LEDGERS = 120;
 
 /** A payout request = the build parameters plus the order id used as the write-ahead key. */
 export type PayRequest = BuildParams & { readonly orderId: string };
@@ -58,13 +66,48 @@ export function createStellarClient(ports: StellarClientPorts): StellarClient {
 
   return {
     async submitPay(req) {
+      const channelPublic =
+        req.sourcePublic !== undefined && req.sourcePublic !== operatorPublic
+          ? req.sourcePublic
+          : null;
       const unprepared = buildPayTransaction(req);
       const sim = await ports.rpc.simulate(unprepared);
-      const submittable = assembleFromSimulation(unprepared, sim);
+
+      let submittable;
+      let envelopeSigner: Signer;
+      if (channelPublic === null) {
+        // Single-operator mode: source-account credentials, tx-level signature covers the auth. Unchanged.
+        submittable = assembleFromSimulation(unprepared, sim);
+        envelopeSigner = ports.signer;
+      } else {
+        // CHANNEL MODE. The channel provides seq + fee + envelope signature; the OPERATOR's authorization
+        // travels as explicitly signed address-credential entries. Every failure below is pre-broadcast and
+        // pre-persist — nothing has been journaled, no seq state has moved.
+        const channelSigner = ports.channelSigners?.get(channelPublic);
+        if (channelSigner === undefined) {
+          throw new SubmitError(`no signer for channel ${channelPublic} — refusing to submit`);
+        }
+        const signAuthEntry = ports.signer.signAuthEntry?.bind(ports.signer);
+        if (signAuthEntry === undefined) {
+          throw new SubmitError(
+            'operator signer cannot sign auth entries — channel mode unavailable',
+          );
+        }
+        const head = await ports.rpc.latestLedger();
+        const validUntil = head.sequence + AUTH_VALIDITY_LEDGERS;
+        const signedEntries = await Promise.all(
+          sim.authXdr.map((b64) => signAuthEntry(b64, validUntil, req.passphrase)),
+        );
+        submittable = assembleWithSignedAuth(unprepared, sim, signedEntries, operatorPublic);
+        envelopeSigner = channelSigner;
+      }
+
       const hashHex = hashOf(submittable);
-      const signedXdr = ports.signer.sign(submittable);
+      const signedXdr = envelopeSigner.sign(submittable);
       // WRITE-AHEAD: the exact signed bytes + hash are durable BEFORE any send. A crash after this leaves a
       // byte-exact, resubmittable artifact; recovery resends it verbatim (never a fresh build on a live seq).
+      // In channel mode the hash already includes the SIGNED auth entries (they are tx body), so the
+      // persisted artifact remains byte-exactly resubmittable — the same SPIKE-2 contract, one step later.
       await ports.journal.persistPreSubmit(req.orderId, submittable.sequence, hashHex, signedXdr);
       const outcome = await ports.rpc.send(signedXdr);
       return { hashHex, signedXdr, seq: submittable.sequence, outcome };
@@ -88,8 +131,10 @@ export function createStellarClient(ports: StellarClientPorts): StellarClient {
       }
       // Authoritative deadness read: on-chain seq (was our slot burned?) + ledger close time (expired?).
       // Expiry is ledger-sourced, NEVER the local clock, so skew can never free a still-live seq.
+      // CHANNEL MODE: the seq belongs to the tx's SOURCE account — the order's channel when it rode one —
+      // so the read targets state.sourcePublic; reading the operator there would prove nothing.
       const [seqRead, head] = await Promise.all([
-        ports.rpc.readAccountSeq(operatorPublic),
+        ports.rpc.readAccountSeq(state.sourcePublic ?? operatorPublic),
         ports.rpc.latestLedger(),
       ]);
       const timeboundsExpired = state.maxTime > 0 && head.closeTimeUnix > state.maxTime;

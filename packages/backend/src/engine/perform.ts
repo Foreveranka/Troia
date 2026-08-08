@@ -242,7 +242,9 @@ export async function perform(
     }
 
     case 'confirmBurnedSeq': {
-      deps.store.sequences.confirmBurned(BigInt(requireSeq(ctx)));
+      // orderId disambiguates for a channel-pool provider (same-ledger channels share seq numbers); the
+      // single-operator allocator ignores it.
+      deps.store.sequences.confirmBurned(BigInt(requireSeq(ctx)), ctx.orderId);
       const code = await deps.stellar.readRevertErrorCode(ctx.orderId);
       const cause = classifyRevertCause(code);
       // Only AlreadyProcessed(1) and BalanceGuard(2) are CERTAIN outcomes (handled by revertEvent). Every other

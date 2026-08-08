@@ -14,6 +14,8 @@ export type {
   BuildError,
 } from './payout-intent.js';
 export { SequenceAllocator, InMemorySequenceStore, SequenceError } from './sequence-allocator.js';
+export { ChannelPoolProvider, InMemoryChannelMapStore } from './channel-pool.js';
+export type { ChannelConfig, ChannelMapStore } from './channel-pool.js';
 export type {
   SequenceProvider,
   SequenceStore,

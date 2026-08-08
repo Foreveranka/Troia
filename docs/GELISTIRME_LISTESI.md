@@ -27,6 +27,16 @@
   satır kilidi hâlâ YOK (tek process varsayımı sürüyor — KNOWN_ISSUES §3); canlı testnet'te
   crash/restart tatbikatı henüz yapılmadı. Runtime `node:sqlite` kullanıyor (Node ≥ 22.5;
   "experimental" uyarısı zararsız).
+- **A-5 — KISMEN (2026-08-08): tasarım + çekirdek hazır, canlıya bağlanmadı.** Keşif, işin backlog
+  tahmininden büyük olduğunu gösterdi: kanal source'lu Soroban tx'inde operator yetkisi **imzalı
+  address-credential auth entry**'ye dönüşüyor (bugünkü assemble.ts bunu bilerek fail-closed
+  reddediyor), pre-submit hash disiplini yeniden türetilmeli ve deadness kanıtı kanal-başına
+  okunmalı. Yapılan: `ChannelPoolProvider` (@troia/core, 9 test) — sipariş başına yapışkan kanal
+  ataması (double-pay kalkanı hesap-başına çalıştığı için para-kritik), aynı-ledger kanallarının
+  çakışan seq numaralarında fail-closed belirsizlik reddi, restart'ta atama geri yükleme;
+  `SequenceProvider.confirmBurned` orderId parametresi kazandı. Kalan işin tam sırası ve gerekçesi
+  `docs/CHANNEL_ACCOUNTS_DESIGN.md`'de — imza/deadness yarısı bilinçli olarak ayrı, küçük bir diff
+  olarak yapılacak (para yolunun en kritik parçası; canlı testnet provası şart).
 - **D-17 — YAPILDI (2026-08-08).** Sıfır yeni bağımlılıkla gözlemlenebilirlik:
   `GET /metrics` Prometheus text formatında pano metrikleri (havuz available/expected/observed/drift,
   poll süresi ve sayaçları, settlement/mint-blocked, rogue payout, tail-stalled, LossReview açık

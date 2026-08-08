@@ -68,10 +68,13 @@ export class InMemorySequenceStore implements SequenceStore {
   }
 }
 
-/** The seam channel-account pools will implement in Phase 2 (concurrency). */
+/** The seam channel-account pools implement (see channel-pool.ts). `confirmBurned`'s orderId is optional for
+ *  the single-account allocator (its seq space is unique) but LOAD-BEARING for a channel pool: channels
+ *  created in the same ledger share starting sequences, so a bare seq can be ambiguous — callers that know
+ *  the order (the engine always does) must pass it. */
 export interface SequenceProvider {
   allocate(orderId: string): bigint;
-  confirmBurned(seq: bigint): void;
+  confirmBurned(seq: bigint, orderId?: string): void;
   reuseOnDead(seq: bigint, orderId: string): bigint;
   release(seq: bigint, orderId: string): void;
   reallocate(orderId: string): bigint;

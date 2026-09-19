@@ -606,3 +606,15 @@ body {
     transition: none !important;
   }
 }
+
+/* Keep optional captions unobtrusive in the embedded installation player. */
+.video-frame video::cue {
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  color: #fff;
+  background-color: rgba(12, 27, 48, 0.82);
+}
+.video-frame video:fullscreen::cue {
+  font-size: 18px;
+}

@@ -15,3 +15,10 @@ test_snapshots/
 .DS_Store
 *.log
 recon-report.tampered.json
+
+app/storefront/test-results/
+
+.vercel/
+.deploy/
+
+app/storefront/public/downloads/*.zip

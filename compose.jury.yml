@@ -1,0 +1,28 @@
+services:
+  troia-jury:
+    build: .
+    restart: unless-stopped
+    env_file: .env.anchor
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3001'
+      TROIA_DEPLOYMENT_PATH: deployment.testnet.json
+      TROIA_FUNDING_MODE: manual
+      TROIA_DATA_DIR: /app/data
+    ports:
+      - '127.0.0.1:3001:3001'
+    volumes:
+      - troia-jury-data:/app/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  troia-jury-data:

@@ -31,10 +31,13 @@ const STELLAR_ADDRESS = /\b[GC][A-Z2-7]{55}\b/;
 // this is the GENERATED file `just fund` rewrites, not the hand-written `config.ts`: an address typed by a human
 // is exactly what made a clone's extension reject the clone's own issuer.
 const CONFIG_MODULES: readonly string[] = [
+  join(appDir, 'gamestore', 'src', 'config.ts'),
+  join(appDir, 'gamestore', 'src', 'deployment.generated.ts'),
   join(appDir, 'storefront', 'src', 'deployment.generated.ts'),
   join(appDir, 'extension', 'src', 'lib', 'deployment.generated.ts'),
   // The demo shop's own payee. It is the SHOP's identity, not Troia's, and Troia records it nowhere.
   join(appDir, 'storefront', 'src', 'config.ts'),
+  join(appDir, 'extension', 'src', 'lib', 'config.ts'),
 ];
 
 function collectSourceFiles(dir: string): string[] {

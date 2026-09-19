@@ -143,3 +143,18 @@ describe('DEFAULT_TESTNET_MERCHANT — the KYC-stub buyer', () => {
     expect(['test', 'invalid', 'localhost', 'example']).not.toContain(tld);
   });
 });
+
+describe('manual pool funding', () => {
+  it('accepts an external issuer without its secret and refuses automatic top-ups', async () => {
+    const { cfg } = baseCfg();
+    const { issuerSecret: _issuer, ...secrets } = cfg.secrets;
+    const deps = await buildTestnetServerDeps(
+      { ...cfg, secrets, fundingMode: 'manual' },
+      bootstrap,
+    );
+    expect(deps.settlement?.manualFunding).toBe(true);
+    await expect(
+      deps.settlement!.rebalance.topUp({ ref: 'test', usdcStroops: 1n, valueKurus: 1n }),
+    ).rejects.toThrow('disabled');
+  });
+});

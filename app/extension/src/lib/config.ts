@@ -22,3 +22,16 @@ export const USDC_ASSET_CODE = 'USDC';
 // The canonical USDC issuer(s) the extension is willing to settle. A SEP-7 whose asset_issuer is not in this
 // list is NOT treated as payable (fail-closed): it blocks a spoofed "USDC" minted by a look-alike issuer.
 export const USDC_ISSUER_ALLOWLIST: readonly string[] = [USDC_ISSUER];
+
+// Testnet only. No production credentials or signing keys belong in the browser.
+export const ANCHOR = {
+  domain: 'tr-mock-anchor.fly.dev',
+  horizon: 'https://horizon-testnet.stellar.org',
+  friendbot: 'https://friendbot.stellar.org',
+  explorer: 'https://stellar.expert/explorer/testnet',
+  passphrase: 'Test SDF Network ; September 2015',
+  issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+} as const;
+
+// Dedicated local wallet helper. Set to the deployed HTTPS /wallet URL when publishing.
+export { WALLET_BRIDGE_URL } from './deployment.generated';

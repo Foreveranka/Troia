@@ -84,6 +84,24 @@ function put(r: ReturnType<typeof rig>, orderId: string, state: State = 'UsdcCon
 }
 
 describe('settleAndRebalance — the outflow is booked when the order is armed', () => {
+  it('manual funding books each payout once and never arms or executes replenishment', async () => {
+    const ledger = new Ledger();
+    ledger.recordTopUp({ ref: 'genesis', usdcStroops: 1000n * STROOP, valueKurus: 3_400_000n });
+    const r = { ...rig(ledger), manualFunding: true };
+    put(r, 'manual-order');
+    const first = await settleAndRebalance(r);
+    expect(first.booked).toBe(1);
+    expect(first.armed).toBe(0);
+    r.clock.now += DEMO_VALOR + 1;
+    const second = await settleAndRebalance(r);
+    expect(second.booked).toBe(0);
+    expect(second.armed).toBe(0);
+    expect(r.rebalance.calls).toBe(0);
+    expect(r.store.credits).toHaveLength(0);
+    expect(ledger.nativeBalance('USDC_POOL')).toBe(1000n * STROOP - PAID_OUT);
+    expect(ledger.trialBalanceKurus()).toBe(0n);
+  });
+
   it('books what LEFT the pool, balanced against the cash, the PSP fee and the margin', async () => {
     const ledger = new Ledger();
     ledger.recordTopUp({ ref: 'genesis', usdcStroops: 1000n * STROOP, valueKurus: 3_400_000n });

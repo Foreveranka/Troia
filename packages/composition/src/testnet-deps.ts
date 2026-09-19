@@ -65,7 +65,7 @@ export interface TestnetSecrets {
   readonly operatorSecret: string;
   /** the USDC SAC admin (asset issuer) key — signs the rebalance mint. SEPARATE from operatorSecret so a mint
    *  never consumes an operator payout sequence. */
-  readonly issuerSecret: string;
+  readonly issuerSecret?: string;
   readonly iyzicoApiKey: string;
   readonly iyzicoSecretKey: string;
   readonly webhookSigningSecret: string;
@@ -76,6 +76,7 @@ export interface TestnetSecrets {
 export type MerchantTemplate = Omit<EnginePspConfig, 'callbackUrl' | 'currency'>;
 
 export interface TestnetServerConfig {
+  readonly fundingMode?: 'manual' | 'simulated-mint';
   readonly deployment: TestnetDeployment;
   readonly secrets: TestnetSecrets;
   /** the PUBLIC url iyzico POSTs the webhook to — must be reachable (a tunnel on testnet). */
@@ -388,18 +389,42 @@ export async function buildTestnetServerDeps(
   }
 
   const clock = new SystemClock(); // shared: the app/worker clock AND the mint client's timebounds source
-  const settlementBase = buildSettlementBundle(
-    network,
-    cfg.secrets.issuerSecret,
-    clock,
-    cfg.spotOracle,
-    () => stellar.readPoolBalanceStroops(),
-    cfg.demoValorSecs ?? 30,
-    cfg.feeStroops ?? '100',
-    cfg.timeboundsSecs ?? 45,
-    durable?.ledger ?? new Ledger(),
-    cfg.opts,
-  );
+  const manualFunding = cfg.fundingMode === 'manual';
+  if (!manualFunding && !cfg.secrets.issuerSecret) {
+    throw new Error('simulated-mint mode requires an issuer key');
+  }
+  const settlementBase: SettlementBundle = manualFunding
+    ? {
+        manualFunding: true,
+        pending: new InMemoryPendingSettlementStore(),
+        policy: new TryDrivenRebalancePolicy(),
+        rebalance: {
+          topUp: async () => {
+            throw new Error('Automatic pool funding is disabled');
+          },
+        },
+        ledger: durable?.ledger ?? new Ledger(),
+        rate: {
+          liveRateStroops: async () => {
+            const r = await cfg.spotOracle.getRate();
+            if (!r.ok) throw r.error;
+            return r.quote.midTryPerUsdc;
+          },
+        },
+        demoValorSecs: cfg.demoValorSecs ?? 30,
+      }
+    : buildSettlementBundle(
+        network,
+        cfg.secrets.issuerSecret!,
+        clock,
+        cfg.spotOracle,
+        () => stellar.readPoolBalanceStroops(),
+        cfg.demoValorSecs ?? 30,
+        cfg.feeStroops ?? '100',
+        cfg.timeboundsSecs ?? 45,
+        durable?.ledger ?? new Ledger(),
+        cfg.opts,
+      );
   const settlement =
     mintIntents === undefined ? settlementBase : { ...settlementBase, mintIntents };
 

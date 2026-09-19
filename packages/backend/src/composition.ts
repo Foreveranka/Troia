@@ -105,6 +105,7 @@ export interface SettlementBook {
 }
 
 export interface SettlementBundle {
+  readonly manualFunding?: boolean;
   readonly pending: PendingSettlementStore;
   readonly policy: RebalancePolicy;
   readonly rebalance: { topUp(req: TopUpRequest): Promise<TopUpExecution> };
@@ -225,6 +226,7 @@ export function createServer(d: ServerDeps): Server {
   // worker, so a rebalance top-up serializes with /intent, /webhook, and poll ticks for any given order.
   const settleTick = (): Promise<SettleReport> =>
     settleAndRebalance({
+      ...(settlement.manualFunding ? { manualFunding: true } : {}),
       confirmed: d.confirmed,
       orderLocks,
       clock: d.ports.clock,

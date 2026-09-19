@@ -28,7 +28,9 @@ const livePath = join(here, 'fixtures', 'recon-report.live.json');
 // reviewer-facing reports pin to the canonical deployment anchors (read here straight from the committed record).
 const corpusOperator = acceptanceNetwork().operator_public;
 const corpusPool = acceptanceTroyPool();
-const deployment = JSON.parse(readFileSync(join(repoRoot, 'deployment.testnet.json'), 'utf8')) as {
+const deployment = JSON.parse(
+  readFileSync(join(here, 'fixtures', 'deployment.live.json'), 'utf8'),
+) as {
   operatorPublic: string;
   troyPool: string;
 };

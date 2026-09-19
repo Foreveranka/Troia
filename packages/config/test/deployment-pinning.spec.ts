@@ -45,6 +45,7 @@ function readGeneratedIssuer(relPath: string): string {
 }
 
 const GENERATED = [
+  'app/gamestore/src/deployment.generated.ts',
   'app/storefront/src/deployment.generated.ts',
   'app/extension/src/lib/deployment.generated.ts',
 ] as const;
@@ -70,9 +71,12 @@ describe('the deployment record is the one source of Troia’s on-chain identity
 
   // Going live must be a change to this record, never to the extension's source. Both the manifest's match
   // patterns and the background worker's exact-origin allowlist are generated from these two fields.
-  it('holds the service endpoints, as bare origins', () => {
+  it('pins an HTTPS service base URL and bare storefront origins', () => {
     const d = readDeployment();
-    expect(d.backendUrl).toMatch(/^https?:\/\/[^/]+$/);
+    const backend = new URL(d.backendUrl);
+    expect(['https:', 'http:']).toContain(backend.protocol);
+    expect(backend.search + backend.hash + backend.username + backend.password).toBe('');
+    expect(['/', '/api']).toContain(backend.pathname);
     expect(d.storefrontOrigins.length).toBeGreaterThan(0);
     for (const o of d.storefrontOrigins) expect(o).toMatch(/^https?:\/\/[^/]+$/);
   });

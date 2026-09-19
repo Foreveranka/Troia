@@ -79,7 +79,7 @@ describe('wizardErrorCopy', () => {
   it('speaks to every refusal the flow can produce, never leaking a raw code', () => {
     // the SEP-29 message must say WHY exchange addresses cannot work, not just "error"
     expect(wizardErrorCopy('DestinationMemoRequired')).toMatch(/memo/i);
-    expect(wizardErrorCopy('DestinationMemoRequired')).toMatch(/exchange/i);
+    expect(wizardErrorCopy('DestinationMemoRequired')).toMatch(/borsa/i);
     expect(wizardErrorCopy('TrustlineMissing')).toMatch(/trustline/i);
     expect(wizardErrorCopy('over-cap')).toContain(MANUAL_MAX_USDC);
     for (const code of [

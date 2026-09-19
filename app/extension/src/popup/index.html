@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -11,10 +11,10 @@
       <img class="bgmark" src="./assets/watermark.png" alt="" aria-hidden="true" />
 
       <div class="hd">
-        <img class="logo" src="./assets/logo.png" alt="Troia logo" />
-        <span class="name">Troia</span>
+        <img class="logo" src="./assets/logo.png" alt="Troia logosu" />
+        <span class="name">TROIA</span>
         <span class="spacer"></span>
-        <button class="close" id="close" type="button" aria-label="Close">
+        <button class="close" id="close" type="button" aria-label="Kapat">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -29,7 +29,7 @@
 
       <div class="body">
         <div class="bridge">
-          <div class="node fiat"><img src="./assets/coin-try.png" alt="Turkish lira" /></div>
+          <div class="node fiat"><img src="./assets/coin-try.png" alt="Türk lirası" /></div>
           <div class="wire"><span class="pulse"></span></div>
           <div class="node usdc"><img src="./assets/coin-usdc.png" alt="USDC" /></div>
         </div>
@@ -38,7 +38,7 @@
         <div id="idle">
           <div class="herorow">
             <div class="herotext">
-              <h2>Pay with<br /><em>Troy</em> card</h2>
+              <h2><em>Troy</em> kartınla<br />ödeyin</h2>
             </div>
             <div class="cardwrap">
               <div class="card">
@@ -58,18 +58,18 @@
             </div>
           </div>
 
-          <div class="lbl">How it works</div>
+          <div class="lbl">Nasıl çalışır</div>
           <div class="steps">
             <div class="step">
-              <span class="n">1</span><span class="t">Go to the store’s payment step</span>
+              <span class="n">1</span><span class="t">Mağazanın ödeme adımına gelin</span>
             </div>
             <div class="step">
               <span class="n">2</span
-              ><span class="t">Tap <em>Pay with Troy card</em> on the page</span>
+              ><span class="t">Sayfadaki <em>Troy kartınla öde</em> düğmesine dokunun</span>
             </div>
             <div class="step">
               <span class="n">3</span
-              ><span class="t">Pay in lira with your Troy card — you’re done</span>
+              ><span class="t">Troy kartınızla lira ödeyin, işlem tamam</span>
             </div>
           </div>
 
@@ -78,9 +78,10 @@
           <div class="status idle">
             <span class="sdot"></span>
             <span class="st">
-              <strong>Nothing to pay here yet</strong>
+              <strong>Burada ödenecek bir şey yok</strong>
               <span
-                >Open a supported store’s checkout and the button appears right on the page.</span
+                >Desteklenen bir mağazanın ödeme sayfasını açın, düğme sayfanın üzerinde
+                belirsin.</span
               >
             </span>
           </div>
@@ -91,18 +92,18 @@
           <div class="status">
             <span class="sdot"></span>
             <span class="st">
-              <strong>You’re ready to pay</strong>
-              <span>This checkout can be paid with your Troy card.</span>
+              <strong>Ödemeye hazırsınız</strong>
+              <span>Bu ödeme Troy kartınızla yapılabilir.</span>
             </span>
           </div>
 
           <div class="amount">
-            <span class="k">Order total</span>
+            <span class="k">Sipariş tutarı</span>
             <span class="v"><span id="amt-v">—</span><u id="amt-u"> USDC</u></span>
           </div>
           <div class="sub">
-            You’ll pay about <b id="approx-v">the lira equivalent</b> with your Troy card
-            (indicative).
+            Troy kartınızdan yaklaşık <b id="approx-v">lira karşılığı</b> çekilecek (yaklaşık
+            değer).
           </div>
 
           <div class="callout active">
@@ -121,8 +122,8 @@
             </span>
             <span class="ct"
               ><span
-                >You can complete your payment by clicking the <b>“Pay with Troy card”</b> button on
-                the payment page.</span
+                >Ödemenizi, ödeme sayfasındaki <b>“Troy kartınla öde”</b> düğmesine tıklayarak
+                tamamlayabilirsiniz.</span
               ></span
             >
           </div>
@@ -131,33 +132,34 @@
 
           <div class="meta">
             <div class="mrow">
-              <span class="k">Order</span><span class="v" id="order-v">—</span>
+              <span class="k">Sipariş</span><span class="v" id="order-v">—</span>
             </div>
-            <div class="mrow">
-              <span class="k">Paid to</span><span class="v" id="paid-v">—</span>
-            </div>
+            <div class="mrow"><span class="k">Alıcı</span><span class="v" id="paid-v">—</span></div>
           </div>
 
           <div class="safe">
             <span class="ck">✓</span>
             <span
-              ><b>Checkout verified</b> — we confirmed the store’s payment details before offering
-              to pay.</span
+              ><b>Ödeme doğrulandı.</b> Ödemeyi önermeden önce mağazanın ödeme bilgilerini
+              doğruladık.</span
             >
           </div>
         </div>
       </div>
 
       <div class="ft">
+        <button class="manual" id="anchor" type="button">Bank transfers ↗</button>
+      </div>
+      <div class="ft">
         <a
           class="hiw"
           href="https://troia-docs.vercel.app"
           target="_blank"
           rel="noopener noreferrer"
-          >How it works ↗</a
+          >Nasıl çalışır ↗</a
         >
         <span class="spacer"></span>
-        <button class="manual" id="manual" type="button">Manual payment →</button>
+        <button class="manual" id="manual" type="button">Elle ödeme →</button>
       </div>
     </div>
 

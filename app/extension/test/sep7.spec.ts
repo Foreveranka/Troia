@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseSep7 } from '../src/lib/sep7';
 
 const MERCHANT = 'GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX';
-const ISSUER = 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W';
+const ISSUER = 'GDJS2QNYRCVQRW73HAQOCUXXGFMCJY2YCFH2VAI3UUAR7JDF35IR6MCJ';
 const USDC = `web+stellar:pay?destination=${MERCHANT}&amount=62.00&memo=ST-AB12CD&memo_type=text&asset_code=USDC&asset_issuer=${ISSUER}`;
 
 describe('parseSep7', () => {

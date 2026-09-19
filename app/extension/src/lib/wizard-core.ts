@@ -72,30 +72,30 @@ export async function buildManualIntentBody(
 export function wizardErrorCopy(code: string): string {
   switch (code) {
     case 'bad-address':
-      return 'That doesn’t look like a Stellar address. It starts with G and has 56 characters.';
+      return 'Bu bir Stellar adresine benzemiyor. Adres G ile başlar ve 56 karakterdir.';
     case 'bad-amount':
-      return 'Enter a USDC amount like 25 or 25.50 (up to 7 decimal places).';
+      return '25 ya da 25.50 gibi bir USDC tutarı girin (en fazla 7 ondalık basamak).';
     case 'over-cap':
-      return `Manual payments are limited to ${MANUAL_MAX_USDC} USDC per transaction.`;
+      return `Elle ödemeler işlem başına ${MANUAL_MAX_USDC} USDC ile sınırlıdır.`;
     // SEP-29 — the reason this wizard refuses exchange deposit addresses, stated plainly.
     case 'DestinationMemoRequired':
-      return 'This address requires a deposit memo (it looks like an exchange deposit address). Troia payments can’t carry a memo, so the exchange could not credit it — this address can’t be paid. Use a personal or merchant wallet address instead.';
+      return 'Bu adres yatırma memosu istiyor (borsa yatırma adresine benziyor). Troia ödemeleri memo taşıyamaz, bu yüzden borsa tutarı hesabınıza geçiremez ve bu adres ödenemez. Kişisel ya da işletme cüzdan adresi kullanın.';
     case 'TrustlineMissing':
-      return 'This address can’t receive USDC yet (it has no USDC trustline). Ask the recipient to add the USDC trustline, then try again.';
+      return 'Bu adres henüz USDC alamıyor (USDC trustline yok). Alıcıdan USDC trustline eklemesini isteyin, sonra tekrar deneyin.';
     case 'AddressInvalidChecksum':
-      return 'That doesn’t look like a valid Stellar address — check it and try again.';
+      return 'Bu geçerli bir Stellar adresine benzemiyor, kontrol edip tekrar deneyin.';
     case 'PoolInsufficient':
-      return 'Troia’s payout pool can’t cover this amount right now. Try a smaller amount or try again later.';
+      return 'Troia ödeme havuzu şu an bu tutarı karşılayamıyor. Daha küçük bir tutar deneyin ya da sonra tekrar deneyin.';
     case 'SessionBudgetExceeded':
-      return 'Too many payment attempts in a short time. Wait a few minutes and try again.';
+      return 'Kısa sürede çok fazla ödeme denemesi yapıldı. Birkaç dakika bekleyip tekrar deneyin.';
     case 'PriceUnavailable':
-      return 'The live exchange rate is unavailable right now, so no price can be quoted. Try again shortly.';
+      return 'Canlı kur şu an alınamıyor, bu yüzden fiyat verilemiyor. Kısa süre sonra tekrar deneyin.';
     case 'session_unavailable':
     case 'network':
-      return 'Couldn’t reach the Troia server. Check your connection and try again.';
+      return 'Troia sunucusuna ulaşılamadı. Bağlantınızı kontrol edip tekrar deneyin.';
     case 'timeout':
-      return 'The Troia server took too long to answer. Nothing was charged — try again.';
+      return 'Troia sunucusu çok geç yanıt verdi. Hiçbir tahsilat yapılmadı, tekrar deneyin.';
     default:
-      return 'The payment couldn’t be started. Nothing was charged — try again.';
+      return 'Ödeme başlatılamadı. Hiçbir tahsilat yapılmadı, tekrar deneyin.';
   }
 }

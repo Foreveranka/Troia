@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@stellar/stellar-sdk": "17.1.0",
     "@troia/backend": "workspace:*",
     "@troia/config": "workspace:*",
     "@troia/core": "workspace:*",

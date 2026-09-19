@@ -1,18 +1,24 @@
+/* Troia popup. Old money teması: lacivert, fildişi, pirinç; serif başlıklar, keskin köşeler,
+   saç teli çizgiler. Sınıf adları ve iskelet değişmedi, yalnızca görünüm taşındı. */
 :root {
-  --pop-bg: #ffffff;
-  --line: #e9eef2;
-  --fg: #17242f;
-  --muted: #5f7180;
-  --faint: #93a3b1;
-  --teal: #128f9d;
-  --teal-strong: #0f8290;
-  --teal-tint: #e9f5f6;
-  --teal-tint-2: #d8eef0;
-  --teal-line: #cfe6e9;
+  --pop-bg: #f4efe4;
+  --paper: #faf7f0;
+  --line: rgba(12, 27, 48, 0.15);
+  --line-2: rgba(12, 27, 48, 0.28);
+  --fg: #0c1b30;
+  --muted: #42536e;
+  --faint: #7d8aa0;
+  --brass: #b08a50;
+  --brass2: #c7a468;
+  --brass-strong: #8f6e3c;
+  --brass-tint: #ece3d2;
+  --brass-tint-2: #e2d7c2;
   --usdc: #2775ca;
-  --card1: #263a4c;
-  --card2: #16242f;
-  --card3: #0f1a23;
+  --card1: #1b2f4a;
+  --card2: #10203a;
+  --card3: #0a1728;
+  --serif: 'Hoefler Text', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  --sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', Arial, sans-serif;
 }
 
 * {
@@ -26,27 +32,29 @@ body {
   width: 384px;
   background: var(--pop-bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
   font-size: 13px;
   line-height: 1.5;
 }
 
-/* ---- popup shell (fills the popup window; no floating radius/shadow) ---- */
+/* ---- popup shell ---- */
 .popup {
   position: relative;
   width: 384px;
   background: var(--pop-bg);
   overflow: hidden;
+  border-top: 2px solid var(--brass);
 }
 .bgmark {
+  display: none; /* fildişi zeminde filigran leke gibi duruyordu */
   position: absolute;
-  right: -72px;
-  top: 50%;
+  right: -96px;
+  top: 62%;
   transform: translateY(-50%);
-  width: 280px;
-  height: 280px;
-  opacity: 0.12;
+  width: 250px;
+  height: 250px;
+  opacity: 0.05;
   z-index: 0;
   pointer-events: none;
 }
@@ -62,49 +70,50 @@ body {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 16px 18px;
+  padding: 15px 16px;
   border-bottom: 1px solid var(--line);
 }
 .hd .logo {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: block;
 }
 .hd .name {
-  font-size: 19px;
-  font-weight: 750;
-  letter-spacing: -0.01em;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
 }
 .hd .spacer {
   flex: 1;
 }
 .hd .close {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line-2);
+  border-radius: 0;
   cursor: pointer;
-  background: #eef1f4;
-  color: #7c8a97;
+  background: transparent;
+  color: var(--muted);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .hd .close:hover {
-  background: #e5e9ed;
-  color: #55636f;
+  background: var(--brass-tint);
+  color: var(--fg);
 }
 .hd .close:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--brass);
   outline-offset: 2px;
 }
 .hd .close svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 
 .body {
-  padding: 18px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -120,48 +129,42 @@ body {
   display: none;
 }
 
-/* ---- bridge motif ---- */
+/* ---- köprü motifi: TL girer, USDC çıkar ---- */
 .bridge {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 4px 2px;
 }
 .node {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
+  width: 36px;
+  height: 36px;
   flex: none;
 }
 .node img {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   display: block;
 }
 .wire {
   flex: 1;
-  height: 2px;
+  height: 1px;
   position: relative;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #cf9227, var(--usdc));
+  background: var(--line-2);
 }
 .wire .pulse {
   position: absolute;
   top: 50%;
   left: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 6px;
+  height: 6px;
   transform: translate(-50%, -50%);
-  background: var(--usdc);
-  box-shadow: 0 0 9px 2px color-mix(in srgb, var(--usdc) 55%, transparent);
+  background: var(--brass);
   opacity: 0;
 }
 @media (prefers-reduced-motion: no-preference) {
   .popup.found .wire .pulse {
     animation: travel 2.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-  }
-  .popup.found .node.usdc {
-    animation: glow 2.6s ease-in-out infinite;
   }
 }
 @keyframes travel {
@@ -180,16 +183,6 @@ body {
     opacity: 0;
   }
 }
-@keyframes glow {
-  0%,
-  60%,
-  100% {
-    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
-  }
-  82% {
-    box-shadow: 0 0 12px 1px color-mix(in srgb, var(--usdc) 40%, transparent);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .popup.found .wire .pulse {
     opacity: 1;
@@ -197,7 +190,7 @@ body {
   }
 }
 
-/* ---- hero row (text left, card right) ---- */
+/* ---- hero ---- */
 .herorow {
   display: flex;
   align-items: flex-start;
@@ -209,50 +202,49 @@ body {
 }
 .herotext h2 {
   margin: 0;
-  font-size: 30px;
-  line-height: 1.05;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  font-size: 27px;
+  line-height: 1.12;
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--fg);
 }
 .herotext h2 em {
   font-style: normal;
-  color: var(--teal);
+  color: var(--brass-strong);
 }
 .cardwrap {
   flex: none;
-  width: 132px;
+  width: 150px;
   align-self: center;
 }
 .card {
   position: relative;
-  width: 196px;
-  height: 124px;
-  margin: 6px -58px 6px auto;
-  border-radius: 13px;
+  width: 152px;
+  height: 96px;
+  margin: 4px -6px 4px auto;
+  border-radius: 0;
   transform: rotate(-8deg);
   background: linear-gradient(145deg, var(--card1) 0%, var(--card2) 52%, var(--card3) 100%);
-  box-shadow:
-    0 16px 26px -12px rgba(15, 30, 45, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  border-top: 2px solid var(--brass);
+  box-shadow: 0 14px 22px -14px rgba(12, 27, 48, 0.55);
   overflow: hidden;
 }
 .card .chip {
   position: absolute;
-  left: 16px;
-  top: 44px;
-  width: 30px;
-  height: 23px;
-  border-radius: 5px;
-  background: linear-gradient(135deg, #e6c982, #b48a3c);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  left: 14px;
+  top: 36px;
+  width: 26px;
+  height: 20px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--brass2, #c7a468), var(--brass));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 .card .chip::after {
   content: '';
   position: absolute;
   inset: 5px 7px;
-  border: 1px solid rgba(90, 60, 10, 0.35);
-  border-radius: 2px;
+  border: 1px solid rgba(60, 40, 8, 0.4);
 }
 .card .nfc {
   position: absolute;
@@ -260,32 +252,33 @@ body {
   top: 14px;
   width: 15px;
   height: 15px;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(244, 239, 228, 0.7);
 }
 .card .troy {
   position: absolute;
-  right: 16px;
-  bottom: 12px;
-  font-size: 17px;
-  font-weight: 800;
-  color: #fff;
-  letter-spacing: 0.01em;
+  right: 14px;
+  bottom: 10px;
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: #f4efe4;
 }
 .card .troy i {
   font-style: normal;
-  color: var(--teal);
+  color: var(--brass2, #c7a468);
 }
 
-/* ---- section label with rule ---- */
+/* ---- bölüm etiketi ---- */
 .lbl {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 11px;
-  letter-spacing: 0.13em;
+  font-size: 10px;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--teal);
-  font-weight: 700;
+  color: var(--brass-strong);
+  font-weight: 600;
 }
 .lbl::after {
   content: '';
@@ -294,39 +287,40 @@ body {
   background: var(--line);
 }
 
-/* ---- steps ---- */
+/* ---- adımlar ---- */
 .steps {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 13px;
 }
 .step {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 13px;
 }
 .step .n {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: 0;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-family: var(--serif);
   font-size: 13px;
-  font-weight: 700;
-  color: var(--teal);
-  background: var(--teal-tint);
-  border: 1.5px solid var(--teal-line);
+  font-weight: 500;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--line-2);
 }
 .step .t {
   color: var(--fg);
-  font-size: 15px;
+  font-size: 14px;
 }
 .step .t em {
   font-style: normal;
-  color: var(--teal);
-  font-weight: 700;
+  color: var(--brass-strong);
+  font-weight: 600;
 }
 
 .rule {
@@ -334,103 +328,110 @@ body {
   background: var(--line);
 }
 
-/* ---- callout box (found CTA) ---- */
+/* ---- callout ---- */
 .callout {
   display: flex;
-  gap: 14px;
+  gap: 13px;
   align-items: center;
-  padding: 15px;
-  border-radius: 14px;
-  background: var(--teal-tint);
+  padding: 14px;
+  border-radius: 0;
+  background: var(--brass-tint);
 }
 .callout.active {
-  box-shadow: inset 0 0 0 1px var(--teal-line);
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 .callout .ib {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 0;
   flex: none;
-  background: var(--teal-tint-2);
-  color: var(--teal-strong);
+  background: var(--brass-tint-2);
+  color: var(--brass-strong);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .callout .ib svg {
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
 }
 .callout .ct span {
   color: var(--muted);
   font-size: 13px;
 }
 .callout .ct span b {
-  color: var(--teal-strong);
-  font-weight: 700;
+  color: var(--fg);
+  font-weight: 600;
 }
 
-/* ---- status ---- */
+/* ---- durum ---- */
 .status {
   display: flex;
   gap: 10px;
   align-items: flex-start;
 }
 .status .sdot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  margin-top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  margin-top: 6px;
   flex: none;
-  background: var(--teal);
-  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--teal) 45%, transparent);
+  background: var(--brass);
 }
 .status.idle .sdot {
-  background: var(--faint);
-  box-shadow: none;
+  background: #c9c0ac;
 }
 .status .st strong {
   display: block;
+  font-family: var(--serif);
   color: var(--fg);
-  font-weight: 700;
-  font-size: 15px;
+  font-weight: 500;
+  font-size: 16px;
 }
 .status .st span {
   color: var(--muted);
 }
 
-/* ---- amount (found) ---- */
+/* ---- tutar ---- */
 .amount {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
 }
 .amount .k {
-  font-size: 13px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 .amount .v {
+  font-family: var(--serif);
   font-size: 24px;
-  font-weight: 800;
+  font-weight: 500;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
 }
 .amount .v u {
   text-decoration: none;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--muted);
-  margin-left: 3px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass-strong);
+  margin-left: 5px;
 }
 .sub {
   font-size: 12.5px;
   color: var(--faint);
-  margin-top: -10px;
+  margin-top: -8px;
 }
 
-/* ---- meta rows (found) ---- */
+/* ---- meta satırları ---- */
 .meta {
   display: flex;
   flex-direction: column;
@@ -444,23 +445,25 @@ body {
 }
 .mrow .k {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 .mrow .v {
   color: var(--fg);
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
-/* ---- verified (found) ---- */
+/* ---- doğrulandı ---- */
 .safe {
   display: flex;
   gap: 9px;
   align-items: flex-start;
 }
 .safe .ck {
-  color: var(--teal);
-  font-weight: 800;
+  color: var(--brass-strong);
+  font-weight: 700;
   line-height: 1.4;
   flex: none;
 }
@@ -470,41 +473,50 @@ body {
 }
 .safe span b {
   color: var(--fg);
-  font-weight: 700;
+  font-weight: 600;
 }
 
-/* ---- footer ---- */
+/* ---- alt bant ---- */
 .ft {
   display: flex;
   align-items: center;
-  padding: 14px 18px;
-  background: var(--teal-tint);
-  border-top: 1px solid var(--teal-line);
+  gap: 12px;
+  padding: 13px 16px;
+  background: var(--brass-tint);
+  border-top: 1px solid var(--line-2);
+}
+.ft .spacer {
+  flex: 1;
 }
 .ft .hiw {
-  margin-left: auto;
-  color: var(--teal-strong);
-  font-weight: 700;
-  font-size: 12.5px;
+  color: var(--brass-strong);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   text-decoration: none;
 }
 .ft .hiw:hover {
-  color: var(--teal);
+  color: var(--fg);
 }
 .ft .hiw:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--brass);
   outline-offset: 3px;
-  border-radius: 4px;
 }
 
-/* ---- manual payment link (B-11) ---- */
+/* ---- elle ödeme ---- */
 .ft .manual {
-  font: inherit;
-  font-size: 12px;
+  font-family: var(--sans);
+  font-size: 10px;
   font-weight: 600;
-  color: var(--teal, #1f4fd8);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass-strong);
   background: none;
   border: none;
   cursor: pointer;
   padding: 0;
+}
+.ft .manual:hover {
+  color: var(--fg);
 }

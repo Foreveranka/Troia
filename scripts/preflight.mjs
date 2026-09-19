@@ -39,9 +39,14 @@ const operatorSecret = requireEnv('TROIA_OPERATOR_SECRET');
 const derivedOperator = new LocalKeySigner(operatorSecret).publicKey();
 const keyOk = derivedOperator === network.operatorPublic;
 
-const issuerSecret = requireEnv('TROIA_ISSUER_SECRET');
-const derivedIssuer = new LocalKeySigner(issuerSecret).publicKey();
-const issuerKeyOk = derivedIssuer === network.issuerPublic;
+const fundingMode = process.env.TROIA_FUNDING_MODE?.trim() || 'manual';
+if (!['manual', 'simulated-mint'].includes(fundingMode))
+  throw new Error('Invalid TROIA_FUNDING_MODE');
+const manualFunding = fundingMode === 'manual';
+const derivedIssuer = manualFunding
+  ? null
+  : new LocalKeySigner(requireEnv('TROIA_ISSUER_SECRET')).publicKey();
+const issuerKeyOk = manualFunding || derivedIssuer === network.issuerPublic;
 
 const iyzicoSecretKey = requireEnv('IYZICO_SECRET_KEY');
 const probes = buildPreflightProbes({
@@ -58,7 +63,7 @@ const probes = buildPreflightProbes({
   history: new YahooUsdTryHistory(),
 });
 
-const report = await runPreflight(probes);
+const report = await runPreflight(probes, { manualFunding });
 
 // Prepend the static key-match checks so the report is one coherent list.
 const checks = [
@@ -70,11 +75,13 @@ const checks = [
       : `env derives ${derivedOperator} != deployment ${network.operatorPublic}`,
   },
   {
-    name: 'issuer key matches deployment',
+    name: manualFunding ? 'manual funding mode' : 'issuer key matches deployment',
     ok: issuerKeyOk,
-    detail: issuerKeyOk
-      ? derivedIssuer
-      : `env derives ${derivedIssuer} != deployment ${network.issuerPublic}`,
+    detail: manualFunding
+      ? 'No issuer secret needed'
+      : issuerKeyOk
+        ? derivedIssuer
+        : `env derives ${derivedIssuer} != deployment ${network.issuerPublic}`,
   },
   ...report.checks,
 ];
@@ -85,6 +92,6 @@ for (const c of checks) {
   console.log(`  ${c.ok ? 'ok  ' : 'FAIL'}  ${c.name.padEnd(32)}  ${c.detail}`);
 }
 console.log(
-  `\n  ${ok ? 'READY — every dependency is up; you can drive a real charge behind the webhook tunnel.' : 'NOT READY — fix the FAIL rows above before the live run.'}\n`,
+  `\n  ${ok ? 'READY — testnet dependencies reachable; use sandbox cards only.' : 'NOT READY — fix the FAIL rows above before the live run.'}\n`,
 );
 process.exit(ok ? 0 : 1);

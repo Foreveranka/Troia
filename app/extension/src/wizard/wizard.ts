@@ -68,7 +68,7 @@ function setError(id: string, text: string | null): void {
   node.textContent = text ?? '';
 }
 
-el<HTMLSpanElement>('cap-hint').textContent = `Up to ${MANUAL_MAX_USDC} USDC per payment.`;
+el<HTMLSpanElement>('cap-hint').textContent = `Ödeme başına en fazla ${MANUAL_MAX_USDC} USDC.`;
 
 // STEP 1 -> 2: validate offline, then fetch the indicative ≈₺ (a failure degrades — the price the customer
 // actually pays is fixed server-side at /intent regardless).
@@ -164,7 +164,7 @@ function pollStatus(orderId: string): void {
   let sawProcessing = false;
   const statusText = el<HTMLParagraphElement>('status-text');
   const spinner = el<HTMLSpanElement>('spinner');
-  statusText.textContent = 'Waiting for your card payment in the iyzico tab…';
+  statusText.textContent = 'iyzico sekmesinde kart ödemeniz bekleniyor…';
 
   const timer = setInterval(() => {
     void (async () => {
@@ -175,7 +175,7 @@ function pollStatus(orderId: string): void {
         spinner.className = 'spinner bad';
         setError(
           'status-error',
-          'Stopped watching for a result. If you completed the card payment, the order is still being processed — keep this order id for support: ' +
+          'Sonuç izleme durduruldu. Kart ödemesini tamamladıysanız sipariş işlenmeye devam ediyor. Destek için bu sipariş numarasını saklayın: ' +
             orderId,
         );
         el<HTMLButtonElement>('again').hidden = false;
@@ -204,7 +204,21 @@ function pollStatus(orderId: string): void {
           el<HTMLElement>('r-order').textContent = orderId;
           el<HTMLElement>('r-try').textContent =
             receipt.paidPriceTry !== null ? formatApproxTry(receipt.paidPriceTry) : '—';
-          el<HTMLElement>('r-tx').textContent = receipt.txHash ?? '—';
+          // Zincir kanıtı tek dokunuşla açılsın: hash'i explorer bağlantısı olarak bas. textContent ile
+          // yazılan bir metin kopyala-yapıştır ister; burada makbuzun kendisi doğrulanabilir olmalı.
+          const txEl = el<HTMLElement>('r-tx');
+          txEl.textContent = '';
+          if (receipt.txHash !== null && receipt.txHash !== undefined) {
+            const a = document.createElement('a');
+            a.href = `https://stellar.expert/explorer/testnet/tx/${receipt.txHash}`;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.className = 'txlink';
+            a.textContent = receipt.txHash;
+            txEl.appendChild(a);
+          } else {
+            txEl.textContent = '—';
+          }
           el<HTMLElement>('receipt').hidden = false;
         }
       } catch {

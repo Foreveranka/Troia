@@ -13,7 +13,7 @@ export default defineConfig({
     rollupOptions: {
       // The manual-payment wizard is an extension page reached via chrome.runtime.getURL, not via the
       // manifest, so it must be named as a build input explicitly (crx bundles only manifest-referenced pages).
-      input: { wizard: 'src/wizard/index.html' },
+      input: { wizard: 'src/wizard/index.html', anchor: 'src/anchor/index.html' },
     },
   },
 });

@@ -42,6 +42,7 @@ export interface PreflightProbes {
 export interface PreflightThresholds {
   readonly minNativeXlm?: number; // default 1 XLM
   readonly minPoolStroops?: bigint; // default 10 USDC — enough to settle a demo order
+  readonly manualFunding?: boolean;
   readonly minCloses?: number; // default 3 — computeReturnStats needs a sample variance
 }
 
@@ -82,6 +83,12 @@ export async function runPreflight(
       };
     }),
     safe('issuer XLM (fees)', async () => {
+      if (t.manualFunding)
+        return {
+          name: 'manual pool funding',
+          ok: true,
+          detail: 'External USDC transfers; no issuer key or mint authority required',
+        };
       const xlm = await probes.issuerNativeXlm();
       return {
         name: 'issuer XLM (fees)',

@@ -80,9 +80,9 @@ requestState();
 // store page while the iyzico tab is used (a popup or a plain tab loses that side-by-side quality). The
 // sidePanel.open call must ride the click's user gesture, so the window lookup uses the callback form; any
 // failure (older Chrome, API missing) falls back to the wizard in its own tab — same page either way.
-el('manual').addEventListener('click', () => {
+function openPanel(path: string): void {
   const openAsTab = (): void => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('src/wizard/index.html') });
+    chrome.tabs.create({ url: chrome.runtime.getURL(path) });
     window.close();
   };
   const panel = (chrome as { sidePanel?: { open(o: { windowId: number }): Promise<void> } })
@@ -97,12 +97,17 @@ el('manual').addEventListener('click', () => {
         openAsTab();
         return;
       }
-      panel.open({ windowId: win.id }).then(
-        () => window.close(),
-        () => openAsTab(),
-      );
+      chrome.sidePanel
+        .setOptions({ path, enabled: true })
+        .then(() => panel.open({ windowId: win.id! }))
+        .then(
+          () => window.close(),
+          () => openAsTab(),
+        );
     });
   } catch {
     openAsTab();
   }
-});
+}
+el('manual').addEventListener('click', () => openPanel('src/wizard/index.html'));
+el('anchor').addEventListener('click', () => openPanel('src/anchor/index.html'));

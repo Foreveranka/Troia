@@ -1,7 +1,7 @@
 # Troia extension
 
 A Chrome MV3 extension that detects a **USDC-on-Stellar (SEP-7)** checkout on a supported store and offers to
-settle it with a **Troy card** instead — no crypto needed. It holds no keys and signs nothing: it reads the
+settle it with a **Troy card** instead — no crypto needed. The card flow holds no keys and signs nothing: it reads the
 page's `web+stellar:pay` request, relays an intent to the Troia backend, and — once the backend returns a hosted
 form URL — the background worker opens iyzico's hosted card form in a new browser tab. It then polls coarse status (via the background) and, on completion, fetches the settlement
 receipt (on-chain tx hash + TRY charged) and posts `TROIA_PAID` to the storefront so the order is placed at the
@@ -62,3 +62,13 @@ double-submit guard, memo parity pinned byte-for-byte to `@troia/core`'s golden 
 closed), and an amount gate aligned with the money parser (`toStroops`).
 
 [`@crxjs/vite-plugin`]: https://crxjs.dev
+
+## Anchor bank transfers (testnet)
+
+Open **Bank transfers** from the popup or the existing manual card payment panel. The packaged panel supports TRY deposit simulation, testnet USDC withdrawal, quotes and transfer history. Card checkout stays on its existing flow and still uses the old pool asset until migration.
+
+The extension constructs unsigned anchor transactions; Freighter signs after explicit user approval. It never stores a private key. For Freighter compatibility, only wallet approval opens a web helper tab. Run the storefront on port 5174 (`npm run dev -- --host 127.0.0.1 --port 5174`) while testing this build. Configure `WALLET_BRIDGE_URL` in `src/lib/config.ts` for a deployed HTTPS helper before distribution. Transaction tracking remains in the extension panel.
+
+Bank transfers call the explicitly permitted testnet anchor/Horizon/Friendbot endpoints from the extension page. The existing card backend remains isolated behind its service worker. The extension now declares those additional host permissions; it does not request access to all websites.
+
+See [anchor integration and remaining migration work](../../docs/ANCHOR-TESTNET.md).

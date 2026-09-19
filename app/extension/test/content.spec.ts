@@ -7,7 +7,7 @@ import type { IntentOutcome, ReceiptOutcome } from '../src/lib/backend';
 vi.mock('../src/lib/derive-memo', () => ({ deriveMemoHex: vi.fn(async () => 'a'.repeat(64)) }));
 
 const MERCHANT = 'GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX';
-const ISSUER = 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W';
+import { USDC_ISSUER as ISSUER } from '../src/lib/deployment.generated';
 const HOST_ID = 'troia-pay-banner-host';
 const PAYABLE = `web+stellar:pay?destination=${MERCHANT}&amount=62.00&memo=ST-AB12CD&memo_type=text&asset_code=USDC&asset_issuer=${ISSUER}`;
 
@@ -178,7 +178,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await loadWithBanner();
     await clickPay();
 
-    expect(statusText()).toBe("Couldn't reach the payment service — you were not charged.");
+    expect(statusText()).toBe('Ödeme servisine ulaşılamadı, kartınızdan tahsilat yapılmadı.');
     await vi.advanceTimersByTimeAsync(9000);
     expect(statusPolls()).toBe(0);
     expect(post).not.toHaveBeenCalled();
@@ -190,7 +190,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await loadWithBanner();
     await clickPay();
 
-    expect(statusText()).toBe("Couldn't start the payment — you were not charged.");
+    expect(statusText()).toBe('Ödeme başlatılamadı, kartınızdan tahsilat yapılmadı.');
     await vi.advanceTimersByTimeAsync(9000);
     expect(statusPolls()).toBe(0);
   });
@@ -204,7 +204,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await clickPay();
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(statusText()).toBe('Payment was not completed.');
+    expect(statusText()).toBe('Ödeme tamamlanamadı.');
     expect(post).not.toHaveBeenCalled(); // no order placed, no retry requested yet
     const settled = statusPolls();
     await vi.advanceTimersByTimeAsync(9000);
@@ -224,12 +224,12 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await vi.advanceTimersByTimeAsync(3000); // review (charged, sale reversed)
 
     const btn = shadow().querySelector('.pay') as HTMLButtonElement;
-    expect(btn.textContent).not.toBe('Try again');
+    expect(btn.textContent).not.toBe('Tekrar dene');
     expect(btn.style.display).toBe('none'); // button removed — no retry, no TROIA_RETRY
     expect(post).not.toHaveBeenCalled();
     // never button-less-and-blank: the review dead-end now gives an order reference + money reassurance
     expect(statusText()).toContain('ST-AB12CD');
-    expect(statusText()!.toLowerCase()).toContain('reversed');
+    expect(statusText()!.toLowerCase()).toContain('iade');
   });
 
   it('a review WITHOUT prior processing still shows the reference + reassurance and hides the button', async () => {
@@ -241,7 +241,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await vi.advanceTimersByTimeAsync(3000); // review straight away — the branch fires regardless of sawProcessing
 
     expect(statusText()).toContain('ST-AB12CD');
-    expect(statusText()!.toLowerCase()).toContain('reversed');
+    expect(statusText()!.toLowerCase()).toContain('iade');
     expect((shadow().querySelector('.pay') as HTMLButtonElement).style.display).toBe('none');
   });
 
@@ -283,7 +283,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await vi.advanceTimersByTimeAsync(3000); // failed → offer retry
 
     const btn = shadow().querySelector('.pay') as HTMLButtonElement;
-    expect(btn.textContent).toBe('Try again'); // re-enabled, not stuck on "Processing…"
+    expect(btn.textContent).toBe('Tekrar dene'); // yeniden aktif, "İşleniyor…" üzerinde takılı değil
     expect(btn.disabled).toBe(false);
 
     btn.click(); // Try again → ask the storefront for a fresh order id (the spent one can't be re-driven)
@@ -319,7 +319,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
 
     expect(statusPolls()).toBe(400); // PENDING_MAX_POLLS — not the old silent 200 cap
     expect(statusText()).toBe(
-      'Payment session timed out — you were not charged. Refresh to try again.',
+      'Ödeme durumu doğrulanamadı. Açık ödeme sekmesini kontrol edin; aynı ödemeyi yeniden başlatmayın.',
     );
     // The order is still LIVE (SolvencyReserved) and its card form may still be open, so we do NOT offer an
     // in-place retry (a second order + tab could double-charge) — the button is removed, not re-armed.
@@ -340,7 +340,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await vi.advanceTimersByTimeAsync(3000 * 85); // first tick sees processing (reset), then ~CONFIRM_MAX_POLLS more
 
     expect(statusText()).toBe(
-      'Payment received — settlement is taking a little longer and will complete shortly. You can safely close this.',
+      'Ödeme alındı. Transfer biraz daha uzun sürüyor ve kısa süre içinde tamamlanacak. Bu pencereyi güvenle kapatabilirsiniz.',
     );
     const settled = statusPolls();
     expect(settled).toBeGreaterThan(1); // polled well past the first processing tick (budget was reset)
@@ -384,7 +384,7 @@ describe('content script lifecycle (pay → poll → order placement)', () => {
     await loadWithBanner();
     await clickPay();
 
-    expect(statusText()).toBe("Couldn't open the card form — you were not charged.");
+    expect(statusText()).toBe('Kart formu açılamadı, kartınızdan tahsilat yapılmadı.');
     await vi.advanceTimersByTimeAsync(9000);
     expect(statusPolls()).toBe(0);
     expect(post).not.toHaveBeenCalled();

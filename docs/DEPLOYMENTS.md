@@ -16,6 +16,7 @@ Current configuration: `deployment.testnet.json`. This migration replaces the se
 - [Manual seed: 20 test USDC](https://stellar.expert/explorer/testnet/tx/d6fca7acb5f47eb921a7c9db5a19f7acd86dd27adecfc6b4055c8dde69785a28). Obtained from Circle's public faucet, then sent to the pool.
 - [Sandbox card checkout: 0.50 test USDC to merchant](https://stellar.expert/explorer/testnet/tx/877ca5c3b01960a6f8d504475f45dd05c2c80fde7e65cc765bd0293413145d4d).
 - After that test: 19.50 USDC in pool; zero loss-review cases, unreconciled payouts and solvency drift.
+- [Public demo end-to-end checkout: 0.50 test USDC](https://stellar.expert/explorer/testnet/tx/3b270b1c8ded4b4dc0d61fc4e2c6fe613ff98916c8ece4fb861794b216cf42cb). Verified the published shop → packaged Chrome extension → sandbox card → merchant settlement → receipt flow. Both public sites also passed the 390px horizontal-overflow check.
 
 ## Public sites
 

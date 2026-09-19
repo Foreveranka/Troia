@@ -1,10 +1,3 @@
-// NOVAKEYS — a digital game-key store. Deliberately a DIFFERENT shop from the streetwear storefront:
-// its own payout address, its own order prefix, no address step and no shipping, keys delivered on the spot.
-//
-// The payment step is a PLAIN crypto checkout: a deposit address and an amount, both copyable. There is no
-// SEP-7 request here on purpose, so nothing on the page announces itself to a wallet or an extension. It is
-// the ordinary case a Turkish shopper meets, and the one Troia's manual payment screen exists for.
-
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { GAMES, priceOf, usd, type Game } from './data/games';
@@ -28,11 +21,7 @@ interface KeyLine {
 
 type PayStep = 'method' | 'crypto';
 
-const NETWORKS = [
-  { id: 'stellar', label: 'Stellar', note: 'USDC' },
-  { id: 'ethereum', label: 'Ethereum', note: 'USDC · ERC-20' },
-  { id: 'polygon', label: 'Polygon', note: 'USDC' },
-] as const;
+const NETWORKS = [{ id: 'stellar', label: 'Stellar', note: 'Test USDC' }] as const;
 
 export default function App(): React.ReactElement {
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -100,12 +89,15 @@ export default function App(): React.ReactElement {
   const add = (g: Game): void => {
     setCart((c) => ({ ...c, [g.id]: (c[g.id] ?? 0) + 1 }));
   };
-  const remove = (id: string): void =>
-    setCart((c) => {
-      const next = { ...c };
-      delete next[id];
-      return next;
-    });
+  const remove = (id: string): void => {
+    const next = { ...cart };
+    delete next[id];
+    setCart(next);
+    if (Object.keys(next).length === 0) {
+      setView({ name: 'shop' });
+      setStep('method');
+    }
+  };
 
   const shown = genre === 'All' ? GAMES : GAMES.filter((g) => g.genre === genre);
   const genres = ['All', ...new Set(GAMES.map((g) => g.genre))];
@@ -113,43 +105,56 @@ export default function App(): React.ReactElement {
   return (
     <div className="app">
       <header className="nav">
-        <div className="brand">
-          <span className="mark" aria-hidden="true" />
-          NOVA<span className="thin">KEYS</span>
-        </div>
+        <a className="brand" href="/">
+          <img src="/brand/troia-logo.png" alt="" />
+          <span>
+            TROIA<small>THE DEMO STORE</small>
+          </span>
+        </a>
         <nav className="links">
-          <a onClick={() => setView({ name: 'shop' })}>STORE</a>
-          <a href="/">DEMO GUIDE</a>
-          <a href="https://troia-extension.vercel.app/#install">GET TROIA ↗</a>
+          <button onClick={() => setView({ name: 'shop' })}>Collection</button>
+          <a href="https://troia-extension.vercel.app/#install">Installation guide ↗</a>
+          <a href="https://troia-extension.vercel.app/#install">About Troia ↗</a>
         </nav>
         <button
           className="cartbtn"
           onClick={() => count > 0 && setView({ name: 'checkout' })}
           disabled={count === 0}
         >
-          CART [{count}]
+          Bag ({count})
         </button>
       </header>
 
       <div className="strip">
-        STELLAR TESTNET DEMO · Use sandbox cards only · No real charges or game licences
+        <span>THE TROIA TESTNET EXPERIENCE</span>
+        <span>No real charges. No goods are shipped.</span>
       </div>
 
       {view.name === 'shop' && (
         <main className="wrap">
           <section className="hero">
-            <div className="eyebrow">DIGITAL ONLY</div>
-            <h1>
-              Buy the key.
-              <br />
-              <span className="accent">Play in a minute.</span>
-            </h1>
-            <p>
-              Try a test purchase with the Troia extension. These fictional products demonstrate
-              card checkout and onchain settlement; no licence or email is delivered.
-            </p>
+            <div>
+              <div className="eyebrow">THE EVERYDAY COLLECTION / 2026</div>
+              <h1>
+                Good essentials.
+                <br />
+                <em>A different way to pay.</em>
+              </h1>
+            </div>
+            <div className="shop-intro">
+              <p>
+                A small collection for a real test checkout. Choose an item and let Troia handle the
+                payment.
+              </p>
+              <a href="https://troia-extension.vercel.app/#install">
+                Install the Troia extension ↗
+              </a>
+            </div>
           </section>
-
+          <div className="collection-line">
+            <span>Explore the collection</span>
+            <span>Every item · 0.50 test USDC</span>
+          </div>
           <div className="filters">
             {genres.map((g) => (
               <button
@@ -167,15 +172,9 @@ export default function App(): React.ReactElement {
               const p = priceOf(g);
               return (
                 <article className="card" key={g.id}>
-                  <div
-                    className="cover"
-                    style={{
-                      background: `linear-gradient(150deg, hsl(${g.hue} 70% 22%), hsl(${(g.hue + 40) % 360} 65% 10%))`,
-                    }}
-                  >
-                    <span className="covertitle">{g.name}</span>
-                    {g.tag !== undefined && <span className={`tag ${g.tag}`}>{g.tag}</span>}
-                    {g.sale !== undefined && <span className="off">-{g.sale}%</span>}
+                  <div className="cover">
+                    <img src={g.image} alt={g.name} loading="lazy" />
+                    {g.tag && <span className="tag">{g.tag}</span>}
                   </div>
                   <div className="meta">
                     <h3>{g.name}</h3>
@@ -185,8 +184,12 @@ export default function App(): React.ReactElement {
                       <div className="price">
                         {p.was !== null && <s>{usd(p.was)}</s>} {usd(p.now)}
                       </div>
-                      <button className="buy" onClick={() => add(g)}>
-                        ADD
+                      <button
+                        className="buy"
+                        onClick={() => add(g)}
+                        aria-label={`Add ${g.name} to bag`}
+                      >
+                        {cart[g.id] ? `Add again · ${cart[g.id]} in bag` : 'Add to bag +'}
                       </button>
                     </div>
                   </div>
@@ -205,10 +208,11 @@ export default function App(): React.ReactElement {
             </button>
 
             <div className="block">
-              <h2>Delivery</h2>
-              <p className="hint">Use a test email. No email is sent and no real key is issued.</p>
+              <h2>Contact</h2>
+              <p className="hint">Demo only. No email is sent and no products are shipped.</p>
               <input
                 className="field"
+                aria-label="Test email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 spellCheck={false}
@@ -220,7 +224,7 @@ export default function App(): React.ReactElement {
                 <h2>Payment</h2>
                 <button className="method" disabled>
                   <span>Credit / debit card</span>
-                  <span className="muted">Not available in your region</span>
+                  <span className="muted">Not offered directly by this demo shop</span>
                 </button>
                 <button className="method go" onClick={() => setStep('crypto')}>
                   <span>Pay with crypto</span>
@@ -296,7 +300,8 @@ export default function App(): React.ReactElement {
           </section>
 
           <aside className="summary">
-            <h2>ORDER</h2>
+            <div className="checkout-progress">YOUR TEST CHECKOUT</div>
+            <h2>Your bag</h2>
             {lines.map((l) => (
               <div className="sline" key={l.game.id}>
                 <div>
@@ -314,14 +319,35 @@ export default function App(): React.ReactElement {
               </div>
             ))}
             <div className="sline muted">
-              <span>Shipping</span>
-              <span>None · digital</span>
+              <span>Delivery</span>
+              <span>Demo only · not shipped</span>
             </div>
             <div className="sline total">
               <span>Total</span>
               <span>{usd(total)}</span>
             </div>
             <div className="ref">Order {order}</div>
+            <details className="test-card" open>
+              <summary>Sandbox test card</summary>
+              <p>Use this card in the form opened by Troia.</p>
+              <code>9792 0720 0001 7956</code>
+              <div>
+                <span>
+                  Expiry <b>12/2030</b>
+                </span>
+                <span>
+                  CVV <b>123</b>
+                </span>
+              </div>
+              <p>Cardholder: Test User. No real money is charged.</p>
+              <a
+                href="https://docs.iyzico.com/ek-bilgiler/test-kartlari"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Official test card reference ↗
+              </a>
+            </details>
             <button
               className="newref"
               onClick={() => {
@@ -353,7 +379,7 @@ export default function App(): React.ReactElement {
               {view.keys.map((k, i) => (
                 <div className="keyrow" key={i}>
                   <span className="kt">{k.title}</span>
-                  <code>{k.key}</code>
+                  <span>Test purchase recorded</span>
                 </div>
               ))}
             </div>
@@ -384,8 +410,8 @@ export default function App(): React.ReactElement {
       )}
 
       <footer className="foot">
-        <span>NOVAKEYS · Troia test store</span>
-        <span>Demo store. No real keys, no real inventory.</span>
+        <span>TROIA / DEMO STORE</span>
+        <span>Stellar Testnet. No real payments or goods.</span>
       </footer>
     </div>
   );

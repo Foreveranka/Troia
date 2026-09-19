@@ -1,0 +1,21 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:08.000
+Troia sitesindeki Installation bölümüne git. Download Troia ZIP düğmesine tıkla.
+
+2
+00:00:08.000 --> 00:00:16.000
+ZIP dosyasını çıkar. Mac’te çift tıkla. Windows’ta sağ tıklayıp Tümünü Ayıkla’yı seç.
+
+3
+00:00:16.000 --> 00:00:24.000
+Adres çubuğuna chrome://extensions yaz. Sağ üstten Geliştirici modu seçeneğini aç.
+
+4
+00:00:24.000 --> 00:00:32.000
+Paketlenmemiş öğe yükle’ye tıkla. manifest.json içeren troia-testnet klasörünü seç ve onayla.
+
+5
+00:00:32.000 --> 00:00:40.000
+Troia kuruldu. Klasörü silme. Demo mağazada ürün ekle, Pay with crypto ve ardından Stellar seç.

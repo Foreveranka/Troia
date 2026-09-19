@@ -1,107 +1,17 @@
-// NOVAKEYS catalogue. Fictional titles, no real inventory. Prices are USD; the checkout converts to a single
-// lira total through the Troia backend. Cover art is generated from `hue` so the store stays self-contained.
-
-export type Genre = 'Action' | 'Strategy' | 'Racing' | 'Horror' | 'Indie';
-export type Tag = 'new' | 'preorder' | 'bestseller';
-
+// Demonstration catalogue. No physical goods are shipped. Prices are test USDC.
+export type Genre = 'Tops' | 'Outerwear' | 'Bottoms' | 'Accessories';
 export interface Game {
-  readonly id: string;
-  readonly name: string;
-  readonly studio: string;
-  readonly price: number;
-  readonly genre: Genre;
-  readonly hue: number;
-  readonly platform: string;
-  readonly tag?: Tag;
-  readonly sale?: number; // percent off
+  readonly id: string; readonly name: string; readonly studio: string;
+  readonly price: number; readonly genre: Genre; readonly image: string;
+  readonly platform: string; readonly tag?: string; readonly sale?: number;
 }
-
 export const GAMES: readonly Game[] = [
-  {
-    id: 'echo-protocol',
-    name: 'ECHO PROTOCOL',
-    studio: 'Halfline Studio',
-    price: 0.50,
-    genre: 'Action',
-    hue: 268,
-    platform: 'PC · Steam key',
-    tag: 'bestseller',
-  },
-  {
-    id: 'neon-drift-2',
-    name: 'NEON DRIFT II',
-    studio: 'Vantage Works',
-    price: 0.50,
-    genre: 'Racing',
-    hue: 190,
-    platform: 'PC · Steam key',
-    sale: 25,
-  },
-  {
-    id: 'hollow-signal',
-    name: 'HOLLOW SIGNAL',
-    studio: 'Grey Room',
-    price: 0.50,
-    genre: 'Horror',
-    hue: 12,
-    platform: 'PC · Steam key',
-    tag: 'new',
-  },
-  {
-    id: 'orbital-decay',
-    name: 'ORBITAL DECAY',
-    studio: 'Northpoint',
-    price: 0.50,
-    genre: 'Strategy',
-    hue: 220,
-    platform: 'PC · Deluxe edition',
-    tag: 'preorder',
-  },
-  {
-    id: 'static-runner',
-    name: 'STATIC RUNNER',
-    studio: 'Two Owls',
-    price: 0.50,
-    genre: 'Indie',
-    hue: 92,
-    platform: 'PC · Steam key',
-  },
-  {
-    id: 'void-atlas',
-    name: 'VOID ATLAS',
-    studio: 'Meridian Games',
-    price: 0.50,
-    genre: 'Strategy',
-    hue: 314,
-    platform: 'PC · Steam key',
-    sale: 40,
-  },
-  {
-    id: 'ashfall',
-    name: 'ASHFALL',
-    studio: 'Coldwater',
-    price: 0.50,
-    genre: 'Action',
-    hue: 32,
-    platform: 'PC · Steam key',
-  },
-  {
-    id: 'paper-city',
-    name: 'PAPER CITY',
-    studio: 'Two Owls',
-    price: 0.50,
-    genre: 'Indie',
-    hue: 158,
-    platform: 'PC · Steam key',
-    tag: 'new',
-  },
+  {id:'static-tee',name:'Static Tee',studio:'Washed black',price:0.50,genre:'Tops',image:'/products/static-tee-1.png',platform:'Relaxed fit',tag:'The essentials'},
+  {id:'ghost-hoodie',name:'Ghost Hoodie',studio:'Fog grey',price:0.50,genre:'Outerwear',image:'/products/ghost-hoodie-1.webp',platform:'Heavyweight fleece'},
+  {id:'decay-cargo',name:'Decay Cargo',studio:'Oil slick',price:0.50,genre:'Bottoms',image:'/products/decay-cargo-1.png',platform:'Utility fit'},
+  {id:'null-longsleeve',name:'Null Longsleeve',studio:'Bone',price:0.50,genre:'Tops',image:'/products/null-longsleeve-1.png',platform:'Everyday layer'},
+  {id:'signal-cap',name:'Signal Cap',studio:'Muted earth',price:0.50,genre:'Accessories',image:'/products/signal-cap-1.png',platform:'Adjustable fit'},
+  {id:'void-beanie',name:'Void Beanie',studio:'Charcoal',price:0.50,genre:'Accessories',image:'/products/void-beanie-1.png',platform:'Ribbed knit'},
 ];
-
-export function priceOf(g: Game): { now: number; was: number | null } {
-  if (g.sale === undefined) return { now: g.price, was: null };
-  const now = Math.round(g.price * (1 - g.sale / 100) * 100) / 100;
-  return { now, was: g.price };
-}
-
-export const usd = (n: number): string =>
-  '$' + n.toFixed(2).replace(/\.00$/, '');
+export function priceOf(g: Game): {now:number;was:number|null} { return {now:g.price,was:null}; }
+export const usd = (n:number):string => n.toFixed(2)+' USDC';

@@ -3,9 +3,9 @@
 ## What to try
 
 1. Visit https://troia-extension.vercel.app and download the ZIP. Extract it. In desktop Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted `troia-testnet` folder. Pin Troia. There is no Chrome Web Store listing yet.
-2. Open https://troia-demo-store.vercel.app, read the test instructions, then enter `/shop`. Add a fictional product and choose **Pay with crypto / Stellar**. Troia detects its SEP-7 request.
+2. Open https://troia-demo-store.vercel.app; the product collection opens directly (also available at `/shop`). Add a fictional product and choose **Pay with crypto / Stellar**. Troia detects its SEP-7 request.
 3. Use the Troia banner to open the hosted iyzico **sandbox** form. Use the official Troy test card `9792072000017956`, a future expiry such as `12/2030`, CVC `123`, and name `Test User`. Never enter a real card. [Official reference](https://docs.iyzico.com/ek-bilgiler/test-kartlari).
-4. Return to the store. The extension follows payment and onchain settlement and displays the transaction proof. Demo keys are placeholders; no product or email is delivered.
+4. Return to the store. The extension follows payment and onchain settlement and displays the transaction proof. The receipt records the test purchase; no product or email is delivered.
 5. Separately, open **Bank transfers** in Troia. Connect Freighter on Stellar Testnet, prepare the wallet/trustline, request a quote, then create a deposit or withdrawal. Bank steps are simulated; USDC is transferred on testnet. **The shared mock anchor currently has a SEP-6 settlement incident. Pending transfers are not successful and must not be sent twice.**
 
 The card flow does not need a shopper wallet. The bank flow uses the user's Freighter wallet. Neither requires disclosing a secret key to Troia.

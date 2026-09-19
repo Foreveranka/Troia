@@ -1,0 +1,21 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:08.000
+Open troia-extension.vercel.app. In Installation, click Download Troia ZIP.
+
+2
+00:00:08.000 --> 00:00:16.000
+Extract the ZIP. On Mac, double-click it. On Windows, right-click and select Extract All.
+
+3
+00:00:16.000 --> 00:00:24.000
+Type chrome://extensions in the address bar. Turn on Developer mode at the top right.
+
+4
+00:00:24.000 --> 00:00:32.000
+Click Load unpacked. Choose the extracted troia-testnet folder containing manifest.json, then Select Folder.
+
+5
+00:00:32.000 --> 00:00:40.000
+Troia is installed. Keep its folder. Open the demo store, add an item and select Pay with crypto, then Stellar.

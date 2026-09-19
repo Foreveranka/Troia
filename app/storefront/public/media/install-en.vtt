@@ -1,21 +1,21 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:08.000 line:92% size:92% align:center
-Download the Troia ZIP.
+00:00:00.000 --> 00:00:05.000 line:94% size:96% align:center
+First, download the Troia ZIP and extract it.
 
 2
-00:00:08.000 --> 00:00:16.000 line:92% size:92% align:center
-Extract the ZIP into a folder.
+00:00:05.000 --> 00:00:10.000 line:94% size:96% align:center
+Enable Developer mode. Click Load unpacked.
 
 3
-00:00:16.000 --> 00:00:24.000 line:92% size:92% align:center
-Open chrome://extensions. Enable Developer mode.
+00:00:10.000 --> 00:00:20.000 line:94% size:96% align:center
+Select the troia-testnet folder, then click Select.
 
 4
-00:00:24.000 --> 00:00:32.000 line:92% size:92% align:center
-Load unpacked → select the troia-testnet folder.
+00:00:20.000 --> 00:00:30.000 line:94% size:96% align:center
+Troia now appears in your extensions. Keep it enabled.
 
 5
-00:00:32.000 --> 00:00:40.000 line:92% size:92% align:center
-Open the demo store. Choose Stellar at checkout.
+00:00:30.000 --> 00:00:40.000 line:94% size:96% align:center
+Open Troia from the extensions menu. You are ready.

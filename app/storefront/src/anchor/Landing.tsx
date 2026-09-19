@@ -149,7 +149,7 @@ export default function Landing() {
                 </h2>
               </div>
               <p>
-                A 40-second guide to installing the preview.
+                A 40-second guide using real Chrome screenshots.
                 <br />
                 Pause whenever you need to.
               </p>
@@ -186,7 +186,7 @@ export default function Landing() {
                     Follow the installation steps next to this video.
                   </video>
                   <div className="video-foot">
-                    <span>Visual walkthrough · No sound required</span>
+                    <span>Real Chrome screenshots · No sound required</span>
                     <a href="/media/troia-install.mp4" download>
                       Save video ↓
                     </a>

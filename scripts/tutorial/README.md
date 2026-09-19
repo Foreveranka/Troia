@@ -1,17 +1,21 @@
 # Troia installation guide
 
-A 40-second, silent, illustrated desktop Chrome walkthrough. The download, ZIP extraction,
-Developer mode and folder-picker scenes are instructional recreations, not a live screen recording.
-The final scene contains the actual packaged extension popup. English and Turkish WebVTT captions
-are included. The media player is lazy-loaded and supports native controls/fullscreen.
+A 40-second silent walkthrough assembled from real Chrome screenshots supplied by the user.
+It shows Developer mode, the folder picker, the installed extension and its popup. It is a
+screenshot sequence, not a continuous screen recording. No browser UI or clicks are recreated.
+The last scene is a fresh Chrome capture of the built popup HTML with the updated Turkish labels.
+It previews the real component; it does not assert any payment or wallet state.
 
-Regenerate with Node.js, Playwright Chromium and ffmpeg installed:
+Browser tabs are cropped from the video. Unrelated filenames in the folder picker are covered.
+Original screenshots remain outside the repository and are never shipped with the website.
+English and Turkish WebVTT tracks provide small, switchable captions. ZIP download/extraction
+is a captioned prerequisite; it is not presented as a captured action.
+
+Regenerate with Node.js and ffmpeg:
 
 ```sh
-node scripts/tutorial/render-install-guide.cjs
+node scripts/tutorial/render-install-guide.cjs /path/to/screenshots
 ```
 
-If Playwright is supplied outside this repository, set `TROIA_PLAYWRIGHT` to its module path.
-`PLAYWRIGHT_BROWSERS_PATH` may be set for an external browser installation. The script writes
-reproducible public media into `app/storefront/public/media` and temporary stills to
-`.deploy/tutorial-frames`. No existing personal browser profile is opened.
+The input directory must contain `extensions.png`, `folder.png`, `installed.png`, at 2940 × 1912, plus `popup-current.png` at 384 × 603. The script writes media to `app/storefront/public/media` and temporary clips
+to `.deploy/tutorial-real`. It does not access or control Chrome.

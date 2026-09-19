@@ -76,7 +76,7 @@ export function wizardErrorCopy(code: string): string {
     case 'bad-amount':
       return '25 ya da 25.50 gibi bir USDC tutarı girin (en fazla 7 ondalık basamak).';
     case 'over-cap':
-      return `Elle ödemeler işlem başına ${MANUAL_MAX_USDC} USDC ile sınırlıdır.`;
+      return `Manuel ödemeler işlem başına ${MANUAL_MAX_USDC} USDC ile sınırlıdır.`;
     // SEP-29 — the reason this wizard refuses exchange deposit addresses, stated plainly.
     case 'DestinationMemoRequired':
       return 'Bu adres yatırma memosu istiyor (borsa yatırma adresine benziyor). Troia ödemeleri memo taşıyamaz, bu yüzden borsa tutarı hesabınıza geçiremez ve bu adres ödenemez. Kişisel ya da işletme cüzdan adresi kullanın.';

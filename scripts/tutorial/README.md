@@ -1,21 +1,23 @@
 # Troia installation guide
 
-A 40-second silent walkthrough assembled from real Chrome screenshots supplied by the user.
-It shows Developer mode, the folder picker, the installed extension and its popup. It is a
-screenshot sequence, not a continuous screen recording. No browser UI or clicks are recreated.
-The last scene is a fresh Chrome capture of the built popup HTML with the updated Turkish labels.
-It previews the real component; it does not assert any payment or wallet state.
+A 26.25-second silent motion edit made from authentic Chrome screenshots. Six short chapters
+show the project website, Developer mode, Load unpacked, folder selection, the installed
+extension and its popup. Camera moves ease in and out; chapters use 350 ms dissolves. Thin
+brass outlines indicate real controls. No browser UI, clicks, download success or transactions
+are fabricated. The first chapter explains download/extraction; these actions were not recorded.
 
-Browser tabs are cropped from the video. Unrelated filenames in the folder picker are covered.
-Original screenshots remain outside the repository and are never shipped with the website.
-English and Turkish WebVTT tracks provide small, switchable captions. ZIP download/extraction
-is a captioned prerequisite; it is not presented as a captured action.
+Typography is rendered separately by Pillow; screenshot pixels are handled only by ffmpeg's
+video crop, zoom and compositing filters. Small English/Turkish captions are switchable WebVTT.
+Personal browser tabs and unrelated filenames are excluded. Private source screenshots are
+not checked into the repository or deployed. The popup is a Chrome capture of the built UI.
 
-Regenerate with Node.js and ffmpeg:
+Requirements: Node.js, ffmpeg, Python with Pillow, macOS Arial/Georgia fonts.
 
 ```sh
-node scripts/tutorial/render-install-guide.cjs /path/to/screenshots
+TROIA_VIDEO_PYTHON=/path/to/python node scripts/tutorial/render-install-guide.cjs /private/screenshots
 ```
 
-The input directory must contain `extensions.png`, `folder.png`, `installed.png`, at 2940 × 1912, plus `popup-current.png` at 384 × 603. The script writes media to `app/storefront/public/media` and temporary clips
-to `.deploy/tutorial-real`. It does not access or control Chrome.
+Sources: `website.png` (actual website), `extensions.png`, `folder.png`, `installed.png`
+(2940 × 1912) and `popup-current.png` (384 × 603). Final media goes to
+`app/storefront/public/media`; intermediate clips and typography go to `.deploy/tutorial-motion`.
+The renderer never opens or controls Chrome.

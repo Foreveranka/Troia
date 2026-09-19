@@ -1,21 +1,25 @@
 WEBVTT
 
 1
-00:00:00.000 --> 00:00:05.000 line:94% size:96% align:center
-Önce Troia ZIP dosyasını indirip klasöre çıkar.
+00:00:00.000 --> 00:00:03.650 line:91% size:88% align:center
+ZIP dosyasını indirip klasöre çıkar.
 
 2
-00:00:05.000 --> 00:00:10.000 line:94% size:96% align:center
-Geliştirici modunu aç. Paketlenmemiş öğe yükle’ye tıkla.
+00:00:03.650 --> 00:00:08.300 line:91% size:88% align:center
+chrome://extensions adresinde Geliştirici modunu aç.
 
 3
-00:00:10.000 --> 00:00:20.000 line:94% size:96% align:center
-troia-testnet klasörünü seç, ardından Seç’e tıkla.
+00:00:08.300 --> 00:00:11.950 line:91% size:88% align:center
+Paketlenmemiş öğe yükle’ye tıkla.
 
 4
-00:00:20.000 --> 00:00:30.000 line:94% size:96% align:center
-Troia artık uzantılarında görünüyor. Açık bırak.
+00:00:11.950 --> 00:00:17.600 line:91% size:88% align:center
+troia-testnet klasörünü seç, ardından Seç’e tıkla.
 
 5
-00:00:30.000 --> 00:00:40.000 line:94% size:96% align:center
-Uzantılar menüsünden Troia’yı aç. Kurulum tamam.
+00:00:17.600 --> 00:00:21.250 line:91% size:88% align:center
+Troia yüklendi. Açık bırak.
+
+6
+00:00:21.250 --> 00:00:26.250 line:91% size:88% align:center
+Uzantılar menüsünden Troia’yı aç.

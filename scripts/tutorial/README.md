@@ -14,7 +14,7 @@ not checked into the repository or deployed. The popup is a Chrome capture of th
 Requirements: Node.js, ffmpeg, Python with Pillow, macOS Arial/Georgia fonts.
 
 ```sh
-TROIA_VIDEO_PYTHON=/path/to/python node scripts/tutorial/render-install-guide.cjs /private/screenshots
+TROIA_VIDEO_PYTHON=/path/to/python node scripts/tutorial/render-install-guide.mjs /private/screenshots
 ```
 
 Sources: `website.png` (actual website), `extensions.png`, `folder.png`, `installed.png`

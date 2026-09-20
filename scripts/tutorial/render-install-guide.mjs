@@ -1,17 +1,19 @@
 // Render a guided motion edit from authentic screenshots; never recreate browser UI.
-const fs = require('node:fs');
-const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 const source = process.argv[2];
 if (!source) throw new Error('Pass the private screenshot directory.');
-const root = path.resolve(__dirname, '../..');
+const root = path.resolve(import.meta.dirname, '../..');
 const out = path.join(root, 'app/storefront/public/media');
 const work = path.join(root, '.deploy/tutorial-motion');
 fs.mkdirSync(work, { recursive: true });
 const python =
   process.env.TROIA_VIDEO_PYTHON ||
   '/Users/mete/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3';
-execFileSync(python, [path.join(__dirname, 'render-overlays.py'), work], { stdio: 'inherit' });
+execFileSync(python, [path.join(import.meta.dirname, 'render-overlays.py'), work], {
+  stdio: 'inherit',
+});
 const scenes = [
   // file, preparation, duration, starting zoom, ending zoom, focal x/y
   ['website.png', 'null', 4, 1, 1.08, 0, 0.8],

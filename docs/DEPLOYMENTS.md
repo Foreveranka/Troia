@@ -32,4 +32,15 @@ Static sites are on Vercel. The API forwards to a temporary Cloudflare tunnel on
 
 On 20 September 2026 (Istanbul), the mock anchor accepted a simulated 2000 TRY request but kept it in `pending_anchor`. No USDC was delivered for that request; its reference is saved in `deployments/anchor-seed.json`. The health endpoint was green while settlement was stalled. We did not mark it successful or repeat the payment. Circle faucet funding is separate. A complete card-to-merchant-to-bank off-ramp re-test awaits recovery.
 
+## Post-submission live retest · 20 September 2026
+
+At 03:54 Istanbul, a new checkout completed through the public demo store, the installed Chrome extension and iyzico's hosted sandbox form. Order `NK-XED4SW9K` charged 26.23 sandbox TRY and delivered exactly 0.5000000 Circle testnet USDC to the demo merchant. The store displayed its completed receipt, and the public order endpoint returned `completed`.
+
+- [Settlement transaction](https://stellar.expert/explorer/testnet/tx/b2e1416fc28ac7e351946f198846af285cbe87be09405cfa5e0cb895be4e0e87)
+- Horizon confirmed `successful: true`, ledger `4768419`, timestamp `2026-09-20T00:54:42Z`.
+- Transaction effects independently confirmed a 0.5000000 USDC debit from the configured pool and a matching credit to merchant `GBR2LOLTXI7QZFQ6FX2H2KC7YBUXUCKPTPTKH2MJRRNZRSKOSJ7JE4N4`, using the pinned issuer above.
+- The separate anchor retest passed authentication and quotes but failed deposit creation with HTTP 400. See [ANCHOR-TESTNET.md](ANCHOR-TESTNET.md). This checkout result does not establish that bank transfers work.
+
+No real card charge, bank transfer or product delivery occurred.
+
 Historical records: [legacy deployment](deployments/legacy-self-issued-testnet.json), [original documentation](deployments/legacy-deployments.md). Signed historical fixtures retain their original trusted deployment pins.

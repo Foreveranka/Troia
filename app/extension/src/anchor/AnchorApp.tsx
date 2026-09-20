@@ -11,7 +11,31 @@ import {
   type Quote,
 } from './client';
 import { ANCHOR } from './config';
+import troiaLogo from '../popup/assets/logo.png';
 import './anchor.css';
+
+const bankStatus = (status: string) =>
+  (
+    ({
+      pending_user_transfer_start: 'Transferiniz bekleniyor',
+      pending_anchor: 'Anchor işliyor',
+      pending_stellar: 'Stellar onayı bekleniyor',
+      pending_external: 'Banka ödemesi bekleniyor',
+      pending_trust: 'USDC alım izni gerekli',
+      pending_customer_info_update: 'Müşteri bilgisi gerekli',
+      pending_transaction_info_update: 'Transfer bilgisi gerekli',
+      pending_user: 'İşlem yapmanız gerekiyor',
+      on_hold: 'İnceleniyor',
+      incomplete: 'Kurulum tamamlanmadı',
+      completed: 'Tamamlandı',
+      refunded: 'İade edildi',
+      expired: 'Süresi doldu',
+      error: 'Başarısız',
+      no_market: 'Dönüşüm kullanılamıyor',
+      too_small: 'Alt limitin altında',
+      too_large: 'Üst limitin üzerinde',
+    }) as Record<string, string>
+  )[status] ?? statusLabel(status);
 
 const short = (s: string) => `${s.slice(0, 7)}…${s.slice(-6)}`;
 function Copy({ value }: { value: string }) {
@@ -29,7 +53,7 @@ function Copy({ value }: { value: string }) {
       }}
     >
       <span>{value}</span>
-      <small>{copied ? 'Copied' : 'Copy'}</small>
+      <small>{copied ? 'Kopyalandı' : 'Kopyala'}</small>
     </button>
   );
 }
@@ -65,9 +89,7 @@ export default function AnchorApp() {
       await fn();
     } catch (e) {
       setError(
-        e instanceof Error
-          ? e.message
-          : 'Could not complete this step. Please refresh the transfer status.',
+        e instanceof Error ? e.message : 'Bu adım tamamlanamadı. Transfer durumunu yenileyin.',
       );
     } finally {
       lock.current = false;
@@ -104,7 +126,9 @@ export default function AnchorApp() {
       void refresh(client, active?.id)
         .catch(() => {
           if (liveClient.current === client)
-            setNotice('Live updates paused. Refresh to retry; pending does not mean failed.');
+            setNotice(
+              'Canlı güncelleme durdu. Yenileyerek tekrar deneyin. Bekleyen işlem başarısız sayılmaz.',
+            );
         })
         .finally(() => {
           running = false;
@@ -113,14 +137,14 @@ export default function AnchorApp() {
     return () => clearInterval(t);
   }, [client, active?.id]);
   const connect = () =>
-    run('Connecting wallet', async () => {
+    run('Cüzdan bağlanıyor', async () => {
       const access = await walletRequest({ action: 'connect' });
-      if (!access.address) throw new Error('Wallet connection was not approved.');
+      if (!access.address) throw new Error('Cüzdan bağlantısı onaylanmadı.');
       const address = access.address;
       const c = new AnchorClient(address, async (xdr) => {
         const result = await walletRequest({ action: 'sign', address, xdr });
         if (result.address !== address || !result.signedTxXdr)
-          throw new Error('Wallet signature does not match the connected account.');
+          throw new Error('İmza, bağlı cüzdanla eşleşmiyor.');
         return result.signedTxXdr;
       });
       await c.connect();
@@ -156,12 +180,12 @@ export default function AnchorApp() {
     setUncertain(false);
   };
   const requestQuote = () =>
-    run('Getting your quote', async () => {
+    run('Teklif alınıyor', async () => {
       if (!client) return;
       setQuote(await client.quote(direction, amount));
     });
   const begin = () =>
-    run('Creating transfer', async () => {
+    run('Transfer oluşturuluyor', async () => {
       if (!client || !quote) return;
       setUncertain(true);
       const i = await client.start(direction, quote);
@@ -171,12 +195,12 @@ export default function AnchorApp() {
       await refresh(client, i.id);
     });
   const send = () =>
-    run('Approve withdrawal in Freighter', async () => {
+    run('Çekme işlemini Freighter’da onaylayın', async () => {
       if (!client || !active || !instructions || !active.amount_in) return;
       // Persist BEFORE broadcast. A lost response must never turn into a second payment.
       const next = {
         ...submitted,
-        [active.id]: 'Submission pending. Check history before sending again.',
+        [active.id]: 'Gönderim bekleniyor. Yeniden göndermeden önce geçmişi kontrol edin.',
       };
       const tx = await client.payWithdrawal(instructions, active.amount_in, () => {
         localStorage.setItem(`troia:anchor:sent:${client.account}`, JSON.stringify(next));
@@ -185,7 +209,7 @@ export default function AnchorApp() {
       next[active.id] = tx.hash;
       localStorage.setItem(`troia:anchor:sent:${client.account}`, JSON.stringify(next));
       setSubmitted({ ...next });
-      setNotice('USDC submitted. Waiting for the anchor to confirm the bank simulation.');
+      setNotice('USDC gönderildi. Banka simülasyonu için anchor onayı bekleniyor.');
       await refresh(client, active.id);
     });
   const select = (t: AnchorTransaction) => {
@@ -208,18 +232,19 @@ export default function AnchorApp() {
     <div className="anchor-shell">
       <header className="anchor-nav">
         <a href="../wizard/index.html" className="troia-wordmark">
-          troia<span>®</span>
+          <img src={troiaLogo} alt="" />
+          <span>TROIA</span>
         </a>
-        <nav>
-          <a href="../wizard/index.html">Card payment ↗</a>
-          <span className="network-pill">● Stellar Testnet</span>
+        <nav aria-label="Cüzdan ve ödeme">
+          <a href="../wizard/index.html">Kartla ödeme ↗</a>
+          <span className="network-pill">Stellar Testnet</span>
           {client ? (
             <button disabled={!!busy} onClick={disconnect}>
-              {short(client.account)} · Disconnect
+              {short(client.account)} · Bağlantıyı kes
             </button>
           ) : (
             <button className="primary" disabled={!!busy} onClick={connect}>
-              Connect Freighter ↗
+              Freighter’ı bağla ↗
             </button>
           )}
         </nav>
@@ -227,23 +252,23 @@ export default function AnchorApp() {
       <main className="anchor-main">
         <div className="workspace-heading">
           <div>
-            <div className="eyebrow">BANK TRANSFERS</div>
-            <h1>Add or withdraw funds.</h1>
-            <p>Manage testnet bank transfers from your Troia panel.</p>
+            <div className="eyebrow">BANKA TRANSFERİ</div>
+            <h1>Liranız ve USDC’niz, aynı yerde.</h1>
+            <p>Lira yatırın veya USDC’nizi bankaya çekin.</p>
           </div>
           <div className="wallet-balance">
-            <small>YOUR TESTNET USDC</small>
+            <small>TEST USDC BAKİYENİZ</small>
             <strong>
               {balance === '—'
                 ? '—'
-                : Number(balance).toLocaleString('en-US', { maximumFractionDigits: 7 })}
+                : Number(balance).toLocaleString('tr-TR', { maximumFractionDigits: 7 })}
             </strong>
-            <span>{client ? short(client.account) : 'Connect your wallet to begin'}</span>
+            <span>{client ? short(client.account) : 'Başlamak için cüzdanınızı bağlayın'}</span>
           </div>
         </div>
         <div className="sandbox-note">
-          <b>Sandbox</b> Bank deposits and payouts are simulated. USDC transfers run on Stellar
-          testnet. Use test funds only.
+          <b>Test ortamı</b> Banka hareketleri simülasyondur. USDC transferleri Stellar Testnet’te
+          gerçekleşir. Yalnızca test varlığı kullanın.
         </div>
         {error && (
           <div role="alert" className="error-note">
@@ -259,8 +284,8 @@ export default function AnchorApp() {
           active.started_at &&
           now - Date.parse(active.started_at) > 60_000 && (
             <div role="status" className="notice">
-              The anchor is still processing this transfer. Its service may be delayed. Do not send
-              another payment. Refresh this transfer or reopen it from history.
+              Anchor bu transferi henüz tamamlamadı. Tekrar ödeme göndermeyin. Durumu yenileyin veya
+              işlemi geçmişten açın.
             </div>
           )}
         <div className="anchor-grid">
@@ -271,70 +296,74 @@ export default function AnchorApp() {
                 aria-pressed={deposit}
                 onClick={() => changeDirection('deposit')}
               >
-                ↙ Add Turkish lira
+                Lira yatır
               </button>
               <button
                 disabled={!!busy}
                 aria-pressed={!deposit}
                 onClick={() => changeDirection('withdraw')}
               >
-                ↗ Withdraw to bank
+                Bankaya çek
               </button>
             </div>
             {!client ? (
               <div className="connect-empty">
-                <div className="circle-arrow">↔</div>
-                <h2>Your wallet is the starting point.</h2>
+                <div className="transfer-symbols" aria-hidden="true">
+                  <span>₺</span>
+                  <i />
+                  <span>$</span>
+                </div>
+                <h2>Cüzdanınızı bağlayın</h2>
                 <p>
-                  Connect Freighter on Testnet. You approve the login and every onchain transfer in
-                  your wallet.
+                  Freighter ile bağlanın. Giriş ve zincir üzerindeki transferleri kendi cüzdanınızda
+                  onaylayın.
                 </p>
                 <button className="primary" disabled={!!busy} onClick={connect}>
-                  Connect wallet ↗
+                  Cüzdanı bağla ↗
                 </button>
                 <a href="https://www.freighter.app/" target="_blank" rel="noreferrer">
-                  Get Freighter
+                  Freighter’ı edin ↗
                 </a>
               </div>
             ) : !ready ? (
               <div className="connect-empty">
-                <h2>Prepare your test wallet.</h2>
+                <h2>Test cüzdanınızı hazırlayın</h2>
                 <p>
-                  Request free test XLM if needed, then approve the USDC trustline. This lets the
-                  anchor deliver USDC directly to you.
+                  Gerekirse ücretsiz test XLM alın ve USDC alım iznini onaylayın. Böylece anchor
+                  USDC’yi doğrudan cüzdanınıza gönderebilir.
                 </p>
                 <button
                   className="primary"
                   disabled={!!busy}
                   onClick={() =>
-                    run('Preparing testnet wallet', async () => {
+                    run('Test cüzdanı hazırlanıyor', async () => {
                       await client.prepareWallet();
                       await refresh(client);
                     })
                   }
                 >
-                  Prepare wallet ↗
+                  Cüzdanı hazırla ↗
                 </button>
               </div>
             ) : active ? (
               <div className="transfer-body">
-                <div className="eyebrow">{active.kind.toUpperCase()}</div>
-                <h2>{settled ? 'Transfer completed.' : statusLabel(active.status)}</h2>
+                <div className="eyebrow">{deposit ? 'LİRA YATIRMA' : 'BANKAYA ÇEKME'}</div>
+                <h2>{settled ? 'Transfer tamamlandı' : bankStatus(active.status)}</h2>
                 <p>
                   {active.message ||
                     (settled
-                      ? 'The anchor has confirmed this transfer.'
-                      : 'Your transfer is tracked below. Refreshing this page does not cancel it.')}
+                      ? 'Anchor bu transferi onayladı.'
+                      : 'Transferinizi aşağıdan takip edin. Sayfayı yenilemek işlemi iptal etmez.')}
                 </p>
                 <div className="receipt">
                   <div>
-                    <span>You send</span>
+                    <span>Gönderdiğiniz</span>
                     <b>
                       {active.amount_in ?? '—'} {deposit ? 'TRY' : 'USDC'}
                     </b>
                   </div>
                   <div>
-                    <span>You receive</span>
+                    <span>Alacağınız</span>
                     <b>
                       {active.amount_out ?? '—'} {deposit ? 'USDC' : 'TRY'}
                     </b>
@@ -353,13 +382,13 @@ export default function AnchorApp() {
                     className="primary full"
                     disabled={!!busy || !active.amount_in}
                     onClick={() =>
-                      run('Simulating bank deposit', async () => {
+                      run('Banka yatırması simüle ediliyor', async () => {
                         await client.simulate(active.id, active.amount_in!);
                         await refresh(client, active.id);
                       })
                     }
                   >
-                    Simulate bank transfer · Test only
+                    Test banka transferini simüle et
                   </button>
                 )}
                 {!deposit &&
@@ -368,18 +397,18 @@ export default function AnchorApp() {
                   instructions?.account_id && (
                     <>
                       <label className="instruction">
-                        Anchor destination
+                        Anchor alıcı adresi
                         <Copy value={instructions.account_id} />
                       </label>
                       <p>Memo ID: {instructions.memo}</p>
                       <button className="primary full" disabled={!!busy} onClick={send}>
-                        Approve USDC transfer ↗
+                        USDC transferini onayla ↗
                       </button>
                     </>
                   )}
                 {submitted[active.id] && (
                   <p className="notice">
-                    Transfer submitted or awaiting verification. Do not send it again.{' '}
+                    Transfer gönderildi veya doğrulama bekliyor. Tekrar göndermeyin.{' '}
                     {submitted[active.id]}
                   </p>
                 )}
@@ -391,7 +420,7 @@ export default function AnchorApp() {
                       target="_blank"
                       rel="noreferrer"
                     >
-                      View on Stellar ↗
+                      Stellar’da görüntüle ↗
                     </a>
                   )}
                 {trustedLink(active.more_info_url ?? instructions?.more_info_url) && (
@@ -401,15 +430,15 @@ export default function AnchorApp() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Anchor instructions / recovery ↗
+                    Anchor talimatları ve işlem takibi ↗
                   </a>
                 )}
                 <button
                   className="secondary full"
                   disabled={!!busy}
-                  onClick={() => run('Refreshing transfer', () => refresh(client, active.id))}
+                  onClick={() => run('Transfer yenileniyor', () => refresh(client, active.id))}
                 >
-                  Refresh status
+                  Durumu yenile
                 </button>
                 <button
                   className="text-link"
@@ -419,12 +448,14 @@ export default function AnchorApp() {
                     setInstructions(undefined);
                   }}
                 >
-                  Back to new transfer
+                  Yeni transfere dön
                 </button>
               </div>
             ) : (
               <div className="transfer-body">
-                <label htmlFor="amount">{deposit ? 'You deposit' : 'You withdraw'}</label>
+                <label htmlFor="amount">
+                  {deposit ? 'Yatıracağınız tutar' : 'Çekeceğiniz tutar'}
+                </label>
                 <div className="amount-input">
                   <input
                     id="amount"
@@ -440,40 +471,40 @@ export default function AnchorApp() {
                 </div>
                 <p className="muted">
                   {deposit
-                    ? 'Bank transfer → your Stellar wallet'
-                    : 'Your Stellar wallet → simulated bank payout'}
+                    ? 'Banka transferi ile Stellar cüzdanınıza'
+                    : 'Stellar cüzdanınızdan test banka hesabına'}
                 </p>
                 {quote && (
                   <div className="receipt">
                     <div>
-                      <span>You receive</span>
+                      <span>Alacağınız</span>
                       <strong>
                         {quote.buy_amount} {deposit ? 'USDC' : 'TRY'}
                       </strong>
                     </div>
                     <div>
-                      <span>Anchor fee (included)</span>
+                      <span>Anchor ücreti (dahil)</span>
                       <b>
                         {quote.fee?.total ?? '—'} {deposit ? 'TRY' : 'USDC'}
                       </b>
                     </div>
                     <div>
-                      <span>Quote valid until</span>
+                      <span>Teklifin son geçerliliği</span>
                       <b>{new Date(quote.expires_at).toLocaleTimeString()}</b>
                     </div>
                     <p>
                       {quoteIsLive(quote, now)
-                        ? 'This quote belongs to your connected account.'
-                        : 'Quote expired. Request a fresh quote.'}
+                        ? 'Bu teklif bağlı cüzdanınıza aittir.'
+                        : 'Teklifin süresi doldu. Yeni teklif alın.'}
                     </p>
                   </div>
                 )}
                 {uncertain ? (
                   <div className="notice">
-                    The previous request may have reached the anchor. Refresh history and open that
-                    transfer before creating another.
-                    <button onClick={() => run('Checking history', () => refresh(client))}>
-                      Refresh history
+                    Önceki istek anchor’a ulaşmış olabilir. Yeni transfer açmadan önce geçmişi
+                    yenileyip o işlemi kontrol edin.
+                    <button onClick={() => run('Geçmiş kontrol ediliyor', () => refresh(client))}>
+                      Geçmişi yenile
                     </button>
                   </div>
                 ) : (
@@ -483,15 +514,15 @@ export default function AnchorApp() {
                     onClick={quote && quoteIsLive(quote, now) ? begin : requestQuote}
                   >
                     {quote && quoteIsLive(quote, now)
-                      ? 'Confirm quote & continue →'
-                      : 'Get exchange quote →'}
+                      ? 'Teklifi onayla ve devam et →'
+                      : 'Dönüşüm teklifi al →'}
                   </button>
                 )}
                 <p className="fine-print">
                   {deposit
-                    ? 'Next: review the IBAN and transfer reference.'
-                    : 'The mock anchor uses a sandbox bank account. No real IBAN is required.'}{' '}
-                  Network fees are paid in test XLM.
+                    ? 'Sonraki adımda IBAN ve transfer referansını kontrol edin.'
+                    : 'Mock anchor test banka hesabı kullanır. Gerçek IBAN gerekmez.'}{' '}
+                  Ağ ücretleri test XLM ile ödenir.
                 </p>
               </div>
             )}
@@ -502,18 +533,21 @@ export default function AnchorApp() {
             )}
           </section>
           <aside className="journey">
-            <div className="eyebrow">HOW IT MOVES</div>
-            <h2>{deposit ? 'From lira to your wallet.' : 'From your wallet to lira.'}</h2>
+            <div className="eyebrow">NASIL ÇALIŞIR</div>
+            <h2>{deposit ? 'Liradan cüzdanınıza' : 'Cüzdanınızdan liraya'}</h2>
             {(deposit
               ? [
-                  ['Review your quote', 'Know the rate, fee and USDC amount.'],
-                  ['Simulate the bank transfer', 'An IBAN and reference identify your deposit.'],
-                  ['Receive testnet USDC', 'The anchor sends funds to your wallet.'],
+                  ['Teklifi inceleyin', 'Kuru, ücreti ve USDC tutarını görün.'],
+                  [
+                    'Test banka transferini başlatın',
+                    'IBAN ve referans, yatırma işleminizi tanımlar.',
+                  ],
+                  ['Test USDC’yi alın', 'Anchor varlığı cüzdanınıza gönderir.'],
                 ]
               : [
-                  ['Review your quote', 'See the lira amount before you proceed.'],
-                  ['Approve in your wallet', 'The exact destination and memo are included.'],
-                  ['Track the bank payout', 'The anchor confirms the simulated payment.'],
+                  ['Teklifi inceleyin', 'Devam etmeden önce lira tutarını görün.'],
+                  ['Cüzdanınızda onaylayın', 'Alıcı adresi ve memo işlemde yer alır.'],
+                  ['Banka ödemesini takip edin', 'Anchor simüle edilen ödemeyi onaylar.'],
                 ]
             ).map(([title, body], n) => (
               <div className="journey-step" key={title}>
@@ -525,26 +559,29 @@ export default function AnchorApp() {
               </div>
             ))}
             <div className="provider">
-              <small>POWERED BY</small>
+              <small>ALTYAPI</small>
               <b>TR Mock Anchor ↗</b>
-              <p>SEP standards on Stellar testnet. Independent sandbox; not a BiLira service.</p>
+              <p>
+                Stellar Testnet üzerinde SEP standartları. Bağımsız test ortamıdır, BiLira üretim
+                servisi değildir.
+              </p>
             </div>
           </aside>
         </div>
         <section className="history-panel">
           <div className="history-title">
-            <h2>Transfer activity</h2>
+            <h2>Transfer geçmişi</h2>
             <button
               disabled={!client || !!busy}
-              onClick={() => client && run('Refreshing history', () => refresh(client, active?.id))}
+              onClick={() => client && run('Geçmiş yenileniyor', () => refresh(client, active?.id))}
             >
-              Refresh ↻
+              Yenile ↻
             </button>
           </div>
           {!client ? (
-            <p>Connect your wallet to see its transfers.</p>
+            <p>Transferlerinizi görmek için cüzdanınızı bağlayın.</p>
           ) : history.length === 0 ? (
-            <p>No transfers yet. Your first transfer will appear here.</p>
+            <p>Henüz transfer yok. İlk işleminiz burada görünecek.</p>
           ) : (
             history.map((t) => (
               <button
@@ -555,14 +592,14 @@ export default function AnchorApp() {
               >
                 <span className="history-icon">{t.kind.startsWith('deposit') ? '↙' : '↗'}</span>
                 <span>
-                  <b>{t.kind.startsWith('deposit') ? 'Add lira' : 'Withdraw to bank'}</b>
+                  <b>{t.kind.startsWith('deposit') ? 'Lira yatırma' : 'Bankaya çekme'}</b>
                   <small>{t.started_at ? new Date(t.started_at).toLocaleString() : t.id}</small>
                 </span>
                 <span className="history-amount">
                   {t.amount_in} {t.kind.startsWith('deposit') ? 'TRY' : 'USDC'}
                 </span>
                 <span className="status" data-complete={t.status === 'completed'}>
-                  {statusLabel(t.status)}
+                  {bankStatus(t.status)}
                 </span>
                 <span>↗</span>
               </button>
@@ -571,7 +608,7 @@ export default function AnchorApp() {
         </section>
       </main>
       <footer>
-        Troia · Built on Stellar<span>Card settlement pool is managed and funded separately.</span>
+        Troia · Stellar üzerinde<span>Kartlı ödeme havuzu ayrı yönetilir ve fonlanır.</span>
       </footer>
     </div>
   );

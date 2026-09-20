@@ -2,8 +2,9 @@
 
 **Documentation:** https://troia-docs.vercel.app
 
-Custodial TRY→USDC settlement bridge on Stellar (testnet PoC). A Turkish user pays TRY with a Troy card;
-the operator settles the merchant in USDC from a Stellar pool that is pre-funded and manually replenished by the operator. The spread is revenue.
+Troia is a Chrome extension for Troy cardholders who encounter online merchants that do not accept their card network. At supported Stellar/USDC checkouts, the customer pays in Turkish lira with a Troy card and the merchant receives USDC on Stellar.
+
+The current prototype uses sandbox card payments and Stellar Testnet. Settlement is custodial: the operator pays merchants from a pre-funded USDC pool and replenishes it manually. Troia does not make Troy accepted at every merchant; a supported Stellar checkout is required.
 
 > _"A settlement layer that makes every lira accountable hash-by-hash — it never silently loses money;
 > the one irreversible loss bucket (`LossReview`) is surfaced, never hidden."_ Honest proof boundary:
@@ -18,7 +19,7 @@ the operator settles the merchant in USDC from a Stellar pool that is pre-funded
 
 Troia is a Chrome extension. Its side panel has two distinct flows: Troy card checkout that settles the merchant in test USDC, and user-directed bank deposits/withdrawals through TR Mock Anchor. It uses SEP-1, SEP-7, SEP-10, SEP-38 and SEP-6 exchange endpoints. The helper website only handles explicit Freighter approvals.
 
-**Current limits:** static sites are public; the API uses a development-machine tunnel pending VPS setup. The mock anchor's SEP-6 settlement is delayed. Card payment to onchain merchant settlement was independently verified. All payments use sandbox/testnet assets; no real bank transfer or product delivery occurs.
+**Current limits:** static sites are public; the API uses a development-machine tunnel pending VPS setup. The latest mock-anchor retest passes authentication and quotes but fails deposit creation with HTTP 400; bank deposits/withdrawals are not currently verified end to end. Card payment to onchain merchant settlement was independently verified. See [live test evidence](docs/DEPLOYMENTS.md) and the [anchor retest](docs/ANCHOR-TESTNET.md). All payments use sandbox/testnet assets; no real bank transfer or product delivery occurs.
 
 ## Where to start
 

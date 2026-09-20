@@ -3,7 +3,7 @@
 ## What is implemented
 
 - `/`: dedicated project introduction.
-- Extension popup → **Bank transfers**: persistent extension panel with Freighter wallet, account preparation, Circle testnet USDC trustline, SEP-10 authentication, SEP-38 quotes, SEP-6 deposits/withdrawals, history and status polling.
+- Extension popup → **Banka transferi**: persistent extension panel with Freighter wallet, account preparation, Circle testnet USDC trustline, SEP-10 authentication, SEP-38 quotes, SEP-6 deposits/withdrawals, history and status polling. The Turkish panel uses Troia's ivory, navy and brass visual design.
 - `/wallet`: narrow wallet approval helper only. It is opened by the extension for Freighter connection/signatures.
 - `/app`: now shows the introduction; there is no separate web dashboard.
 - `/store`: existing card checkout demo, kept separate from bank transfers.
@@ -28,7 +28,7 @@ npm ci
 npm run build
 ```
 
-In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `app/extension/dist`. Pin Troia and click **Bank transfers**. The card payment panel also links to bank transfers. On browsers without side-panel support, Troia opens its packaged extension page in a tab.
+In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select `app/extension/dist`. Pin Troia and click **Banka transferi**. The card payment panel also links to bank transfers. On browsers without side-panel support, Troia opens its packaged extension page in a tab.
 
 Connect Freighter on Testnet. Only approval opens a companion web tab; amounts, quotes and history remain inside Troia. Prepare wallet if prompted. Request a TRY deposit quote, confirm, then simulate the bank transfer. Withdraw test USDC by approving the destination and memo in Freighter.
 
@@ -90,3 +90,9 @@ All diagnostic wallets were disposable Stellar Testnet accounts with secrets hel
 process memory; their public addresses were recorded in the private wallet ledger. No user's
 wallet or real funds were used. The local diagnostic trace is in the ignored
 `app/storefront/test-results/anchor-diagnosis-latest.json`.
+
+## Post-submission retest · 20 September 2026 (03:52 Istanbul)
+
+The extension's actual AnchorClient again passed SEP-10 authentication, test-wallet preparation and a firm quote for 100.00 simulated TRY → 2.0396090 test USDC. The service again rejected `deposit-exchange` with the same HTTP 400 and canonical destination-asset error shown above. Its published guide still specifies that asset format.
+
+The test stopped at deposit creation: no deposit was created or simulated, no withdrawal was attempted, and no successful bank transfer is claimed. The isolated Stellar Testnet wallet's public address was recorded in the private competition-wallet ledger; its secret was held only in process memory. No fallback to an unquoted deposit was added.

@@ -77,15 +77,15 @@ export function statusCopy(status: PublicStatus): {
 } {
   switch (status) {
     case 'pending':
-      return { text: 'Waiting for your card payment…', kind: 'info', terminal: false };
+      return { text: 'Kart ödemeniz bekleniyor…', kind: 'info', terminal: false };
     case 'processing':
-      return { text: 'Payment received — confirming…', kind: 'info', terminal: false };
+      return { text: 'Ödeme alındı, doğrulanıyor…', kind: 'info', terminal: false };
     case 'completed':
-      return { text: 'Payment complete.', kind: 'info', terminal: true };
+      return { text: 'Ödeme tamamlandı.', kind: 'info', terminal: true };
     case 'failed':
-      return { text: 'Payment was not completed.', kind: 'error', terminal: true };
+      return { text: 'Ödeme tamamlanamadı.', kind: 'error', terminal: true };
     case 'review':
-      return { text: 'Payment is under review.', kind: 'info', terminal: true };
+      return { text: 'Ödeme incelemede.', kind: 'info', terminal: true };
   }
 }
 

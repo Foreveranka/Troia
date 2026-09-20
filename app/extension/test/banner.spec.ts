@@ -56,10 +56,10 @@ describe('banner', () => {
     const btn = host()!.shadowRoot!.querySelector<HTMLButtonElement>('.pay')!;
     h.setBusy(true);
     expect(btn.disabled).toBe(true);
-    expect(btn.textContent).toContain('Processing');
+    expect(btn.textContent).toContain('İşleniyor');
     h.setBusy(false);
     expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toContain('Pay with Troy card');
+    expect(btn.textContent).toContain('Troy kartınla öde');
   });
 
   it('handle.setStatus reveals the status line with the given kind', () => {
@@ -98,7 +98,7 @@ describe('banner', () => {
     const text = host()!.shadowRoot!.textContent!.toLowerCase();
     expect(text).toContain('troia');
     expect(text).toContain('iyzico');
-    expect(text).toContain('secure');
+    expect(text).toContain('güvenli');
   });
 
   it('the status line is an aria-live region that flips assertive for errors', () => {
@@ -108,7 +108,7 @@ describe('banner', () => {
     expect(status.getAttribute('aria-live')).toBe('polite');
     h.setStatus('Payment could not be completed.', 'error');
     expect(status.getAttribute('aria-live')).toBe('assertive');
-    h.setStatus('Payment received — confirming…', 'info');
+    h.setStatus('Ödeme alındı, doğrulanıyor…', 'info');
     expect(status.getAttribute('aria-live')).toBe('polite');
   });
 

@@ -6,8 +6,9 @@
 // in flight, then a coarse status line) without re-rendering.
 
 const HOST_ID = 'troia-pay-banner-host';
-const PAY_LABEL = 'Pay with Troy card';
-const RETRY_LABEL = 'Try again';
+const PAY_LABEL = 'Troy kartınla öde';
+const RETRY_LABEL = 'Tekrar dene';
+const BUSY_LABEL = 'İşleniyor…';
 
 export interface BannerModel {
   readonly amount: string;
@@ -45,38 +46,41 @@ export function showBanner(model: BannerModel): BannerHandle {
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
     <style>
-      .bar { font-family: system-ui, -apple-system, sans-serif; background:#0b0b0c; color:#fff; display:flex;
-             align-items:center; gap:14px; padding:12px 18px; box-shadow:0 -2px 16px rgba(0,0,0,.3); }
-      .brand { display:flex; align-items:center; gap:7px; flex:none; padding-right:14px;
-               border-right:1px solid rgba(255,255,255,.14); }
-      .brand .mark { width:18px; height:18px; display:block; color:#35e0d0; }
-      .brand .bname { font-size:13px; font-weight:800; letter-spacing:.02em; color:#fff; }
-      .txt { font-size:13px; line-height:1.4; flex:1; }
-      .txt b { font-weight:700; }
-      .note { display:block; margin-top:3px; font-size:11px; color:#9aa0a6; }
-      .note b { color:#c9cdd2; font-weight:600; }
-      .approx { font-size:12px; color:#8ff0e4; opacity:.9; white-space:nowrap; flex:none; }
+      .bar { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+             background:#0C1B30; color:#F4EFE4; display:flex; align-items:center; gap:14px;
+             padding:12px 18px; border-top:2px solid #B08A50; box-shadow:0 -2px 16px rgba(12,27,48,.35); }
+      .brand { display:flex; align-items:center; gap:9px; flex:none; padding-right:14px;
+               border-right:1px solid rgba(244,239,228,.18); }
+      .brand .mark { width:18px; height:18px; display:block; color:#C7A468; }
+      .brand .bname { font-family:'Hoefler Text','Palatino Linotype',Palatino,Georgia,serif;
+                      font-size:14px; font-weight:500; letter-spacing:.14em; color:#F4EFE4; }
+      .txt { font-size:13px; line-height:1.45; flex:1; }
+      .txt b { font-weight:600; }
+      .note { display:block; margin-top:3px; font-size:11px; color:#9CA9BC; }
+      .note b { color:#C7A468; font-weight:600; }
+      .approx { font-size:12px; color:#C7A468; white-space:nowrap; flex:none; }
       .status { font-size:12px; letter-spacing:.01em; white-space:normal; max-width:260px; }
-      .status[data-kind="error"] { color:#ff8a80; }
-      .status[data-kind="info"] { color:#8ff0e4; }
-      .pay { background:#35e0d0; color:#03110f; border:0; border-radius:4px; font-weight:800; font-size:13px;
-             padding:10px 16px; cursor:pointer; letter-spacing:.02em; white-space:nowrap; }
-      .pay:disabled { opacity:.6; cursor:default; }
-      .pay:hover:not(:disabled) { filter:brightness(1.05); }
-      .pay:focus-visible { outline:2px solid #35e0d0; outline-offset:2px; }
-      .x { background:transparent; border:0; color:#9aa0a6; font-size:18px; line-height:1; cursor:pointer; padding:6px; }
-      .x:focus-visible { outline:2px solid #35e0d0; outline-offset:2px; border-radius:4px; }
+      .status[data-kind="error"] { color:#E8A49B; }
+      .status[data-kind="info"] { color:#C7A468; }
+      .pay { background:#B08A50; color:#0C1B30; border:0; border-radius:0; font-weight:700; font-size:12px;
+             text-transform:uppercase; letter-spacing:.08em; padding:12px 18px; cursor:pointer; white-space:nowrap; }
+      .pay:disabled { opacity:.55; cursor:default; }
+      .pay:hover:not(:disabled) { background:#C7A468; }
+      .pay:focus-visible { outline:2px solid #C7A468; outline-offset:2px; }
+      .x { background:transparent; border:0; color:#9CA9BC; font-size:18px; line-height:1; cursor:pointer; padding:6px; }
+      .x:hover { color:#F4EFE4; }
+      .x:focus-visible { outline:2px solid #C7A468; outline-offset:2px; }
     </style>
     <div class="bar">
       <div class="brand">
         <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 15h16M6 15c0-4 3-7 6-7s6 3 6 7"/></svg>
-        <span class="bname">Troia</span>
+        <span class="bname">TROIA</span>
       </div>
-      <div class="txt">Pay <b>${escapeHtml(model.amount)} ${escapeHtml(model.assetCode)}</b> with your Troy card — no crypto needed.<span class="note">Continue on <b>iyzico</b>'s secure card form — Troia never sees your card number.</span></div>
+      <div class="txt"><b>${escapeHtml(model.amount)} ${escapeHtml(model.assetCode)}</b> tutarını Troy kartınızla ödeyin, kripto gerekmez.<span class="note">Güvenli kart formu <b>iyzico</b> üzerinde açılır, Troia kart numaranızı hiçbir zaman görmez.</span></div>
       <span class="approx" hidden></span>
       <div class="status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
       <button class="pay" type="button">${PAY_LABEL}</button>
-      <button class="x" type="button" aria-label="Dismiss">&times;</button>
+      <button class="x" type="button" aria-label="Kapat">&times;</button>
     </div>`;
 
   const payBtn = shadow.querySelector('.pay') as HTMLButtonElement;
@@ -98,7 +102,7 @@ export function showBanner(model: BannerModel): BannerHandle {
       // Leaving the busy state returns the button to its normal "Pay" role (a retry has its own explicit setRetry).
       retryMode = false;
       payBtn.disabled = busy;
-      payBtn.textContent = busy ? 'Processing…' : PAY_LABEL;
+      payBtn.textContent = busy ? BUSY_LABEL : PAY_LABEL;
     },
     setStatus(text: string, kind: 'info' | 'error'): void {
       statusEl.hidden = false;

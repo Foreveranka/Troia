@@ -7,7 +7,7 @@ import { USDC_ISSUER } from './deployment.generated';
 export const STORE = {
   name: 'STORE',
   // This shop's own payee. Troia never records it: the shop declares its destination in the SEP-7 request.
-  merchant: 'GBCUCFGEAJLHYFAZFPJZOSSFLMNXW6TCE4BFFEVMYYJX7LIMRYAMNYAE',
+  merchant: 'GAYKKPSURWA4X6QMYEN5MHQRK5K7MCQG72DC5Y74M2IKIPWVRDZQLVE7',
   usdcCode: 'USDC',
   usdcIssuer: USDC_ISSUER,
 } as const;
@@ -140,3 +140,5 @@ export function cryptoAmount(usdTotal: number, rate: number): string {
   if (rate === 1) return a.toFixed(2); // stablecoin
   return a.toFixed(a >= 1 ? 5 : 6).replace(/\.?0+$/, '');
 }
+
+export { ANCHOR } from '../../extension/src/lib/config';

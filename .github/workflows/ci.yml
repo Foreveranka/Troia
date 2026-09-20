@@ -113,6 +113,17 @@ jobs:
           npm run build
           npm run lint
 
+      - name: Anchor client tests
+        working-directory: app/storefront
+        run: npx vitest run
+
+      - name: Jury demo store build and lint
+        working-directory: app/gamestore
+        run: |
+          npm ci
+          npm run build
+          npm run lint
+
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install "$RUST_VERSION" --profile minimal --target "$WASM_TARGET"
@@ -141,7 +152,9 @@ jobs:
 
       # No overrides: pinned to BOTH canonical deployment anchors, so this proves the real payout was signed by the
       # canonical operator AND settled through the canonical TroyPool — a pay() to any other contract fails here.
-      - name: Offline proof — the report from a REAL testnet payout re-derives
+      - name: Offline proof — historical testnet payout with archived trusted pins
+        env:
+          TROIA_DEPLOYMENT_PATH: packages/reconciler/test/fixtures/deployment.live.json
         run: >
           node --import ./packages/reconciler/bin/block-net.mjs
           ./packages/reconciler/bin/verify.mjs

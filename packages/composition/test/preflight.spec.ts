@@ -30,6 +30,20 @@ function probes(over: Partial<PreflightProbes> = {}): PreflightProbes {
 }
 
 describe('runPreflight — the live-smoke readiness gate (offline, injected probes)', () => {
+  it('manual funding never probes the external issuer fee wallet', async () => {
+    let called = false;
+    const r = await runPreflight(
+      probes({
+        issuerNativeXlm: async () => {
+          called = true;
+          throw new Error('No mint authority');
+        },
+      }),
+      { manualFunding: true },
+    );
+    expect(called).toBe(false);
+    expect(r.ok).toBe(true);
+  });
   it('all green -> report.ok true with one check per dirty dependency', async () => {
     const r = await runPreflight(probes());
     expect(r.ok).toBe(true);

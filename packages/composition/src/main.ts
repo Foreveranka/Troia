@@ -20,6 +20,7 @@ import {
 import { LiveCexOracle, YahooUsdTryHistory } from '@troia/oracle';
 import { intEnv, parseDeployment, requireEnv } from './env.js';
 import { buildTestnetServerDeps } from './testnet-deps.js';
+import { acquireProcessLock } from './process-lock.js';
 import type { TestnetSecrets } from './testnet-deps.js';
 import {
   MetricsRegistry,
@@ -51,11 +52,16 @@ async function main(): Promise<void> {
     deploymentPath,
   );
 
+  const fundingMode = env.TROIA_FUNDING_MODE?.trim() || 'manual';
+  if (fundingMode !== 'manual' && fundingMode !== 'simulated-mint')
+    throw new Error('Invalid TROIA_FUNDING_MODE');
   const iyzicoSecretKey = requireEnv(env, 'IYZICO_SECRET_KEY');
   const secrets: TestnetSecrets = {
     operatorSecret: requireEnv(env, 'TROIA_OPERATOR_SECRET'),
     // the USDC SAC admin key — signs the rebalance mint. SEPARATE from the operator payout key.
-    issuerSecret: requireEnv(env, 'TROIA_ISSUER_SECRET'),
+    ...(fundingMode === 'simulated-mint'
+      ? { issuerSecret: requireEnv(env, 'TROIA_ISSUER_SECRET') }
+      : {}),
     iyzicoApiKey: requireEnv(env, 'IYZICO_API_KEY'),
     iyzicoSecretKey,
     // the webhook HMAC key; iyzico signs the callback with the account secretKey unless a distinct key is issued.
@@ -86,6 +92,9 @@ async function main(): Promise<void> {
   // brand-new TroyPool with a fresh seed. One shared directory would carry the old pool's balance into the new
   // books and make the drift alarm scream about money that is not missing — it is in a contract nobody uses.
   const dataDir = join(env.TROIA_DATA_DIR?.trim() || 'data', deployment.troyPool);
+  const releaseLock = acquireProcessLock(dataDir);
+  process.once('exit', releaseLock);
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => process.exit(0));
 
   // CHANNEL MODE (A-5): comma/whitespace-separated channel S-keys. Optional; absent => single operator.
   // Created + funded by `just add-channels N`. Channels hold fee XLM only — never USDC, never authority.
@@ -96,6 +105,7 @@ async function main(): Promise<void> {
 
   const deps = await buildTestnetServerDeps({
     deployment,
+    fundingMode,
     secrets,
     callbackUrl,
     demoValorSecs,
@@ -111,6 +121,12 @@ async function main(): Promise<void> {
   });
 
   const server = createServer(deps);
+  server.app.get('/healthz', async () => ({
+    status: 'ok',
+    network: 'stellar-testnet',
+    pool: deployment.troyPool,
+    fundingMode,
+  }));
 
   // D-17: metrics + alerting. GET /metrics serves the Prometheus text format; TROIA_ALERT_WEBHOOK_URL
   // (optional, Slack-style incoming webhook) gets the SAME edge-triggered alarms the console gets. Neither can
@@ -232,7 +248,7 @@ async function main(): Promise<void> {
         });
     }, settlementTickMs);
     console.log(
-      `troia rebalance bot armed — demo valör ${demoValorSecs}s, tick ${settlementTickMs}ms`,
+      `troia settlement accounting armed — funding: ${fundingMode}, tick ${settlementTickMs}ms`,
     );
   }
 

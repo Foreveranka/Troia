@@ -24,7 +24,8 @@ ci:
     pnpm eslint .
     pnpm prettier --check .
     (cd app/extension && npm ci && npm run build && npm test)
-    (cd app/storefront && npm ci && npm run build && npm run lint)
+    (cd app/storefront && npm ci && npm run build && npm run lint && npx vitest run)
+    (cd app/gamestore && npm ci && npm run build && npm run lint)
     cargo test --locked
     just verify
     just verify-live
@@ -52,7 +53,7 @@ contract-build:
 # probe) but it moves NO money and creates no checkout form. Run before `just serve` + a real charge.
 preflight:
     pnpm -r run build
-    node --env-file=.env scripts/preflight.mjs
+    node --env-file=$(test -f .env.anchor && echo .env.anchor || echo .env) scripts/preflight.mjs
 
 # serve: stand up the live backend — reads .env + deployment.testnet.json, seeds the pool balance + operator
 # sequence from the chain, and listens. TROIA_CALLBACK_URL is where iyzico sends the CUSTOMER'S BROWSER after
@@ -60,7 +61,7 @@ preflight:
 # same-machine run needs no tunnel (http://localhost:3000/return is accepted). Live — NOT part of the offline gate.
 serve:
     pnpm -r run build
-    node --env-file=.env packages/composition/dist/main.js
+    node --env-file=$(test -f .env.anchor && echo .env.anchor || echo .env) packages/composition/dist/main.js
 
 # --- Phase-gated stubs (implemented later) ---
 
@@ -233,7 +234,7 @@ verify:
 # ONE remaining manual check is that the tx actually landed: open the tx_hash on the explorer (signed != settled).
 verify-live:
     pnpm --filter @troia/reconciler build
-    node --import ./packages/reconciler/bin/block-net.mjs \
+    TROIA_DEPLOYMENT_PATH=packages/reconciler/test/fixtures/deployment.live.json node --import ./packages/reconciler/bin/block-net.mjs \
          ./packages/reconciler/bin/verify.mjs \
          ./packages/reconciler/test/fixtures/recon-report.live.json
 

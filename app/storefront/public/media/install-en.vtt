@@ -1,0 +1,25 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:03.650 line:91% size:88% align:center
+Download the ZIP and extract it.
+
+2
+00:00:03.650 --> 00:00:08.300 line:91% size:88% align:center
+Open chrome://extensions. Enable Developer mode.
+
+3
+00:00:08.300 --> 00:00:11.950 line:91% size:88% align:center
+Click Load unpacked.
+
+4
+00:00:11.950 --> 00:00:17.600 line:91% size:88% align:center
+Select the troia-testnet folder, then click Select.
+
+5
+00:00:17.600 --> 00:00:21.250 line:91% size:88% align:center
+Troia is installed. Keep it enabled.
+
+6
+00:00:21.250 --> 00:00:26.250 line:91% size:88% align:center
+Open Troia from the extensions menu.

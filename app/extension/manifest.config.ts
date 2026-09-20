@@ -1,3 +1,4 @@
+import { ANCHOR, WALLET_BRIDGE_URL } from './src/lib/config';
 import { defineManifest } from '@crxjs/vite-plugin';
 import { BACKEND_BASE_URL, STOREFRONT_ORIGINS } from './src/lib/deployment.generated';
 
@@ -17,12 +18,12 @@ const BACKEND_PATTERN = hostPattern(BACKEND_BASE_URL);
 //   - the sole host permission is the Troia backend, so the background service worker can reach
 //     /intent + /status without CORS (a content-script fetch would be blocked cross-origin),
 //   - no broad permissions, no <all_urls>.
-// The extension holds no keys and signs nothing; it reads the page's SEP-7 request and relays an intent.
+// Card checkout relays SEP-7 intents. Bank transfers request explicit Freighter signatures via the configured helper.
 export default defineManifest({
   manifest_version: 3,
   name: 'Troia',
   version: '0.0.1',
-  description: 'Pay with Troy card',
+  description: 'Troy card checkout and Stellar testnet bank transfers',
   icons: {
     16: 'icons/icon-16.png',
     32: 'icons/icon-32.png',
@@ -53,10 +54,24 @@ export default defineManifest({
   },
   content_scripts: [
     {
+      matches: [hostPattern(WALLET_BRIDGE_URL).replace('/*', '/wallet*')],
+      js: ['src/anchor/bridge-content.ts'],
+      run_at: 'document_idle',
+    },
+    {
       matches: STOREFRONT_PATTERNS,
       js: ['src/content.ts'],
       run_at: 'document_idle',
     },
   ],
-  host_permissions: [...new Set([...STOREFRONT_PATTERNS, BACKEND_PATTERN])],
+  host_permissions: [
+    ...new Set([
+      ...STOREFRONT_PATTERNS,
+      BACKEND_PATTERN,
+      hostPattern(WALLET_BRIDGE_URL),
+      `https://${ANCHOR.domain}/*`,
+      `${new URL(ANCHOR.horizon).origin}/*`,
+      `${new URL(ANCHOR.friendbot).origin}/*`,
+    ]),
+  ],
 });

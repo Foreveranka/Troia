@@ -77,6 +77,8 @@ export interface ConfirmedOrder {
 }
 
 export interface SettlementDeps {
+  /** Manual mode books payouts but never schedules or executes pool top-ups. */
+  readonly manualFunding?: boolean;
   /** The durable roll of money-good payouts. Backed by the evidence log, so it survives a restart. */
   readonly confirmed: {
     all(): readonly ConfirmedOrder[];
@@ -174,6 +176,8 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
         }
       }
 
+      if (deps.manualFunding) return;
+
       const now = clock.nowUnix();
       const outcome = pending.recordIfAbsent({
         orderId: rec.orderId,
@@ -186,6 +190,8 @@ export async function settleAndRebalance(deps: SettlementDeps): Promise<SettleRe
       if (outcome === 'recorded') report.armed += 1;
     });
   }
+
+  if (deps.manualFunding) return report;
 
   // Phase B — SETTLE: refill the pool exactly once per due record.
   for (const dueRec of pending.due(clock.nowUnix())) {

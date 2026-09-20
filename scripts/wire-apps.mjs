@@ -21,7 +21,12 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 let dep;
 try {
-  dep = JSON.parse(readFileSync(join(ROOT, 'deployment.testnet.json'), 'utf8'));
+  dep = JSON.parse(
+    readFileSync(
+      join(ROOT, process.env.TROIA_DEPLOYMENT_PATH || 'deployment.testnet.json'),
+      'utf8',
+    ),
+  );
 } catch {
   console.error('no deployment.testnet.json — see `just fund` (it explains what to do)');
   process.exit(1);
@@ -33,6 +38,10 @@ if (typeof issuer !== 'string' || !/^G[A-Z2-7]{55}$/.test(issuer)) {
 }
 
 const backendUrl = dep.backendUrl;
+const walletBridgeUrl = dep.walletBridgeUrl || 'http://127.0.0.1:5174/wallet';
+const helper = new URL(walletBridgeUrl);
+if (helper.pathname !== '/wallet' || !['https:', 'http:'].includes(helper.protocol))
+  throw new Error('Invalid wallet helper URL');
 const storefrontOrigins = dep.storefrontOrigins;
 if (typeof backendUrl !== 'string' || !/^https?:\/\//.test(backendUrl)) {
   console.error(`deployment.testnet.json: backendUrl is not an http(s) origin: ${backendUrl}`);
@@ -59,8 +68,14 @@ writeFileSync(
 );
 
 writeFileSync(
+  join(ROOT, 'app/gamestore/src/deployment.generated.ts'),
+  HEAD('gamestore') + `export const USDC_ISSUER = '${issuer}';\n`,
+);
+
+writeFileSync(
   join(ROOT, 'app/extension/src/lib/deployment.generated.ts'),
   HEAD('extension') +
+    `export const WALLET_BRIDGE_URL = ${JSON.stringify(walletBridgeUrl)};\n\n` +
     `export const USDC_ISSUER = '${issuer}';\n\n` +
     `export const BACKEND_BASE_URL = '${backendUrl}';\n\n` +
     `export const STOREFRONT_ORIGINS = [\n` +
@@ -73,6 +88,7 @@ console.log(`wired the apps to Troia's deployment:
   backendUrl         ${backendUrl}
   storefrontOrigins  ${storefrontOrigins.join(', ')}
   wrote app/storefront/src/deployment.generated.ts
+  wrote app/gamestore/src/deployment.generated.ts
   wrote app/extension/src/lib/deployment.generated.ts
 
 Rebuild the extension before loading it in Chrome:  cd app/extension && npm run build`);

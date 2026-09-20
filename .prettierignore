@@ -11,3 +11,8 @@ deployment.testnet.json
 # ran last would leave the gate red. Drift is caught by packages/config/test/deployment-pinning.spec.ts instead.
 app/storefront/src/deployment.generated.ts
 app/extension/src/lib/deployment.generated.ts
+
+.deploy
+data
+logs
+app/gamestore/src/deployment.generated.ts

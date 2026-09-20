@@ -3,11 +3,22 @@
 **Documentation:** https://troia-docs.vercel.app
 
 Custodial TRY→USDC settlement bridge on Stellar (testnet PoC). A Turkish user pays TRY with a Troy card;
-the operator settles the merchant in USDC from a Stellar pool that is pre-funded and automatically topped up from the collected TRY. The spread is revenue.
+the operator settles the merchant in USDC from a Stellar pool that is pre-funded and manually replenished by the operator. The spread is revenue.
 
 > _"A settlement layer that makes every lira accountable hash-by-hash — it never silently loses money;
 > the one irreversible loss bucket (`LossReview`) is surfaced, never hidden."_ Honest proof boundary:
 > **`signed ≠ settled`** (see [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)).
+
+## Jury preview - Stellar Pro Hackathon
+
+- **Install Troia:** https://troia-extension.vercel.app
+- **Interactive demo:** https://troia-demo-store.vercel.app
+- **Current contracts and chain evidence:** [DEPLOYMENTS.md](docs/DEPLOYMENTS.md)
+- **Setup, architecture and operator runbook:** [JURY-READINESS.md](docs/JURY-READINESS.md)
+
+Troia is a Chrome extension. Its side panel has two distinct flows: Troy card checkout that settles the merchant in test USDC, and user-directed bank deposits/withdrawals through TR Mock Anchor. It uses SEP-1, SEP-7, SEP-10, SEP-38 and SEP-6 exchange endpoints. The helper website only handles explicit Freighter approvals.
+
+**Current limits:** static sites are public; the API uses a development-machine tunnel pending VPS setup. The mock anchor's SEP-6 settlement is delayed. Card payment to onchain merchant settlement was independently verified. All payments use sandbox/testnet assets; no real bank transfer or product delivery occurs.
 
 ## Where to start
 
@@ -91,7 +102,7 @@ Visa `4111111111111129`. Full list: [iyzico test cards](https://docs.iyzico.com/
 
 ## Secret boundary
 
-Secrets live **only** in `.env` (git-ignored); the repo carries `.env.example` placeholders and nothing else that
+Secrets live **only** in local ignored environment files (`.env` or `.env.anchor`); the repo carries `.env.example` placeholders and nothing else that
 is secret. It does carry `deployment.testnet.json` — the five **public** identifiers of the one deployment
 (issuer, USDC asset contract, `TroyPool`, operator, admin) plus the backend URL and storefront origins, the same
 identifiers published in
@@ -101,26 +112,8 @@ bug and is caught by a guard test.
 
 ## Status
 
-The money-safety core is built and tested offline — the settlement state machine, memo/identity derivation, the
-sequence allocator, a deterministic FX oracle with commission pricing, a double-entry ledger, the `TroyPool`
-Soroban contract, the iyzico direct-sale adapter, and the reviewer-verifiable reconciler (design in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); `just verify` proves the reconciler offline, see
-[`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)). Settlement is **money-first** — the reversible TRY charge is
-taken before the irreversible USDC payout. The full stack now settles a real order end-to-end on testnet: the
-storefront emits a USDC SEP-7, the "Pay with Troy card" extension drives an iyzico sandbox charge, and the backend
-auto-submits the `pay()`; the pool then tops itself up from the collected TRY, everything it books survives a
-crash, and the chain answers for itself — a payout tail flags any outflow it never authorized, and a live
-reconciler confirms each settlement by the contract's own index. The on-chain proofs are in
-[`docs/DEPLOYMENTS.md`](docs/DEPLOYMENTS.md).
+The extension, public introductory site, separate shopping demo, backend and Soroban pool are implemented for **Stellar Testnet**. A live iyzico sandbox checkout was settled onchain to the merchant using the same Circle testnet USDC as TR Mock Anchor. Pool funding is manual. SQLite orders, reservations, sequence state and append-only accounting survive process restarts.
 
-The honest boundary is **`signed ≠ settled`** ([`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)): testnet
-exercises every guarantee with valueless self-issued USDC, so the mechanism is identical to what mainnet would run
-while economic solvency — actually acquiring the USDC — and the regulated mainnet phase stay deferred
-([`docs/SCOPE_AND_LIMITATIONS.md`](docs/SCOPE_AND_LIMITATIONS.md)). When an irreversible loss can occur it surfaces
-as `review`, never hidden, and it is **ours** by design, never the customer's — with one known crash-window
-exception, stated in full in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
+The static sites are public. Always-on API hosting still needs the VPS, and the shared anchor currently has a SEP-6 settlement outage. These are not represented as completed work. See [current deployment evidence](docs/DEPLOYMENTS.md) and [jury runbook](docs/JURY-READINESS.md).
 
-What remains is hardening, not the proof story: a public shareable deploy and a short proof video, a load/soak test
-(the live runs are single manual smokes), and the `[mainnet-blocker]` gaps — chiefly a durable order store, since
-an order still in flight is today forgotten by a restart (safely, never toward a double pay). Each gap is stated in
-full, with why it is money-safe and what closes it, in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
+This is not a mainnet launch or a complete security audit. External provider onboarding, production operations, cross-device withdrawal recovery, load/soak testing and compliance remain outside the testnet preview. Older architecture notes may describe the self-issued/mint simulation; current operation is explicitly manual funding with an external testnet issuer.

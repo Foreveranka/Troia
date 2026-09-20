@@ -1,25 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Troia — Manual payment</title>
+    <title>Troia, manuel ödeme</title>
     <link rel="stylesheet" href="./wizard.css" />
   </head>
   <body>
     <main class="wiz">
       <header class="hd">
-        <img class="logo" src="../popup/assets/logo.png" alt="Troia logo" />
+        <img class="logo" src="../popup/assets/logo.png" alt="Troia logosu" />
         <div>
-          <h1>Manual payment</h1>
-          <p class="tag">Pay any USDC-on-Stellar address with your Troy card</p>
+          <h1>Manuel ödeme</h1>
+          <p class="tag">Stellar üzerindeki herhangi bir USDC adresine Troy kartınızla ödeyin</p>
         </div>
       </header>
 
-      <!-- STEP 1: details -->
+      <a href="../anchor/index.html" style="display: block; margin: 18px 0; color: inherit"
+        >Banka işlemleri · Yatır / çek ↗</a
+      >
+      <!-- ADIM 1: bilgiler -->
       <section id="step-details">
         <label class="field">
-          <span class="k">Recipient’s Stellar address</span>
+          <span class="k">Alıcının Stellar adresi</span>
           <input
             id="destination"
             type="text"
@@ -29,7 +32,7 @@
           />
         </label>
         <label class="field">
-          <span class="k">Amount (USDC)</span>
+          <span class="k">Tutar (USDC)</span>
           <input
             id="amount"
             type="text"
@@ -41,51 +44,53 @@
         </label>
 
         <div class="notice">
-          <b>No memo support.</b> Exchange deposit addresses (Binance, Coinbase, …) require a
-          deposit memo and <b>cannot be paid</b> — the address is checked and refused before any
-          charge. Use a personal or merchant wallet address.
+          <b>Memo desteği yok.</b> Borsa yatırma adresleri (Binance, Coinbase ve benzerleri) memo
+          istediği için <b>ödenemez</b>. Adres, hiçbir tahsilat yapılmadan önce kontrol edilir ve
+          reddedilir. Kişisel ya da işletme cüzdan adresi kullanın.
         </div>
 
         <p class="error" id="details-error" hidden></p>
-        <button class="primary" id="continue" type="button">Continue</button>
+        <button class="primary" id="continue" type="button">Devam</button>
       </section>
 
-      <!-- STEP 2: confirm -->
+      <!-- ADIM 2: onay -->
       <section id="step-confirm" hidden>
         <div class="review">
-          <div class="row"><span class="k">Paying to</span><code class="v" id="c-dest"></code></div>
-          <div class="row"><span class="k">Amount</span><span class="v" id="c-amount"></span></div>
+          <div class="row"><span class="k">Alıcı</span><code class="v" id="c-dest"></code></div>
+          <div class="row"><span class="k">Tutar</span><span class="v" id="c-amount"></span></div>
           <div class="row">
-            <span class="k">You’ll pay about</span><span class="v" id="c-try">…</span>
+            <span class="k">Yaklaşık ödeyeceğiniz</span><span class="v" id="c-try">…</span>
           </div>
         </div>
         <div class="notice">
-          The final lira price is fixed when the card form opens. The recipient gets exactly the
-          USDC amount above; delivery is on-chain and verifiable.
+          Nihai lira fiyatı, kart formu açıldığı anda sabitlenir. Alıcı yukarıdaki USDC tutarının
+          tamamını alır, teslimat zincir üzerinde ve doğrulanabilir.
         </div>
         <p class="error" id="confirm-error" hidden></p>
         <div class="actions">
-          <button class="ghost" id="back" type="button">Back</button>
-          <button class="primary" id="pay" type="button">Pay with Troy card</button>
+          <button class="ghost" id="back" type="button">Geri</button>
+          <button class="primary" id="pay" type="button">Troy kartınla öde</button>
         </div>
       </section>
 
-      <!-- STEP 3: status -->
+      <!-- ADIM 3: durum -->
       <section id="step-status" hidden>
         <div class="status">
           <span class="spinner" id="spinner"></span>
-          <p id="status-text">Opening the secure card form…</p>
+          <p id="status-text">Güvenli kart formu açılıyor…</p>
         </div>
         <div class="receipt" id="receipt" hidden>
-          <div class="row"><span class="k">Order</span><code class="v" id="r-order"></code></div>
-          <div class="row"><span class="k">Charged</span><span class="v" id="r-try"></span></div>
+          <div class="row"><span class="k">Sipariş</span><code class="v" id="r-order"></code></div>
           <div class="row">
-            <span class="k">On-chain proof</span><code class="v" id="r-tx"></code>
+            <span class="k">Tahsil edilen</span><span class="v" id="r-try"></span>
+          </div>
+          <div class="row">
+            <span class="k">Zincir üzerindeki kanıt</span><code class="v" id="r-tx"></code>
           </div>
         </div>
         <p class="error" id="status-error" hidden></p>
         <div class="actions">
-          <button class="ghost" id="again" type="button" hidden>Make another payment</button>
+          <button class="ghost" id="again" type="button" hidden>Yeni bir ödeme yap</button>
         </div>
       </section>
     </main>

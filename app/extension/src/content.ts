@@ -20,7 +20,7 @@ import type { PopupState, QuoteOutcome } from './lib/messages';
 
 console.info('[troia] content script active on', location.origin);
 
-const NOT_CHARGED = ' — you were not charged.';
+const NOT_CHARGED = ', kartınızdan tahsilat yapılmadı.';
 const POLL_INTERVAL_MS = 3000;
 // Poll budgets are phase-aware: while the buyer is still on iyzico's hosted card form the order sits at
 // 'pending', so that phase gets a generous window; once payment is received ('processing') a fresh, tighter
@@ -87,8 +87,8 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
       // live on the backend and its card form may still be open, so minting a second order could double-charge.
       h.setStatus(
         sawProcessing
-          ? 'Payment received — settlement is taking a little longer and will complete shortly. You can safely close this.'
-          : `Payment session timed out${NOT_CHARGED} Refresh to try again.`,
+          ? 'Ödeme alındı. Transfer biraz daha uzun sürüyor ve kısa süre içinde tamamlanacak. Bu pencereyi güvenle kapatabilirsiniz.'
+          : 'Ödeme durumu doğrulanamadı. Açık ödeme sekmesini kontrol edin; aynı ödemeyi yeniden başlatmayın.',
         sawProcessing ? 'info' : 'error',
       );
       h.hidePay();
@@ -118,7 +118,7 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
           // should a future contract ever surface a CHARGED order as 'failed', we must NOT offer retry (that could
           // double-charge), so we show the reversal copy and hide the pay button.
           h.setStatus(
-            'Payment could not be completed — if your card was charged it will be reversed. Start a new order to try again.',
+            'Ödeme tamamlanamadı. Kartınızdan tahsilat yapıldıysa iade edilecek. Tekrar denemek için yeni bir sipariş başlatın.',
             'error',
           );
           h.hidePay();
@@ -127,7 +127,7 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
           // Never offer retry (that could double-charge) — but never leave a paid shopper button-less and blank
           // either: give an order reference and money reassurance. orderId is safe in setStatus (textContent).
           h.setStatus(
-            `Payment held for review — order ${orderId}. If your card was charged it will be reversed automatically; otherwise we'll reach out. Keep this reference — you don't need to do anything now.`,
+            `Ödeme incelemeye alındı, sipariş ${orderId}. Kartınızdan tahsilat yapıldıysa otomatik olarak iade edilecek, aksi halde size ulaşacağız. Bu numarayı saklayın, şu an yapmanız gereken bir şey yok.`,
             'info',
           );
           h.hidePay();
@@ -178,14 +178,14 @@ function pay(detection: Detection): void {
   };
   void buildIntentBody(detection).then((built) => {
     if (!built.ok) {
-      fail(`Couldn't start the payment${NOT_CHARGED}`);
+      fail(`Ödeme başlatılamadı${NOT_CHARGED}`);
       return;
     }
     chrome.runtime.sendMessage(
       { type: 'TROIA_INTENT', body: built.body },
       (outcome: IntentOutcome | undefined) => {
         if (chrome.runtime.lastError || outcome === undefined) {
-          fail(`Couldn't reach the payment service${NOT_CHARGED}`);
+          fail(`Ödeme servisine ulaşılamadı${NOT_CHARGED}`);
           return;
         }
         if (!outcome.ok) {
@@ -193,8 +193,8 @@ function pay(detection: Detection): void {
           // nothing was charged — say that specifically; otherwise the generic start failure.
           fail(
             outcome.error === 'tab_open_failed'
-              ? `Couldn't open the card form${NOT_CHARGED}`
-              : `Couldn't start the payment${NOT_CHARGED}`,
+              ? `Kart formu açılamadı${NOT_CHARGED}`
+              : `Ödeme başlatılamadı${NOT_CHARGED}`,
           );
           console.info('[troia] intent rejected', { status: outcome.status, error: outcome.error });
           return;
@@ -227,7 +227,7 @@ function requestRetry(orderId: string): void {
   if (h === null || pendingRetry) return;
   pendingRetry = true;
   h.setBusy(true); // "Processing…" while the storefront mints a fresh order
-  h.setStatus('Starting a new attempt…', 'info');
+  h.setStatus('Yeni bir deneme başlatılıyor…', 'info');
   window.postMessage({ source: 'troia-extension', type: 'TROIA_RETRY', orderId }, location.origin);
   // Safety net: if no fresh order ever appears, don't leave the button stuck — re-offer the retry. The handle is
   // stored so a completed retry cancels it (clearPendingRetry), and a re-request cancels a prior one.
@@ -236,7 +236,10 @@ function requestRetry(orderId: string): void {
     retryTimer = null;
     if (!pendingRetry) return; // the retry already completed (a fresh banner replaced this one)
     pendingRetry = false;
-    handle?.setStatus(`Couldn't start a new attempt${NOT_CHARGED} Refresh to try again.`, 'error');
+    handle?.setStatus(
+      `Yeni deneme başlatılamadı${NOT_CHARGED} Sayfayı yenileyip tekrar deneyin.`,
+      'error',
+    );
     handle?.setRetry();
   }, RETRY_TIMEOUT_MS);
 }

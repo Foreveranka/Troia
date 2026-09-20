@@ -1,0 +1,620 @@
+:root {
+  color-scheme: light;
+}
+body {
+  margin: 0;
+}
+.troia-site {
+  --navy: #0c1b30;
+  --ink: #122139;
+  --sub: #566174;
+  --cream: #f4efe4;
+  --paper: #faf7f0;
+  --gold: #a77d43;
+  --line: #dcd5c8;
+  background: var(--cream);
+  color: var(--ink);
+  font:
+    14px/1.6 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Arial,
+    sans-serif;
+}
+.troia-site * {
+  box-sizing: border-box;
+}
+.troia-site a {
+  color: inherit;
+  text-decoration: none;
+}
+.troia-site :focus-visible {
+  outline: 3px solid #a77d43;
+  outline-offset: 5px;
+}
+.troia-site h1,
+.troia-site h2,
+.troia-site h3,
+.troia-site p {
+  margin: 0;
+}
+.troia-site button {
+  font: inherit;
+  cursor: pointer;
+}
+.section-width {
+  max-width: 1248px;
+  margin-inline: auto;
+}
+.site-nav {
+  max-width: 1344px;
+  margin: auto;
+  padding: 25px 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.troia-site .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font:
+    24px Georgia,
+    serif;
+  letter-spacing: 4px;
+}
+.brand img {
+  width: 34px;
+  height: 34px;
+}
+.site-nav nav {
+  display: flex;
+  gap: 30px;
+  font-size: 12px;
+}
+.site-nav nav a:hover {
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+.troia-site .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 35px;
+  background: var(--navy);
+  color: var(--paper);
+  padding: 16px 23px;
+  border: 1px solid var(--navy);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  transition: background 0.2s;
+}
+.troia-site .button:hover {
+  background: #243a56;
+}
+.troia-site .button.compact {
+  padding: 11px 19px;
+}
+.intro {
+  display: grid;
+  grid-template-columns: 1.12fr 1fr;
+  gap: 60px;
+  align-items: center;
+  padding-block: 56px 65px;
+}
+.overline {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gold);
+}
+.overline i {
+  width: 5px;
+  height: 5px;
+  background: var(--gold);
+}
+.troia-site h1 {
+  font:
+    400 clamp(58px, 6vw, 84px)/1.04 Georgia,
+    'Times New Roman',
+    serif;
+  letter-spacing: -3px;
+  margin: 25px 0;
+}
+.troia-site h1 em,
+.troia-site h2 em {
+  color: var(--gold);
+  font-weight: 400;
+}
+.intro-copy > p {
+  max-width: 375px;
+  color: var(--sub);
+  font-size: 15px;
+  line-height: 1.85;
+}
+.actions {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 29px 0 18px;
+}
+.watch-link {
+  font-size: 12px;
+}
+.watch-link:hover {
+  text-decoration: underline;
+}
+.fine {
+  font-size: 10px;
+  color: #77808b;
+  display: flex;
+  gap: 10px;
+}
+.extension-stage {
+  background: #e8e0d2;
+  min-height: 560px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 46px 30px;
+  isolation: isolate;
+  overflow: hidden;
+}
+.stage-top,
+.stage-bottom {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  font-size: 7px;
+  letter-spacing: 1.3px;
+  color: #8e7e65;
+}
+.stage-top {
+  top: 20px;
+}
+.stage-bottom {
+  bottom: 18px;
+}
+.stage-line {
+  position: absolute;
+  inset: 16% -20%;
+  border-top: 1px solid #c6baa1;
+  border-bottom: 1px solid #c6baa1;
+  transform: rotate(-35deg);
+  z-index: -1;
+}
+.real-popup {
+  width: 285px;
+  max-width: 100%;
+  height: auto;
+  box-shadow: 0 22px 45px #28303a26;
+  transform: rotate(2deg);
+  border: 1px solid #d0c3ac;
+}
+.brand-rail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-block: 1px solid var(--line);
+  padding: 25px 0;
+  font-size: 12px;
+  gap: 20px;
+}
+.brand-rail > span:first-child {
+  font-size: 8px;
+  letter-spacing: 1.2px;
+  color: #8c806d;
+}
+.brand-rail > b {
+  font-weight: 500;
+}
+.brand-rail > span {
+  color: #ab8a5c;
+}
+.experience {
+  padding-block: 85px;
+}
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 35px;
+  margin-bottom: 38px;
+}
+.troia-site h2 {
+  font:
+    400 44px/1.16 Georgia,
+    serif;
+  letter-spacing: -1.6px;
+  margin-top: 18px;
+}
+.section-heading > p {
+  font-size: 13px;
+  color: var(--sub);
+  max-width: 295px;
+}
+.experience-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 38px;
+}
+.experience-grid article {
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+}
+.experience-grid article > span {
+  color: var(--gold);
+  font-size: 11px;
+}
+.experience-grid h3 {
+  font:
+    400 24px Georgia,
+    serif;
+  margin: 25px 0 12px;
+}
+.experience-grid p {
+  font-size: 13px;
+  color: var(--sub);
+  max-width: 290px;
+}
+.install {
+  background: var(--navy);
+  color: var(--cream);
+  padding-block: 70px;
+  scroll-margin-top: 12px;
+}
+.install .overline {
+  color: #c9aa77;
+}
+.install h2 em {
+  color: #c9aa77;
+}
+.install .section-heading > p {
+  color: #aab2bd;
+}
+.install-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 50px;
+}
+.video-frame {
+  border: 1px solid #3d4656;
+  background: #122138;
+}
+.video-frame video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #122138;
+}
+.video-label,
+.video-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 15px 18px;
+  font-size: 9px;
+  color: #c7c1b4;
+}
+.video-label {
+  letter-spacing: 1px;
+  border-bottom: 1px solid #3d4656;
+}
+.video-foot a {
+  color: #d4b784;
+  white-space: nowrap;
+}
+.download-row {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-top: 24px;
+}
+.troia-site .button.gold {
+  background: #c7a468;
+  color: #0c1b30;
+  border-color: #c7a468;
+}
+.download-row > span {
+  font-size: 10px;
+  color: #aab2bd;
+}
+.install-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 18px;
+}
+.install-steps li {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 15px;
+  border-bottom: 1px solid #354050;
+  padding-bottom: 18px;
+}
+.install-steps li:last-child {
+  border: 0;
+}
+.install-steps li > span {
+  color: #c7a468;
+  font-size: 10px;
+  line-height: 24px;
+}
+.install-steps h3 {
+  font:
+    400 20px Georgia,
+    serif;
+  margin-bottom: 5px;
+}
+.install-steps p {
+  font-size: 12px;
+  color: #aeb8c5;
+}
+.copy-url {
+  display: flex;
+  gap: 16px;
+  background: #223249;
+  color: #d5bc90;
+  border: 1px solid #4d5360;
+  padding: 7px 9px;
+  font-size: 10px !important;
+  margin-top: 10px;
+}
+.install-help {
+  border-top: 1px solid #354050;
+  padding-top: 20px;
+  margin-top: 32px;
+  font-size: 12px;
+}
+.install-help summary {
+  cursor: pointer;
+  color: #d1c9bb;
+}
+.install-help p {
+  margin-top: 14px;
+  color: #aeb8c5;
+  max-width: 950px;
+}
+.bank {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 35px 60px;
+  padding-block: 85px;
+}
+.bank > div > p {
+  max-width: 380px;
+  color: var(--sub);
+  font-size: 13px;
+  margin-top: 20px;
+}
+.bank-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  border: 1px solid #d4c9b6;
+  background: #eee7da;
+  padding: 40px 20px;
+  gap: 18px;
+}
+.bank-diagram > span {
+  font:
+    38px Georgia,
+    serif;
+  display: grid;
+  gap: 15px;
+}
+.bank-diagram small {
+  font:
+    7px Arial,
+    sans-serif;
+  letter-spacing: 1px;
+  color: #807360;
+}
+.bank-diagram > b {
+  font-weight: 400;
+  font-size: 24px;
+  color: #a88a5e;
+}
+.service-note {
+  grid-column: 1/-1;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+  font-size: 11px;
+  color: #7d7465;
+}
+.service-note b {
+  color: #967240;
+  margin-right: 15px;
+}
+.final-cta {
+  border-block: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  padding-block: 45px;
+}
+.final-cta h2 {
+  font-size: 38px;
+}
+.site-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-block: 35px;
+  font-size: 10px;
+  color: #787d83;
+}
+.site-footer .brand {
+  font-size: 19px;
+  color: #0c1b30;
+}
+.site-footer .brand img {
+  width: 28px;
+  height: 28px;
+}
+@media (max-width: 1340px) {
+  .section-width {
+    margin-inline: 48px;
+  }
+}
+@media (max-width: 950px) {
+  .intro {
+    gap: 30px;
+  }
+  .troia-site h1 {
+    font-size: 62px;
+  }
+  .extension-stage {
+    min-height: 510px;
+    padding-inline: 15px;
+  }
+  .real-popup {
+    width: 260px;
+  }
+  .site-nav nav {
+    gap: 18px;
+  }
+  .install-grid {
+    gap: 28px;
+  }
+  .download-row {
+    flex-wrap: wrap;
+  }
+  .video-foot {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .troia-site h2 {
+    font-size: 38px;
+  }
+  .bank {
+    gap: 30px;
+  }
+}
+@media (max-width: 700px) {
+  .section-width {
+    margin-inline: 22px;
+  }
+  .site-nav {
+    padding: 20px 22px;
+  }
+  .site-nav nav {
+    display: none;
+  }
+  .intro {
+    grid-template-columns: 1fr;
+    gap: 35px;
+    padding-block: 38px;
+  }
+  .troia-site h1 {
+    font-size: 66px;
+  }
+  .intro-copy > p {
+    font-size: 14px;
+  }
+  .extension-stage {
+    min-height: 535px;
+  }
+  .real-popup {
+    width: 280px;
+  }
+  .brand-rail {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    font-size: 11px;
+  }
+  .brand-rail > span:first-child {
+    width: 100%;
+    text-align: center;
+  }
+  .experience {
+    padding-block: 50px;
+  }
+  .section-heading {
+    display: block;
+    margin-bottom: 28px;
+  }
+  .section-heading > p {
+    margin-top: 20px;
+  }
+  .experience-grid {
+    grid-template-columns: 1fr;
+    gap: 26px;
+  }
+  .experience-grid h3 {
+    margin-top: 13px;
+  }
+  .experience-grid p {
+    max-width: none;
+  }
+  .install {
+    padding-block: 48px;
+  }
+  .install-grid {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+  .install-steps {
+    gap: 17px;
+  }
+  .bank {
+    grid-template-columns: 1fr;
+    padding-block: 50px;
+  }
+  .bank-diagram {
+    min-height: 180px;
+  }
+  .bank-diagram > span {
+    font-size: 34px;
+  }
+  .final-cta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .site-footer {
+    flex-wrap: wrap;
+  }
+  .site-footer > span:last-child {
+    width: 100%;
+  }
+  .overline {
+    font-size: 8px;
+  }
+  .fine {
+    font-size: 9px;
+  }
+  .troia-site h2 {
+    font-size: 37px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .troia-site * {
+    transition: none !important;
+  }
+}
+
+/* Keep optional captions unobtrusive in the embedded installation player. */
+.video-frame video::cue {
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  color: #fff;
+  background-color: rgba(12, 27, 48, 0.82);
+}
+.video-frame video:fullscreen::cue {
+  font-size: 18px;
+}

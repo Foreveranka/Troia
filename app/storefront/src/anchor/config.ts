@@ -1,0 +1,1 @@
+export { ANCHOR } from '../config';

@@ -5,7 +5,7 @@ import { buildIntentBody, intentUiAction, statusCopy } from '../src/lib/intent';
 import type { IntentResponse, PublicStatus } from '../src/lib/intent';
 
 const MERCHANT = 'GA4WBDANMT6MF6VMFFKMZIR6QE2XBEETNHANAMRBQC2XGSST3GRNIESX';
-const ISSUER = 'GCRAO5VCCWUSHAOJ5LDVGD2T6HSIRBPEU4TDY6XP4GSVTOTO2KZI4N5W';
+import { USDC_ISSUER as ISSUER } from '../src/lib/deployment.generated';
 const MEMO_STAB12CD = 'e01397d329505f05c70b253c3f2e925f488cd5b07a9d9336e36c463f96020db0';
 
 function payableUri(memo = 'ST-AB12CD', amount = '62.00'): string {

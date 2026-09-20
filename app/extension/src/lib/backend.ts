@@ -109,7 +109,16 @@ async function fetchSessionToken(
   }
   let res: Response;
   try {
-    res = await fetchWithTimeout(doFetch, `${baseUrl}/session`, { method: 'POST' }, timeoutMs);
+    res = await fetchWithTimeout(
+      doFetch,
+      `${baseUrl}/session`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      },
+      timeoutMs,
+    );
   } catch (e) {
     // keep the failure vocabulary the caller already speaks: a dead network at /session IS a dead network
     return { ok: false, error: isTimeout(e) ? 'timeout' : 'network' };

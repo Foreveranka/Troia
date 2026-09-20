@@ -3,7 +3,14 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/target/**', '**/*.wasm'],
+    ignores: [
+      'app/storefront/test-results/**',
+      '.deploy/**',
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/target/**',
+      '**/*.wasm',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

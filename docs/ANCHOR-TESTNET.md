@@ -66,3 +66,27 @@ After a withdrawal timeout, refresh history and inspect the transaction; do not 
 The UI checks discovered origin/network/asset, verifies SEP-10, checks quote expiry and wallet-signed transaction contents, and compares amounts using integer units. Firm quotes use `deposit-exchange` and `withdraw-exchange`, because ordinary endpoints can ignore the quote ID. These checks do not constitute a full audit.
 
 References: https://tr-mock-anchor.fly.dev/guide and https://github.com/CheesecakeLabs/stellar-anchor-skill
+
+## Retest · 20 September 2026 (03:00 Istanbul)
+
+The current installation video was verified against the published media. Troia's API health
+endpoint and the anchor's health, SEP-1 discovery, SEP-6 info and SEP-38 info returned HTTP 200.
+The extension's actual AnchorClient passed SEP-10 authentication, test-wallet preparation and
+obtained a firm quote for 100.00 simulated TRY → 2.0396090 test USDC.
+
+The normal application path failed at `GET /sep6/deposit-exchange` with HTTP 400:
+`unsupported destination_asset 'stellar:USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'; this anchor ramps USDC`.
+The service's own `/guide` documents that exact destination-asset format. No application
+fallback was introduced: silently dropping a user's firm quote would change the pricing promise.
+
+An isolated diagnostic used the documented ordinary `/sep6/deposit` endpoint without a firm
+quote. The sandbox accepted 100.00 TRY, but transaction `sep_r7t0bfcjt06sy0fqx3fu` remained
+`pending_anchor` and its destination's onchain test USDC balance remained zero. Check the
+[anchor transaction](https://tr-mock-anchor.fly.dev/sep6/tx/sep_r7t0bfcjt06sy0fqx3fu)
+before attempting any retry. This is not a completed deposit. A funded withdrawal could not
+be tested from that account because the deposit did not deliver USDC.
+
+All diagnostic wallets were disposable Stellar Testnet accounts with secrets held only in
+process memory; their public addresses were recorded in the private wallet ledger. No user's
+wallet or real funds were used. The local diagnostic trace is in the ignored
+`app/storefront/test-results/anchor-diagnosis-latest.json`.

@@ -23,6 +23,18 @@ export { EngineError } from './engine/errors.js';
 
 export type { EngineConfig, EngineStellarConfig, EnginePspConfig } from './engine/config.js';
 export type { OrderCtx } from './ctx.js';
+export {
+  parseBankInstructions,
+  validTurkishIban,
+  bankTransferEvent,
+  bankTransferReference,
+} from './bank-transfer.js';
+export type {
+  BankTransferInstructions,
+  BankTransferRequest,
+  BankTransferObservation,
+  BankTransferProvider,
+} from './bank-transfer.js';
 export type { PolicyConfig } from './policy.js';
 export { OFFLINE_DEFAULT_POLICY } from './policy.js';
 export type { PricingPolicy, PricingCommissionPolicy, PricingPspPolicy } from './pricing-policy.js';

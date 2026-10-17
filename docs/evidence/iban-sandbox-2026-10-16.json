@@ -1,0 +1,44 @@
+{
+  "network": "Stellar Testnet",
+  "time": "2026-10-16T02:24:11.544Z",
+  "orderId": "iban-e2e-1792117450017",
+  "merchant": "GAYKKPSURWA4X6QMYEN5MHQRK5K7MCQG72DC5Y74M2IKIPWVRDZQLVE7",
+  "amountStroops": "1000000",
+  "balanceBefore": "0.0000000",
+  "instructions": {
+    "providerId": "tr-mock-anchor",
+    "transferId": "sep_3vqim7u8d2ol6rt4ex78",
+    "orderId": "iban-e2e-1792117450017",
+    "reference": "TRMA-HVJT-CE69",
+    "iban": "TR050009900000000000000001",
+    "beneficiary": "TR Mock Anchor Teknoloji A.\u015e. (TEST)",
+    "amountTry": "4.98",
+    "currency": "TRY",
+    "expiresAtUnix": 1792118351
+  },
+  "status": "completed",
+  "receipt": {
+    "orderId": "iban-e2e-1792117450017",
+    "status": "completed",
+    "txHash": "ba4f1ca92bcb782546f77d0e59cb5ddc86ee3b617346d6b821383622c6b1bdee",
+    "paidPriceTry": "4.98"
+  },
+  "balanceAfter": "0.1000000",
+  "anchorTransactionHash": "457ebcf8d914ee668e13e7f15d68a4fc4dd4f469529501f4a4e8d30aaf8972d0",
+  "collectionAccount": "GBFSSAAKRNF7QS4GJVYNO566YJQW6773HQ33K2HZBB27YTXO32PARN6O",
+  "anchorUsdcReceived": "0.1001958",
+  "notes": "Bank leg simulated. Both USDC legs verified on Stellar testnet. Pool replenishment manual.",
+  "publicGatewayTest": {
+    "orderId": "iban-e2e-1792117877902",
+    "status": "completed",
+    "balanceBefore": "0.1000000",
+    "balanceAfter": "0.2000000",
+    "receipt": {
+      "orderId": "iban-e2e-1792117877902",
+      "status": "completed",
+      "txHash": "8d7ec2185dab4c76ddbf7bfc846b17a71fcbf9f4112d82ef50d4b2f2d588ebf4",
+      "paidPriceTry": "4.98"
+    },
+    "baseUrl": "https://troia-extension.vercel.app/api"
+  }
+}

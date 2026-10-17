@@ -11,9 +11,11 @@ import type { Event, State } from '@troia/core';
 import type { OrderCtx } from '../ctx.js';
 import type { Clock, LossBucket, PspPort, ReleaseReason, StellarPort, Store } from '../ports.js';
 import type { EngineConfig } from './config.js';
+import type { BankTransferProvider, BankTransferInstructions } from '../bank-transfer.js';
 
 /** The injected seam — fakes offline, real adapters at the composition root (4.3d). */
 export interface EngineDeps {
+  readonly bankTransfer?: BankTransferProvider;
   readonly stellar: StellarPort;
   readonly psp: PspPort;
   readonly store: Store;
@@ -27,6 +29,7 @@ export type SideOutput = {
   readonly token: string;
   readonly formContent: string;
   readonly paymentPageUrl?: string;
+  readonly bankTransfer?: BankTransferInstructions;
 };
 
 export interface PerformResult {

@@ -12,6 +12,13 @@ import {
 } from './deployment.generated';
 
 export const BACKEND_BASE_URL = GENERATED_BACKEND;
+/** Explicit opt-in for a UI-only IBAN demonstration. Never authorizes a payment or settlement. */
+export const BANK_TRANSFER_DEMO =
+  (
+    import.meta as ImportMeta & {
+      readonly env?: { readonly VITE_BANK_TRANSFER_DEMO?: string };
+    }
+  ).env?.VITE_BANK_TRANSFER_DEMO === 'true';
 
 /** The storefront origins the background worker will accept a message from. Enforced in `background.ts`; the
  *  manifest's port-less `matches` pattern is the coarser first gate, and this is the exact one. */

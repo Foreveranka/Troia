@@ -15,6 +15,7 @@ import { InMemoryOrderRegistry } from './http/order-registry.js';
 import type { OrderRegistry } from './http/order-registry.js';
 import type { PolicyConfig } from './policy.js';
 import type { Clock, PspPort, StellarPort, Store } from './ports.js';
+import type { BankTransferProvider } from './bank-transfer.js';
 import { KeyedMutex } from './store/mutex.js';
 import { pollInFlight } from './worker/poll-worker.js';
 import type { PollReport } from './worker/poll-worker.js';
@@ -117,6 +118,8 @@ export interface SettlementBundle {
 }
 
 export interface ServerDeps {
+  /** Bank pricing is separate: never charge the card PSP's fees for a bank transfer. */
+  readonly bankTransfer?: { readonly provider: BankTransferProvider; readonly quote: QuoteFn };
   readonly network: NetworkConfig;
   readonly extras: EngineExtras;
   /** injected keyed adapters (real at 4.4/4.5, fakes offline). */
@@ -162,6 +165,7 @@ export interface Server {
 export function createServer(d: ServerDeps): Server {
   const config = buildEngineConfig(d.network, d.extras);
   const engine: EngineDeps = {
+    ...(d.bankTransfer === undefined ? {} : { bankTransfer: d.bankTransfer.provider }),
     stellar: d.ports.stellar,
     psp: d.ports.psp,
     store: d.ports.store,
@@ -174,6 +178,7 @@ export function createServer(d: ServerDeps): Server {
     engine,
     registry,
     quote: d.quote,
+    ...(d.bankTransfer === undefined ? {} : { bankQuote: d.bankTransfer.quote }),
     webhookSigningSecret: d.webhookSigningSecret,
     orderLocks,
     ...(d.intentAuth === undefined ? {} : { intentAuth: d.intentAuth }),

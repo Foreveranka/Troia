@@ -17,6 +17,10 @@ import { buildIntentBody, intentUiAction, statusCopy } from './lib/intent';
 import { formatApproxTry, toStroops } from './lib/amount';
 import type { IntentOutcome, StatusOutcome, ReceiptOutcome } from './lib/backend';
 import type { PopupState, QuoteOutcome } from './lib/messages';
+import { bankErrorCopy } from './lib/bank-transfer';
+import { BANK_TRANSFER_DEMO } from './lib/config';
+import { newDemoBankTransfer } from './lib/bank-transfer-demo';
+import type { BankTransferInstructions } from './lib/bank-transfer';
 
 console.info('[troia] content script active on', location.origin);
 
@@ -35,6 +39,8 @@ let currentUri: string | null = null;
 let handle: BannerHandle | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let inFlight = false; // a payment intent is being started / is in progress — blocks repeat clicks
+let lastPaymentMethod: 'card' | 'bank_transfer' = 'card';
+let demoBank: BankTransferInstructions | null = null;
 // A retry is in flight: the shopper clicked "Try again", we asked the storefront for a FRESH order id, and we are
 // waiting for its new SEP-7 to appear so we can pay it automatically. Consumed by scan() on the next detection.
 let pendingRetry = false;
@@ -54,6 +60,7 @@ let lastDetection: Detection | null = null;
 // The indicative ≈₺ display string for the current detection, once the read-only /quote reply lands. Mirrors the
 // banner: reset to null on every detection change so a stale order's TL never shows against a new amount.
 let lastQuote: string | null = null;
+let quoteRequestId = 0;
 
 function stopPolling(): void {
   if (pollTimer !== null) {
@@ -69,7 +76,12 @@ function clearBanner(): void {
   handle = null;
 }
 
-function startPolling(orderId: string, h: BannerHandle, amount: string): void {
+function startPolling(
+  orderId: string,
+  h: BannerHandle,
+  amount: string,
+  method: 'card' | 'bank_transfer',
+): void {
   stopPolling();
   let polls = 0;
   let sawProcessing = false;
@@ -105,7 +117,12 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
           sawProcessing = true;
           polls = 0;
         }
-        const { text, kind, terminal } = statusCopy(res.status);
+        const copy = statusCopy(res.status);
+        const { kind, terminal } = copy;
+        const text =
+          method === 'bank_transfer' && res.status === 'pending'
+            ? 'Banka tahsilatı bekleniyor…'
+            : copy.text;
         if (res.status === 'failed' && !sawProcessing) {
           // A clean pre-payment decline: the card was never charged (we never saw 'processing') and the order is
           // finished on the backend with its reservation released — so a fresh attempt is safe.
@@ -127,7 +144,9 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
           // Never offer retry (that could double-charge) — but never leave a paid shopper button-less and blank
           // either: give an order reference and money reassurance. orderId is safe in setStatus (textContent).
           h.setStatus(
-            `Ödeme incelemeye alındı, sipariş ${orderId}. Kartınızdan tahsilat yapıldıysa otomatik olarak iade edilecek, aksi halde size ulaşacağız. Bu numarayı saklayın, şu an yapmanız gereken bir şey yok.`,
+            method === 'bank_transfer'
+              ? `Banka transferi incelemede. Sipariş: ${orderId}. Yeniden havale yapmayın; sağlayıcı doğrulaması veya iade takibi gerekiyor.`
+              : `Ödeme incelemeye alındı, sipariş ${orderId}. Kartınızdan tahsilat yapıldıysa otomatik olarak iade edilecek, aksi halde size ulaşacağız. Bu numarayı saklayın, şu an yapmanız gereken bir şey yok.`,
             'info',
           );
           h.hidePay();
@@ -158,16 +177,23 @@ function startPolling(orderId: string, h: BannerHandle, amount: string): void {
             },
           );
         }
+        if (terminal && method === 'bank_transfer') h.showBankTransfer(null);
         if (terminal) stopPolling();
       },
     );
   }, POLL_INTERVAL_MS);
 }
 
-function pay(detection: Detection): void {
+function pay(detection: Detection, paymentMethod: 'card' | 'bank_transfer' = 'card'): void {
   const h = handle;
   if (h === null || inFlight) return; // ignore repeat clicks: a payment is already being started / in progress
+  if (paymentMethod === 'bank_transfer' && BANK_TRANSFER_DEMO && demoBank !== null) {
+    h.showBankTransfer(demoBank, true);
+    h.setStatus('Test gösterimi. Para göndermeyin; gerçek ödeme başlatılmadı.', 'info');
+    return;
+  }
   inFlight = true;
+  lastPaymentMethod = paymentMethod;
   h.setBusy(true);
   // Re-enable the banner for a retry ONLY on a clean failure (nothing charged). On success we keep it disabled
   // and hand off to polling, so a second click can never fire a second intent.
@@ -182,7 +208,7 @@ function pay(detection: Detection): void {
       return;
     }
     chrome.runtime.sendMessage(
-      { type: 'TROIA_INTENT', body: built.body },
+      { type: 'TROIA_INTENT', body: { ...built.body, paymentMethod } },
       (outcome: IntentOutcome | undefined) => {
         if (chrome.runtime.lastError || outcome === undefined) {
           fail(`Ödeme servisine ulaşılamadı${NOT_CHARGED}`);
@@ -192,9 +218,10 @@ function pay(detection: Detection): void {
           // A failed tab-open (the background could not open the card page) means the buyer never reached it, so
           // nothing was charged — say that specifically; otherwise the generic start failure.
           fail(
-            outcome.error === 'tab_open_failed'
-              ? `Kart formu açılamadı${NOT_CHARGED}`
-              : `Ödeme başlatılamadı${NOT_CHARGED}`,
+            bankErrorCopy(outcome.error) ??
+              (outcome.error === 'tab_open_failed'
+                ? `Kart formu açılamadı${NOT_CHARGED}`
+                : `Ödeme başlatılamadı${NOT_CHARGED}`),
           );
           console.info('[troia] intent rejected', { status: outcome.status, error: outcome.error });
           return;
@@ -202,9 +229,11 @@ function pay(detection: Detection): void {
         // Success. Only claim the card form is opening when the background actually opened one (paymentPageUrl
         // present, i.e. action.poll). Keep the button disabled and reflect the coarse status via polling.
         const action = intentUiAction(outcome.response);
+        if (outcome.response.bankTransfer !== undefined)
+          h.showBankTransfer(outcome.response.bankTransfer);
         h.setStatus(action.text, action.kind === 'error' ? 'error' : 'info');
         if (action.poll) {
-          startPolling(outcome.response.orderId, h, detection.sep7.amount);
+          startPolling(outcome.response.orderId, h, detection.sep7.amount, paymentMethod);
         } else {
           // no polling path (success but no form to open) — re-enable so the buyer can retry
           inFlight = false;
@@ -248,14 +277,23 @@ function requestRetry(orderId: string): void {
 // then show the indicative ≈₺ on the banner. Fail-OPEN on display: any failure (unparseable amount, no messaging,
 // network, or a stale reply after the banner was replaced) leaves the USDC amount and the enabled Pay button
 // untouched — the charged price is locked at /intent regardless. It reserves nothing and never triggers a payment.
-function requestQuote(detection: Detection, h: BannerHandle): void {
+function requestQuote(
+  detection: Detection,
+  h: BannerHandle,
+  paymentMethod: 'card' | 'bank_transfer' = 'card',
+): void {
   const stroops = toStroops(detection.sep7.amount);
   if (stroops === null) return; // an unparseable amount — /intent would fail-closed on it anyway
   if (typeof chrome === 'undefined' || chrome.runtime?.sendMessage === undefined) return;
+  const requestId = ++quoteRequestId;
   chrome.runtime.sendMessage(
-    { type: 'TROIA_QUOTE', amountStroops: stroops.toString() },
+    {
+      type: 'TROIA_QUOTE',
+      amountStroops: stroops.toString(),
+      ...(paymentMethod === 'bank_transfer' ? { paymentMethod } : {}),
+    },
     (res: QuoteOutcome | undefined) => {
-      if (h !== handle) return; // the banner was replaced (e.g. a retry) — drop this stale reply
+      if (h !== handle || requestId !== quoteRequestId) return; // drop stale order/method quotes
       if (chrome.runtime.lastError || res === undefined || !res.ok) return; // degrade to USDC-only, never block
       lastQuote = formatApproxTry(res.paidPriceTry);
       h.setApproxTry(lastQuote);
@@ -298,10 +336,24 @@ function scan(): void {
   lastDetection = detection;
   lastQuote = null; // reset before requesting the fresh preview below
   clearBanner();
+  demoBank = BANK_TRANSFER_DEMO
+    ? newDemoBankTransfer(toStroops(detection.sep7.amount) ?? 0n)
+    : null;
   handle = showBanner({
     amount: detection.sep7.amount,
     assetCode: detection.sep7.assetCode ?? 'USDC',
-    onPay: () => pay(detection),
+    onPay: (method) => pay(detection, method),
+    onMethodChange: (method) => {
+      lastQuote = null;
+      handle?.setApproxTry(null);
+      if (BANK_TRANSFER_DEMO && method === 'bank_transfer' && demoBank !== null) {
+        handle?.showBankTransfer(demoBank, true);
+        handle?.setStatus('Test gösterimi · Para göndermeyin.', 'info');
+        return;
+      }
+      handle?.showBankTransfer(null);
+      if (handle !== null) requestQuote(detection, handle, method);
+    },
     onRetry: () => requestRetry(detection.sep7.memo ?? ''),
     onClose: () => {
       stopPolling();
@@ -317,7 +369,7 @@ function scan(): void {
   // one click on "Try again" then leads straight into the new card form.
   if (pendingRetry) {
     clearPendingRetry();
-    pay(detection);
+    pay(detection, lastPaymentMethod);
   }
 }
 

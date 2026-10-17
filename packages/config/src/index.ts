@@ -46,6 +46,14 @@ export interface NetworkConfig {
 export const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 export const TESTNET_RPC_URL = 'https://soroban-testnet.stellar.org';
 export const TESTNET_HORIZON_URL = 'https://horizon-testnet.stellar.org';
+export const TR_MOCK_ANCHOR = {
+  baseUrl: 'https://tr-mock-anchor.fly.dev',
+  domain: 'tr-mock-anchor.fly.dev',
+  signingKey: 'GDXYO6FJCNXZEWGXD54GT76FGFYLOLSOGSOJLNQ6WGHCGEQPO7NTE73M',
+  treasury: 'GCLCZEQZ2THTEDAOFI66LACNPLY4OBKN7VKLEZFMBIHYKYQOW2W7T3Z6',
+  issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  beneficiary: 'TR Mock Anchor Teknoloji A.Ş. (TEST)',
+} as const;
 export const IYZICO_SANDBOX_BASE_URL = 'https://sandbox-api.iyzipay.com';
 
 /**

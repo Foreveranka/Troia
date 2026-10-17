@@ -11,16 +11,31 @@
       <header class="hd">
         <img class="logo" src="../popup/assets/logo.png" alt="Troia logosu" />
         <div>
-          <h1>Manuel ödeme</h1>
-          <p class="tag">Stellar üzerindeki herhangi bir USDC adresine Troy kartınızla ödeyin</p>
+          <h1 id="wizard-title">Manuel ödeme</h1>
+          <p class="tag">Stellar USDC ödemelerinizi kartınızla veya banka transferiyle yapın</p>
         </div>
       </header>
 
       <a href="../anchor/index.html" style="display: block; margin: 18px 0; color: inherit"
-        >Banka işlemleri · Yatır / çek ↗</a
+        >Kendi cüzdanınıza yatır / çek ↗</a
       >
       <!-- ADIM 1: bilgiler -->
       <section id="step-details">
+        <fieldset class="payment-methods">
+          <legend>Ödeme yöntemi</legend>
+          <label
+            ><input type="radio" name="payment-method" value="card" checked /> Troy kartı</label
+          >
+          <label
+            ><input type="radio" name="payment-method" value="bank_transfer" /> Banka transferi ·
+            IBAN</label
+          >
+        </fieldset>
+        <div id="bank-preview" hidden></div>
+        <p class="hint" id="bank-hint" hidden>
+          TL tutarı, alıcı IBAN’ı ve sipariş açıklaması sonraki adımda gösterilir. Tahsilat
+          doğrulanınca alıcınıza USDC gönderilir.
+        </p>
         <label class="field">
           <span class="k">Alıcının Stellar adresi</span>
           <input
@@ -57,13 +72,16 @@
       <section id="step-confirm" hidden>
         <div class="review">
           <div class="row"><span class="k">Alıcı</span><code class="v" id="c-dest"></code></div>
+          <div class="row">
+            <span class="k">Ödeme yöntemi</span><span class="v" id="c-method"></span>
+          </div>
           <div class="row"><span class="k">Tutar</span><span class="v" id="c-amount"></span></div>
           <div class="row">
             <span class="k">Yaklaşık ödeyeceğiniz</span><span class="v" id="c-try">…</span>
           </div>
         </div>
-        <div class="notice">
-          Nihai lira fiyatı, kart formu açıldığı anda sabitlenir. Alıcı yukarıdaki USDC tutarının
+        <div class="notice" id="confirm-notice">
+          Nihai lira fiyatı, ödeme başlatıldığında sabitlenir. Alıcı yukarıdaki USDC tutarının
           tamamını alır, teslimat zincir üzerinde ve doğrulanabilir.
         </div>
         <p class="error" id="confirm-error" hidden></p>
@@ -75,6 +93,7 @@
 
       <!-- ADIM 3: durum -->
       <section id="step-status" hidden>
+        <div id="bank-instructions"></div>
         <div class="status">
           <span class="spinner" id="spinner"></span>
           <p id="status-text">Güvenli kart formu açılıyor…</p>

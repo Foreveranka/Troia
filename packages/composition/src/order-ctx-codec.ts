@@ -8,11 +8,12 @@
 // distinguishable from format drift.
 
 import type { OrderCtx } from '@troia/backend';
+import { parseBankInstructions } from '@troia/backend';
 
 // v2 added channelPublic (A-5). Decode accepts v1 rows (written before channels existed) as
 // channelPublic:null — exactly what they mean: those orders rode the single-operator source.
-const CTX_VERSION = 2;
-const ACCEPTED_VERSIONS: readonly number[] = [1, 2];
+const CTX_VERSION = 3;
+const ACCEPTED_VERSIONS: readonly number[] = [1, 2, 3];
 /** Canonical non-negative decimal: no sign, no exponent, no leading zeros, no whitespace. */
 const DECIMAL = /^(0|[1-9][0-9]*)$/;
 
@@ -27,6 +28,10 @@ export class OrderCtxCodecError extends Error {
 export function encodeOrderCtx(ctx: OrderCtx): string {
   return JSON.stringify({
     v: CTX_VERSION,
+    paymentMethod: ctx.paymentMethod ?? 'card',
+    bankTransfer: ctx.bankTransfer ?? null,
+    bankExpiresAtUnix: ctx.bankExpiresAtUnix ?? null,
+    bankReview: ctx.bankReview ?? false,
     orderId: ctx.orderId,
     conversationId: ctx.conversationId,
     destination: ctx.destination,
@@ -92,7 +97,42 @@ export function decodeOrderCtx(payload: string): OrderCtx {
   if (payMaxTimeUnix !== null && !Number.isSafeInteger(payMaxTimeUnix)) {
     throw new OrderCtxCodecError('bad payMaxTimeUnix');
   }
+  let bankFields: Partial<OrderCtx> = {};
+  if (o.v === 3) {
+    if (
+      (o.paymentMethod !== 'card' && o.paymentMethod !== 'bank_transfer') ||
+      typeof o.bankReview !== 'boolean'
+    )
+      throw new OrderCtxCodecError('bad payment method');
+    if (o.paymentMethod === 'bank_transfer') {
+      if (!Number.isSafeInteger(o.bankExpiresAtUnix) || (o.bankExpiresAtUnix as number) <= 0)
+        throw new OrderCtxCodecError('bad bank expiry');
+      let bankTransfer;
+      try {
+        bankTransfer = o.bankTransfer === null ? null : parseBankInstructions(o.bankTransfer);
+      } catch {
+        throw new OrderCtxCodecError('bad bank instructions');
+      }
+      if (
+        bankTransfer !== null &&
+        (bankTransfer.orderId !== o.orderId ||
+          bankTransfer.amountTry !== o.paidPriceTry ||
+          bankTransfer.transferId !== o.token ||
+          bankTransfer.expiresAtUnix > (o.bankExpiresAtUnix as number))
+      )
+        throw new OrderCtxCodecError('bank instructions do not match order');
+      bankFields = {
+        paymentMethod: 'bank_transfer',
+        bankTransfer,
+        bankExpiresAtUnix: o.bankExpiresAtUnix as number,
+        bankReview: o.bankReview,
+      };
+    } else if (o.bankTransfer !== null || o.bankExpiresAtUnix !== null || o.bankReview !== false) {
+      throw new OrderCtxCodecError('bank fields on card order');
+    }
+  }
   return {
+    ...bankFields,
     orderId: str(o.orderId, 'orderId'),
     conversationId: str(o.conversationId, 'conversationId'),
     destination: str(o.destination, 'destination'),

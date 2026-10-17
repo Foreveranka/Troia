@@ -11,6 +11,7 @@
 import Fastify from 'fastify';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
+import { TESTNET_PASSPHRASE } from '@troia/config';
 import { canonicalizeOrderId, DeriveIdsError, PayoutIntent } from '@troia/core';
 import { chargeEvent, projectCheckoutFormResult, verifyWebhookSignature } from '@troia/psp';
 import type { WebhookEvent } from '@troia/psp';
@@ -47,6 +48,7 @@ export interface Quote {
 export type QuoteFn = (usdcStroops: bigint) => Promise<Quote>;
 
 export interface AppDeps {
+  readonly bankQuote?: QuoteFn;
   readonly engine: EngineDeps;
   readonly registry: OrderRegistry;
   /** prices an order server-side (commission model + spot mid). Injected so the rate source stays a seam. */
@@ -217,6 +219,14 @@ export function createApp(deps: AppDeps): FastifyInstance {
     if (typeof raw !== 'object' || raw === null)
       return reply.code(400).send({ error: 'BadRequest' });
     const body = raw as Record<string, unknown>;
+    const paymentMethod = body.paymentMethod ?? 'card';
+    if (paymentMethod !== 'card' && paymentMethod !== 'bank_transfer')
+      return reply.code(400).send({ error: 'BadPaymentMethod' });
+    if (
+      paymentMethod === 'bank_transfer' &&
+      (engine.bankTransfer === undefined || deps.bankQuote === undefined)
+    )
+      return reply.code(503).send({ error: 'BankTransferUnavailable' });
     const rawOrderId = optStr(body, 'orderId');
     const destination = optStr(body, 'destination');
     const amountStr = optStr(body, 'amountStroops');
@@ -243,6 +253,41 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // (a double pool-reserve + a second charge surface). One identity for every per-order guard.
     const orderId = tryCanonicalizeOrderId(rawOrderId);
     if (orderId === null) return reply.code(400).send({ error: 'OrderIdMalformed' }); // fail-closed ①
+
+    // Re-present bank instructions without re-quoting/reserving. Order identity and payment method cannot change.
+    const existingBank = await orderLocks.run(orderId, async () => {
+      const rec = registry.getByOrderId(orderId);
+      if (rec === undefined) return null;
+      if (
+        (rec.ctx.paymentMethod ?? 'card') !== paymentMethod ||
+        rec.ctx.destination !== destination ||
+        rec.ctx.amountStroops.toString() !== amountStr ||
+        rec.ctx.memoHex !== memoHex
+      )
+        return { error: 'OrderConflict' as const };
+      if (paymentMethod !== 'bank_transfer') return null;
+      if (rec.state !== 'SolvencyReserved') return { error: 'OrderClosed' as const };
+      if (rec.ctx.bankReview || engine.store.isLossFlagged(orderId))
+        return { error: 'BankTransferReview' as const };
+      if (rec.ctx.bankTransfer == null) return { error: 'BankTransferPreparing' as const };
+      return {
+        response: {
+          orderId,
+          token: rec.ctx.token,
+          paymentMethod,
+          paidPriceTry: rec.ctx.paidPriceTry,
+          bankTransfer: rec.ctx.bankTransfer,
+          alreadyStarted: true,
+        },
+      };
+    });
+    if (existingBank !== null) {
+      if ('error' in existingBank)
+        return reply
+          .code(existingBank.error === 'BankTransferPreparing' ? 503 : 409)
+          .send(existingBank);
+      return reply.send(existingBank.response);
+    }
 
     // C-13: one budget unit per NEW order, taken BEFORE the expensive work (snapshot + live-rate quote), so a
     // spent session cannot even farm oracle calls. An idempotent replay of an existing order burns nothing —
@@ -290,7 +335,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // priced order is only ever started when we actually know its price.
     let quote: Quote;
     try {
-      quote = await deps.quote(amount);
+      quote = await (paymentMethod === 'bank_transfer' ? deps.bankQuote! : deps.quote)(amount);
     } catch {
       return reply.code(502).send({ error: 'PriceUnavailable' });
     }
@@ -300,6 +345,14 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // (abandoned) order must hold no seq, so the sequence is allocated later, on chargeOk (the first step of
     // the USDC leg). This keeps the operator sequence space gap-free regardless of how many orders abandon.
     const ctx: OrderCtx = {
+      paymentMethod,
+      ...(paymentMethod === 'bank_transfer'
+        ? {
+            bankTransfer: null,
+            bankReview: false,
+            bankExpiresAtUnix: engine.clock.nowUnix() + 900,
+          }
+        : {}),
       orderId,
       conversationId: ids.idempotencyKeyHex,
       destination,
@@ -330,15 +383,30 @@ export function createApp(deps: AppDeps): FastifyInstance {
     if (registry.getByOrderId(orderId) === undefined) registry.put(ctx, 'Reserved');
 
     const outcome = await orderLocks.run(orderId, async () => {
+      const rec = registry.getByOrderId(orderId);
+      if (
+        rec !== undefined &&
+        ((rec.ctx.paymentMethod ?? 'card') !== paymentMethod ||
+          rec.ctx.destination !== destination ||
+          rec.ctx.amountStroops !== amount ||
+          rec.ctx.memoHex !== memoHex)
+      )
+        return { kind: 'conflict' as const };
       const result = await start(ctx, engine);
       if (result.quiescence === 'alreadyStarted') {
         // idempotent duplicate: return the ALREADY-persisted token + the ORIGINAL price; never re-price or clobber.
         const existing = registry.getByOrderId(orderId)?.ctx;
+        if (
+          paymentMethod === 'bank_transfer' &&
+          (registry.getByOrderId(orderId)?.state !== 'SolvencyReserved' || existing?.bankReview)
+        )
+          return { kind: 'closed' as const };
         return {
           kind: 'alreadyStarted' as const,
           token: existing?.token ?? null,
           paidPriceTry: existing?.paidPriceTry ?? null,
           paymentPageUrl: existing?.paymentPageUrl ?? null,
+          bankTransfer: existing?.bankTransfer ?? null,
         };
       }
       const checkout = result.sideOutputs.find((s) => s.kind === 'checkoutForm');
@@ -354,6 +422,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
       return { kind: 'started' as const, quiescence: result.quiescence, checkout };
     });
 
+    if (outcome.kind === 'conflict') return reply.code(409).send({ error: 'OrderConflict' });
+    if (outcome.kind === 'closed') return reply.code(409).send({ error: 'OrderClosed' });
     if (outcome.kind === 'alreadyStarted') {
       if (outcome.token === null) return reply.code(409).send({ error: 'AlreadyStarted' });
       // Re-present the SAME hosted form on a duplicate click (the extension reopens it when paymentPageUrl is set).
@@ -363,12 +433,17 @@ export function createApp(deps: AppDeps): FastifyInstance {
         alreadyStarted: true,
         paidPriceTry: outcome.paidPriceTry,
         paymentPageUrl: outcome.paymentPageUrl ?? undefined,
+        ...(outcome.bankTransfer === null
+          ? {}
+          : { paymentMethod, bankTransfer: outcome.bankTransfer }),
       });
     }
     if (outcome.checkout === undefined) {
       // no form issued: the atomic reserve lost a race with the gate, the reserve was unknown, or the form init
       // malformed. All are fail-closed (nothing charged) and transient — the storefront may retry.
-      return reply.code(503).send({ error: 'CheckoutUnavailable' });
+      return reply.code(503).send({
+        error: paymentMethod === 'bank_transfer' ? 'BankTransferPreparing' : 'CheckoutUnavailable',
+      });
     }
     // low-water WARNING (money-first "uyar"): surface a low pool so the storefront can warn before it empties.
     const poolLow = engine.store.availableStroops() <= engine.config.policy.poolLowWatermarkStroops;
@@ -380,6 +455,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
       paidPriceTry: quote.paidPriceTry, // the server-computed price (the user is charged EXACTLY this)
       spreadBps: quote.spreadBps, // the commission bps, for storefront transparency
       poolLow,
+      ...(outcome.checkout.bankTransfer === undefined
+        ? {}
+        : { paymentMethod, bankTransfer: outcome.checkout.bankTransfer }),
     });
   };
 
@@ -387,6 +465,14 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // TL equals what /intent will charge, modulo rate drift), but creates NO order, NO reservation, NO hosted form, and
   // NO sequence — it is strictly the pricing subset of /intent. A quote is a preview, never a commitment.
   const handleQuote = async (request: FastifyRequest, reply: FastifyReply) => {
+    const method = (request.query as Record<string, unknown>).paymentMethod ?? 'card';
+    if (method !== 'card' && method !== 'bank_transfer')
+      return reply.code(400).send({ error: 'BadPaymentMethod' });
+    if (
+      method === 'bank_transfer' &&
+      (engine.bankTransfer === undefined || deps.bankQuote === undefined)
+    )
+      return reply.code(503).send({ error: 'BankTransferUnavailable' });
     const params = request.params as { amountStroops?: string };
     const amountStr = params.amountStroops;
     if (typeof amountStr !== 'string' || amountStr.length === 0)
@@ -402,7 +488,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     if (amount <= 0n || amount > I128_MAX) return reply.code(400).send({ error: 'BadAmount' });
     let quote: Quote;
     try {
-      quote = await deps.quote(amount);
+      quote = await (method === 'bank_transfer' ? deps.bankQuote! : deps.quote)(amount);
     } catch {
       // fail-closed: a rate-feed outage shows NO price rather than a fabricated one (the same 502 /intent uses).
       return reply.code(502).send({ error: 'PriceUnavailable' });
@@ -416,6 +502,52 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // is invisible to that hook and silently unlimited. after() defers this one registration until the plugin is ready;
   // the routes below carry no limit, so they stay synchronous.
   app.after(() => {
+    app.post<{ Params: { orderId: string } }>(
+      '/sandbox/bank-transfer/:orderId/simulate',
+      { config: { rateLimit: { max: 10, timeWindow: 60_000 } } },
+      async (request, reply) => {
+        const provider = engine.bankTransfer;
+        if (
+          provider?.simulate === undefined ||
+          engine.config.stellar.passphrase !== TESTNET_PASSPHRASE
+        )
+          return reply.code(404).send({ error: 'NotFound' });
+        if (
+          intentAuth !== undefined &&
+          verifySessionToken(
+            intentAuth.secret,
+            headerStr(request.headers['x-troia-session']) ?? '',
+            engine.clock.nowUnix(),
+          ) === null
+        )
+          return reply.code(401).send({ error: 'SessionRequired' });
+        const id = tryCanonicalizeOrderId(request.params.orderId);
+        if (id === null) return reply.code(400).send({ error: 'BadRequest' });
+        return orderLocks.run(id, async () => {
+          const rec = registry.getByOrderId(id);
+          const bank = rec?.ctx.bankTransfer;
+          const body = request.body as { sandboxToken?: unknown } | null;
+          if (
+            bank?.providerId !== 'tr-mock-anchor' ||
+            !bank.sandboxToken ||
+            body?.sandboxToken !== bank.sandboxToken
+          )
+            return reply.code(403).send({ error: 'SandboxCapabilityRequired' });
+          if (
+            rec?.state !== 'SolvencyReserved' ||
+            rec.ctx.bankReview ||
+            bank.expiresAtUnix <= engine.clock.nowUnix()
+          )
+            return reply.code(409).send({ error: 'OrderClosed' });
+          try {
+            await provider.simulate!(bank);
+            return reply.code(202).send({ accepted: true, network: 'stellar-testnet' });
+          } catch {
+            return reply.code(502).send({ error: 'SandboxUnavailable' });
+          }
+        });
+      },
+    );
     app.post(
       '/intent',
       { config: { rateLimit: { max: intentLimit.max, timeWindow: intentLimit.timeWindowMs } } },
@@ -479,7 +611,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
     if (orderId === null) return reply.code(400).send({ error: 'OrderIdMalformed' });
     const rec = registry.getByOrderId(orderId);
     if (rec !== undefined)
-      return reply.send({ orderId, status: publicStatusOf(orderId, rec.state) });
+      return reply.send({
+        orderId,
+        status: rec.ctx.bankReview ? 'review' : publicStatusOf(orderId, rec.state),
+      });
     // The registry is memory, and a restart erases it. The evidence log is not. A row exists only for an order
     // whose USDC leg was witnessed on chain (Store.settledEvidence), so answering from it cannot overstate the
     // case. Derive the status from the map rather than writing 'completed' here, so the two never drift apart.
@@ -503,7 +638,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     if (rec !== undefined)
       return reply.send({
         orderId,
-        status: publicStatusOf(orderId, rec.state),
+        status: rec.ctx.bankReview ? 'review' : publicStatusOf(orderId, rec.state),
         txHash: rec.ctx.hashHex, // the on-chain USDC pay() witness (null until it lands)
         paidPriceTry: rec.ctx.paidPriceTry,
       });
@@ -552,6 +687,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const rec = conv !== undefined ? registry.getByConversationId(conv) : undefined;
     if (rec === undefined || conv === undefined)
       return reply.code(404).send({ error: 'UnknownOrder' });
+    if (rec.ctx.paymentMethod === 'bank_transfer')
+      return reply.code(409).send({ error: 'PaymentMethodMismatch' });
     const orderId = rec.ctx.orderId;
 
     const eventId = `${event.iyziEventType}:${conv}:${iyziPaymentId ?? paymentId ?? token ?? ''}:${status ?? ''}`;

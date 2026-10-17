@@ -1,0 +1,36 @@
+{
+  "network": "Stellar Testnet",
+  "verifiedAt": "2026-10-17T00:37:11.517024+00:00",
+  "publicApi": "https://api.troiapay.xyz",
+  "proxyApi": "https://troiapay.xyz/api",
+  "health": {
+    "status": "ok",
+    "network": "stellar-testnet",
+    "pool": "CC6EUL2AAAAUR67TYG6MKNRN5BD3WGKIH72PT3TH7VM4UU5K7AAYNFJI",
+    "fundingMode": "manual",
+    "bankTransferMode": "tr-mock-anchor"
+  },
+  "systemd": {
+    "service": "troia.service",
+    "enabledOnBoot": true,
+    "active": true,
+    "automaticRestarts": 1,
+    "gracefulRestart": "passed; prior receipt retained",
+    "forcedKillRecovery": "passed; dead writer lock safely recovered under kernel flock"
+  },
+  "ordersByState": {
+    "Reconciled": 2,
+    "UsdcConfirmed": 1
+  },
+  "heldReservations": 0,
+  "merchantReceipt": {
+    "orderId": "iban-e2e-1792197371709",
+    "status": "completed",
+    "txHash": "d79f61e25ab1ac571be28e6cf567004b515a3637aa32404cd175538b15ab2b61",
+    "paidPriceTry": "4.98"
+  },
+  "anchorTransactionHash": "d23324e58677025820357695d7697a08f5d72a2c332f1e81f2cf49b981db0695",
+  "collectionAccount": "GBFSSAAKRNF7QS4GJVYNO566YJQW6773HQ33K2HZBB27YTXO32PARN6O",
+  "anchorUsdcReceived": "0.1000542",
+  "bankLeg": "simulated TRY; no real fiat or mainnet funds"
+}

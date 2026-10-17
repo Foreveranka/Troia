@@ -1,0 +1,13 @@
+api.troiapay.xyz {
+    @public path /healthz /session /intent /quote/* /status/* /receipt/* /return /webhook /sandbox/bank-transfer/*/simulate
+    handle @public {
+        reverse_proxy 127.0.0.1:3108
+    }
+    handle {
+        respond "Not found" 404
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

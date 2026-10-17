@@ -47,6 +47,7 @@ for (const [app, name, paths] of [
       'receipt/:order',
       'return',
       'webhook',
+      'sandbox/bank-transfer/:order/simulate',
     ])
       rewrites.unshift({ source: `/api/${path}`, destination: `${upstream.origin}/${path}` });
   }

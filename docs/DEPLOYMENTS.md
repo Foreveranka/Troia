@@ -1,4 +1,33 @@
-# Troia testnet deployment - 20 September 2026
+# Troia testnet deployment
+
+## Persistent VPS hosting — 17 October 2026
+
+The backend now runs as a dedicated, unprivileged Linux systemd service. Public HTTPS API:
+https://api.troiapay.xyz. The existing website `/api` route forwards there. The development-machine
+Cloudflare tunnel and local signing service have been stopped and disabled. No new extension permissions
+are needed. Other VPS services remain running.
+
+The full pool directory was migrated after confirming two reconciled orders and zero held reservations.
+Both SQLite databases, sequence/channel state and all journals were preserved. The source snapshot remains
+local as a backup. Secrets are outside the repository in a root-owned service environment file.
+
+Verified on the VPS:
+
+- systemd enabled for server boot and configured to restart after exits.
+- Graceful restart retained the existing completed order and original transaction hash.
+- A deliberate SIGKILL triggered one automatic restart. The exclusive kernel lock plus positive dead-PID
+  check recovered the application lock; the same old receipt remained available.
+- HTTPS validates normally. Only customer API paths are forwarded; public `/metrics` returns 404.
+- Live IBAN quote succeeds; no real bank/card/mainnet funds were used.
+
+A fresh public-proxy IBAN checkout after the crash recovery delivered 0.1000000 test USDC to the merchant.
+[Migration, restart and checkout evidence](evidence/vps-testnet-2026-10-17.json);
+[merchant transaction](https://stellar.expert/explorer/testnet/tx/d79f61e25ab1ac571be28e6cf567004b515a3637aa32404cd175538b15ab2b61).
+
+The pool/issuer/operator identifiers below are unchanged. See [runbook](JURY-READINESS.md),
+[IBAN chain evidence](evidence/iban-sandbox-2026-10-16.json), and [Month 2 delivery](MONTH2-DELIVERY.md).
+
+## Contract migration — 20 September 2026
 
 Current configuration: `deployment.testnet.json`. This migration replaces the self-issued test asset with the Circle testnet USDC used by TR Mock Anchor. Old pool state and journals are preserved.
 
@@ -26,11 +55,11 @@ Current configuration: `deployment.testnet.json`. This migration replaces the se
 - Wallet helper: https://troia-extension.vercel.app/wallet
 - API: https://troia-extension.vercel.app/api/healthz
 
-Static sites are on Vercel. The API forwards to a temporary Cloudflare tunnel on the development computer. **VPS hosting is still required for always-on jury access.** Keep the computer, backend and tunnel online in the meantime.
+Static sites are on Vercel. The API now forwards to the persistent VPS endpoint above; the previous development tunnel is retired. This is a Stellar testnet preview, not a mainnet launch.
 
-## Anchor service incident
+## Historical anchor service incident — September 2026
 
-On 20 September 2026 (Istanbul), the mock anchor accepted a simulated 2000 TRY request but kept it in `pending_anchor`. No USDC was delivered for that request; its reference is saved in `deployments/anchor-seed.json`. The health endpoint was green while settlement was stalled. We did not mark it successful or repeat the payment. Circle faucet funding is separate. A complete card-to-merchant-to-bank off-ramp re-test awaits recovery.
+On 20 September 2026 (Istanbul), the mock anchor accepted a simulated 2000 TRY request but kept it in `pending_anchor`. No USDC was delivered for that request; its reference is saved in `deployments/anchor-seed.json`. The health endpoint was green while settlement was stalled. We did not mark it successful or repeat the payment. Circle faucet funding is separate. The later October IBAN merchant-payment test is recorded below; it does not establish a fresh own-wallet withdrawal test.
 
 ## Post-submission live retest · 20 September 2026
 
@@ -44,3 +73,17 @@ At 03:54 Istanbul, a new checkout completed through the public demo store, the i
 No real card charge, bank transfer or product delivery occurred.
 
 Historical records: [legacy deployment](deployments/legacy-self-issued-testnet.json), [original documentation](deployments/legacy-deployments.md). Signed historical fixtures retain their original trusted deployment pins.
+
+## IBAN merchant checkout — 16 October 2026
+
+The TR Mock Anchor adapter now uses the anchor-issued IBAN/reference and firm quote. The bank input is
+simulated. Anchor-to-collection USDC and pool-to-merchant USDC are independently checked on Stellar testnet.
+Two 0.1000000-USDC merchant payments completed, including one through the public Vercel proxy.
+
+- [Anchor credit, first test](https://stellar.expert/explorer/testnet/tx/457ebcf8d914ee668e13e7f15d68a4fc4dd4f469529501f4a4e8d30aaf8972d0).
+- [Merchant payout, first test](https://stellar.expert/explorer/testnet/tx/ba4f1ca92bcb782546f77d0e59cb5ddc86ee3b617346d6b821383622c6b1bdee).
+- [Merchant payout, public proxy](https://stellar.expert/explorer/testnet/tx/8d7ec2185dab4c76ddbf7bfc846b17a71fcbf9f4112d82ef50d4b2f2d588ebf4).
+- [Structured evidence](evidence/iban-sandbox-2026-10-16.json).
+
+Pool replenishment remains manual. Real bank receipt verification, production BiLira access and original-payer
+refunds require a real provider integration; they are not claimed by this sandbox.

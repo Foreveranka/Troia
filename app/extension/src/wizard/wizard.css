@@ -241,3 +241,43 @@ button.ghost:hover {
   color: var(--ink);
   border-bottom-color: var(--ink);
 }
+
+.payment-methods {
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  padding: 0 0 18px;
+  margin: 0 0 20px;
+  display: grid;
+  gap: 10px;
+}
+.payment-methods legend {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sub);
+  margin-bottom: 12px;
+}
+.payment-methods label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line-2);
+  padding: 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.payment-methods label:has(input:checked) {
+  border-color: var(--brand);
+  background: #eee4d1;
+}
+.payment-methods input {
+  accent-color: #b08a50;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.hint {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--sub);
+}

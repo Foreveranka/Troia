@@ -28,6 +28,7 @@ import { classifyRevertCause, revertEvent } from './classify-revert.js';
 import { EngineError } from './errors.js';
 import { flagLossBucket, releaseReason } from './events.js';
 import type { EngineDeps, PerformResult } from './events.js';
+import { initializeBankTransfer } from '../bank-transfer.js';
 
 const NO_EVENT: PerformResult = { event: null };
 
@@ -177,6 +178,25 @@ export async function perform(
 ): Promise<PerformResult> {
   switch (effect) {
     case 'fireCheckoutForm': {
+      if (ctx.paymentMethod === 'bank_transfer') {
+        if (deps.bankTransfer === undefined || ctx.bankExpiresAtUnix === undefined) return NO_EVENT;
+        const bankTransfer = await initializeBankTransfer(
+          ctx,
+          deps.bankTransfer,
+          ctx.bankExpiresAtUnix,
+        );
+        if (bankTransfer === null) return NO_EVENT;
+        return {
+          event: null,
+          ctxPatch: { bankTransfer, token: bankTransfer.transferId },
+          sideOutput: {
+            kind: 'checkoutForm',
+            token: bankTransfer.transferId,
+            formContent: '',
+            bankTransfer,
+          },
+        };
+      }
       // Hosted DIRECT-SALE start-and-wait: return the checkout URL/token side-output; the charge OUTCOME
       // arrives later via the webhook (retrieve -> chargeEvent). The happy path feeds NO core event. If the
       // form INIT itself malforms, emit a clean checkoutInitFailed (nothing was charged) -> FailedClean; this
@@ -297,8 +317,20 @@ export async function perform(
       // UNKNOWN must NEVER be a bare observe-only stay: nothing re-polls ChargeReversing, so a stay would strand
       // a CHARGED order forever with no void and no loss flag. The bounded in-driver retry guarantees the
       // reversal always converges (ChargeReversed or LossReview) within a single advance().
-      const raw = await deps.psp.cancel(cancelParams(ctx, deps));
-      const cls = classifyIyzicoResult(raw, 'void');
+      let cls: 'SUCCESS' | 'UNKNOWN';
+      if (ctx.paymentMethod === 'bank_transfer') {
+        cls = 'UNKNOWN';
+        if (deps.bankTransfer !== undefined && ctx.bankTransfer != null) {
+          try {
+            if ((await deps.bankTransfer.refund(ctx.bankTransfer)) === 'refunded') cls = 'SUCCESS';
+          } catch {
+            /* Keep the bounded refund/manual-review path. Never fall back to iyzico. */
+          }
+        }
+      } else {
+        const raw = await deps.psp.cancel(cancelParams(ctx, deps));
+        cls = classifyIyzicoResult(raw, 'void') === 'SUCCESS' ? 'SUCCESS' : 'UNKNOWN';
+      }
       if (cls === 'SUCCESS') return { event: { type: 'reversalConfirmed' } };
       const n = await deps.store.bumpReversalRetries(ctx.orderId);
       return {

@@ -6,6 +6,8 @@
 // in flight, then a coarse status line) without re-rendering.
 
 const HOST_ID = 'troia-pay-banner-host';
+import { renderBankTransfer } from './bank-transfer';
+import type { BankTransferInstructions } from './bank-transfer';
 const PAY_LABEL = 'Troy kartınla öde';
 const RETRY_LABEL = 'Tekrar dene';
 const BUSY_LABEL = 'İşleniyor…';
@@ -13,7 +15,8 @@ const BUSY_LABEL = 'İşleniyor…';
 export interface BannerModel {
   readonly amount: string;
   readonly assetCode: string;
-  readonly onPay: () => void;
+  readonly onPay: (method: 'card' | 'bank_transfer') => void;
+  readonly onMethodChange?: (method: 'card' | 'bank_transfer') => void;
   /** Called when the shopper clicks the button after it has been switched to "Try again" (see setRetry). Lets
    *  the caller start a FRESH attempt instead of re-firing the spent order. Falls back to onPay if not given. */
   readonly onRetry?: () => void;
@@ -22,6 +25,7 @@ export interface BannerModel {
 }
 
 export interface BannerHandle {
+  showBankTransfer(details: BankTransferInstructions | null, demo?: boolean): void;
   setBusy(busy: boolean): void;
   setStatus(text: string, kind: 'info' | 'error'): void;
   /** After a failed/timed-out attempt: re-enable the button, relabel it "Try again", and route its next click
@@ -49,6 +53,9 @@ export function showBanner(model: BannerModel): BannerHandle {
       .bar { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
              background:#0C1B30; color:#F4EFE4; display:flex; align-items:center; gap:14px;
              padding:12px 18px; border-top:2px solid #B08A50; box-shadow:0 -2px 16px rgba(12,27,48,.35); }
+      .method { background:#0C1B30;color:#F4EFE4;border:1px solid #536277;padding:9px;font-size:12px;max-width:175px; }
+      .bank-slot:not(:empty) { max-width:680px;max-height:65vh;overflow:auto;margin:0 auto; }
+      @media(max-width:700px) { .bar { flex-wrap:wrap;gap:8px;padding:10px; } .brand { display:none; } .txt { flex-basis:100%; } }
       .brand { display:flex; align-items:center; gap:9px; flex:none; padding-right:14px;
                border-right:1px solid rgba(244,239,228,.18); }
       .brand .mark { width:18px; height:18px; display:block; color:#C7A468; }
@@ -76,20 +83,28 @@ export function showBanner(model: BannerModel): BannerHandle {
         <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 15h16M6 15c0-4 3-7 6-7s6 3 6 7"/></svg>
         <span class="bname">TROIA</span>
       </div>
-      <div class="txt"><b>${escapeHtml(model.amount)} ${escapeHtml(model.assetCode)}</b> tutarını Troy kartınızla ödeyin, kripto gerekmez.<span class="note">Güvenli kart formu <b>iyzico</b> üzerinde açılır, Troia kart numaranızı hiçbir zaman görmez.</span></div>
+      <div class="txt"><b>${escapeHtml(model.amount)} ${escapeHtml(model.assetCode)}</b> tutarını TL ile ödeyin, kripto gerekmez.<span class="note">Güvenli kart formu <b>iyzico</b> üzerinde açılır. Banka transferinde tahsilat doğrulaması beklenir.</span></div>
       <span class="approx" hidden></span>
       <div class="status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+      <select class="method" aria-label="Ödeme yöntemi"><option value="card">Troy kartı</option><option value="bank_transfer">Banka transferi (IBAN)</option></select>
       <button class="pay" type="button">${PAY_LABEL}</button>
       <button class="x" type="button" aria-label="Kapat">&times;</button>
-    </div>`;
+    </div><div class="bank-slot"></div>`;
 
   const payBtn = shadow.querySelector('.pay') as HTMLButtonElement;
   const statusEl = shadow.querySelector('.status') as HTMLElement;
   const approxEl = shadow.querySelector('.approx') as HTMLElement;
+  const methodEl = shadow.querySelector('.method') as HTMLSelectElement;
+  const method = (): 'card' | 'bank_transfer' =>
+    methodEl.value === 'bank_transfer' ? 'bank_transfer' : 'card';
+  methodEl.addEventListener('change', () => {
+    payBtn.textContent = method() === 'bank_transfer' ? 'Havale bilgilerini al' : PAY_LABEL;
+    model.onMethodChange?.(method());
+  });
   let retryMode = false; // set by setRetry(); a click then means "start a fresh attempt", not "pay this order"
   payBtn.addEventListener('click', () => {
     if (retryMode && model.onRetry !== undefined) model.onRetry();
-    else model.onPay();
+    else model.onPay(method());
   });
   shadow.querySelector('.x')?.addEventListener('click', () => {
     removeBanner();
@@ -98,11 +113,21 @@ export function showBanner(model: BannerModel): BannerHandle {
   document.body.appendChild(host);
 
   return {
+    showBankTransfer(details, demo = false): void {
+      const slot = shadow.querySelector('.bank-slot');
+      if (details === null) slot?.replaceChildren();
+      else slot?.replaceChildren(renderBankTransfer(details, { demo }));
+    },
     setBusy(busy: boolean): void {
       // Leaving the busy state returns the button to its normal "Pay" role (a retry has its own explicit setRetry).
       retryMode = false;
       payBtn.disabled = busy;
-      payBtn.textContent = busy ? BUSY_LABEL : PAY_LABEL;
+      methodEl.disabled = busy;
+      payBtn.textContent = busy
+        ? BUSY_LABEL
+        : method() === 'bank_transfer'
+          ? 'Havale bilgilerini al'
+          : PAY_LABEL;
     },
     setStatus(text: string, kind: 'info' | 'error'): void {
       statusEl.hidden = false;
@@ -120,6 +145,7 @@ export function showBanner(model: BannerModel): BannerHandle {
     hidePay(): void {
       retryMode = false;
       payBtn.style.display = 'none';
+      methodEl.hidden = true;
     },
     setApproxTry(text: string | null): void {
       if (text === null || text.length === 0) {

@@ -111,3 +111,6 @@ function openPanel(path: string): void {
 }
 el('manual').addEventListener('click', () => openPanel('src/wizard/index.html'));
 el('anchor').addEventListener('click', () => openPanel('src/anchor/index.html'));
+el('bank-checkout').addEventListener('click', () =>
+  openPanel('src/wizard/index.html#bank-transfer'),
+);

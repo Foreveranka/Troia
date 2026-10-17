@@ -5,6 +5,7 @@
 
 import { BACKEND_BASE_URL } from './config';
 import type { IntentBody, IntentResponse, PublicStatus } from './intent';
+import { isBankTransferInstructions } from './bank-transfer';
 
 export type IntentOutcome =
   | { readonly ok: true; readonly response: IntentResponse }
@@ -29,6 +30,7 @@ export interface PostIntentOptions {
 }
 
 export interface GetStatusOptions {
+  readonly paymentMethod?: 'card' | 'bank_transfer';
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
@@ -184,6 +186,15 @@ export async function postIntent(
   if (!isRecord(json) || typeof json.token !== 'string' || typeof json.orderId !== 'string') {
     return { ok: false, status: res.status, error: 'malformed_response' };
   }
+  if (
+    body.paymentMethod === 'bank_transfer' &&
+    (json.paymentMethod !== 'bank_transfer' ||
+      !isBankTransferInstructions(json.bankTransfer) ||
+      json.bankTransfer.orderId !== body.orderId ||
+      json.bankTransfer.amountTry !== json.paidPriceTry ||
+      json.bankTransfer.transferId !== json.token)
+  )
+    return { ok: false, status: res.status, error: 'malformed_response' };
   return { ok: true, response: json as unknown as IntentResponse };
 }
 
@@ -266,7 +277,7 @@ export async function getQuote(
   try {
     res = await fetchWithTimeout(
       doFetch,
-      `${baseUrl}/quote/${encodeURIComponent(amountStroops)}`,
+      `${baseUrl}/quote/${encodeURIComponent(amountStroops)}${opts.paymentMethod === 'bank_transfer' ? '?paymentMethod=bank_transfer' : ''}`,
       {},
       opts.timeoutMs ?? POLL_TIMEOUT_MS,
     );
@@ -285,4 +296,36 @@ export async function getQuote(
     paidPriceTry: json.paidPriceTry,
     spreadBps: typeof json.spreadBps === 'number' ? json.spreadBps : null,
   };
+}
+
+/** Sandbox capability is order-specific; this endpoint is absent with a real bank provider. */
+export async function simulateBankTransfer(
+  orderId: string,
+  sandboxToken: string,
+  opts: PostIntentOptions = {},
+): Promise<{ ok: boolean }> {
+  const baseUrl = opts.baseUrl ?? BACKEND_BASE_URL;
+  const doFetch = opts.fetchImpl ?? fetch;
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const session = await fetchSessionToken(baseUrl, doFetch, POLL_TIMEOUT_MS);
+      if (!session.ok) return { ok: false };
+      const response = await fetchWithTimeout(
+        doFetch,
+        `${baseUrl}/sandbox/bank-transfer/${encodeURIComponent(orderId)}/simulate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-troia-session': session.token },
+          body: JSON.stringify({ sandboxToken }),
+        },
+        opts.timeoutMs ?? INTENT_TIMEOUT_MS,
+      );
+      if (response.status !== 401) return { ok: response.status === 202 };
+      // A server restart rotates the session key. Keep the same order capability and refresh once.
+      resetSessionCache();
+    }
+    return { ok: false };
+  } catch {
+    return { ok: false };
+  }
 }

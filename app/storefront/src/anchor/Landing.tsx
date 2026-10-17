@@ -234,8 +234,9 @@ export default function Landing() {
                 Use desktop Chrome. This testnet preview is not in the Chrome Web Store yet and
                 requires Developer mode. If Chrome reports a missing manifest, select the inner
                 folder containing manifest.json. To pin Troia, open Chrome’s Extensions puzzle icon
-                and click the pin next to Troia. For bank transfers only, install Freighter and
-                select Testnet. Card checkout does not require a wallet.
+                and click the pin next to Troia. For deposits and withdrawals to your own wallet,
+                install Freighter and select Testnet. Card and IBAN checkout do not require a
+                wallet.
               </p>
             </details>
           </div>
@@ -249,8 +250,9 @@ export default function Landing() {
               <em>USDC out.</em>
             </h2>
             <p>
-              Explore simulated bank deposits and withdrawals through TR Mock Anchor. Connect
-              Freighter from Troia’s Bank transfers panel.
+              Choose IBAN ile ödeme in Troia to pay a Stellar checkout with a simulated bank
+              transfer. Deposits and withdrawals to your own wallet are available separately under
+              Yatır / çek.
             </p>
           </div>
           <div className="bank-diagram">
@@ -263,8 +265,8 @@ export default function Landing() {
             </span>
           </div>
           <p className="service-note">
-            <b>Anchor service notice</b> Bank transfers are currently delayed. Card checkout uses a
-            separately funded pool and remains a separate flow.
+            <b>IBAN sandbox ready</b> Simulate a bank transfer, then follow the verified test USDC
+            payment to the merchant. Stellar testnet only. Do not send real money.
           </p>
         </section>
         <section className="final-cta section-width">

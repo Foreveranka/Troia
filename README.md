@@ -10,16 +10,16 @@ The current prototype uses sandbox card payments and Stellar Testnet. Settlement
 > the one irreversible loss bucket (`LossReview`) is surfaced, never hidden."_ Honest proof boundary:
 > **`signed ≠ settled`** (see [`docs/RECONCILIATION.md`](docs/RECONCILIATION.md)).
 
-## Jury preview - Stellar Pro Hackathon
+## Try Troia
 
 - **Install Troia:** https://troia-extension.vercel.app
 - **Interactive demo:** https://troia-demo-store.vercel.app
 - **Current contracts and chain evidence:** [DEPLOYMENTS.md](docs/DEPLOYMENTS.md)
 - **Setup, architecture and operator runbook:** [JURY-READINESS.md](docs/JURY-READINESS.md)
 
-Troia is a Chrome extension. Its side panel has two distinct flows: Troy card checkout that settles the merchant in test USDC, and user-directed bank deposits/withdrawals through TR Mock Anchor. It uses SEP-1, SEP-7, SEP-10, SEP-38 and SEP-6 exchange endpoints. The helper website only handles explicit Freighter approvals.
+Troia is a Chrome extension with card and IBAN merchant checkout, plus a separate own-wallet deposit/withdrawal panel. Card checkout uses iyzico sandbox; IBAN checkout uses TR Mock Anchor. After server-side payment verification, the merchant receives USDC from the testnet pool automatically. Own-wallet transfers use Freighter through a narrow approval helper.
 
-**Current limits:** static sites are public; the API uses a development-machine tunnel pending VPS setup. The latest mock-anchor retest passes authentication and quotes but fails deposit creation with HTTP 400; bank deposits/withdrawals are not currently verified end to end. Card payment to onchain merchant settlement was independently verified. See [live test evidence](docs/DEPLOYMENTS.md) and the [anchor retest](docs/ANCHOR-TESTNET.md). All payments use sandbox/testnet assets; no real bank transfer or product delivery occurs.
+**Testnet preview:** the backend runs on a dedicated VPS service at https://api.troiapay.xyz, with persistent orders/journals and automatic process recovery. Card and IBAN merchant settlement have onchain evidence. The bank leg is simulated; this is not a BiLira production integration. No real card/bank payments or goods are involved. See [Month 2 delivery](docs/MONTH2-DELIVERY.md), [live evidence](docs/DEPLOYMENTS.md), and [operator runbook](docs/JURY-READINESS.md).
 
 ## Where to start
 
@@ -115,6 +115,19 @@ bug and is caught by a guard test.
 
 The extension, public introductory site, separate shopping demo, backend and Soroban pool are implemented for **Stellar Testnet**. A live iyzico sandbox checkout was settled onchain to the merchant using the same Circle testnet USDC as TR Mock Anchor. Pool funding is manual. SQLite orders, reservations, sequence state and append-only accounting survive process restarts.
 
-The static sites are public. Always-on API hosting still needs the VPS, and the shared anchor currently has a SEP-6 settlement outage. These are not represented as completed work. See [current deployment evidence](docs/DEPLOYMENTS.md) and [jury runbook](docs/JURY-READINESS.md).
+The static sites are public. TR Mock Anchor's IBAN merchant flow passed end to end on 16 October 2026, including independent testnet receipt checks and merchant settlement. The backend has moved from the development computer to a persistent VPS service with HTTPS, automatic restart and preserved settlement state. See [IBAN test evidence](docs/evidence/iban-sandbox-2026-10-16.json), [deployment evidence](docs/DEPLOYMENTS.md) and [jury runbook](docs/JURY-READINESS.md).
 
 This is not a mainnet launch or a complete security audit. External provider onboarding, production operations, cross-device withdrawal recovery, load/soak testing and compliance remain outside the testnet preview. Older architecture notes may describe the self-issued/mint simulation; current operation is explicitly manual funding with an external testnet issuer.
+
+### IBAN ile alışveriş ödemesi (TR Mock Anchor sandbox)
+
+Eklentinin **IBAN ile ödeme** girişi ve ödeme çubuğundaki **Banka transferi** seçeneği,
+TL havalesini bir satıcıya Stellar USDC teslimatıyla eşleştirir. Kendi cüzdanına
+anchor yatırma/çekme ekranından ayrı bir alışveriş akışıdır.
+
+TR Mock Anchor adaptörü, anchor'ın gerçek sandbox IBAN'ını ve sipariş açıklamasını
+gösterir. Test havalesi simüle edilir; USDC girişi zincirden doğrulanınca mevcut havuz
+satıcıya testnet USDC gönderir. Havuz fonlaması manueldir. **Gerçek TL göndermeyin.**
+Varsayılan ayar kapalıdır; test sürümü `BANK_TRANSFER_MODE=tr-mock-anchor` ile açılır.
+Üretim sağlayıcısı bağlantısı sonraki aşamadır. API sözleşmesi, etkinleştirme ayarları
+ve doğrulama koşulları için [banka transferi entegrasyonu](docs/bank-transfer-integration.md).

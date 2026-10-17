@@ -3,7 +3,14 @@
 // so iyzico dedupes server-side; the retry counters are PERSISTED (not timers) so recovery replays the same
 // branch. Built once at intent time (or rebuilt from the persisted OrderRow on recovery).
 
+import type { BankTransferInstructions } from './bank-transfer.js';
+
 export interface OrderCtx {
+  /** Missing on legacy rows means card. Frozen for the life of the order. */
+  readonly paymentMethod?: 'card' | 'bank_transfer';
+  readonly bankTransfer?: BankTransferInstructions | null;
+  readonly bankExpiresAtUnix?: number;
+  readonly bankReview?: boolean;
   readonly orderId: string;
   /** deriveIds(...).idempotencyKeyHex — the psp correlation/dedupe key on every call. */
   readonly conversationId: string;

@@ -23,12 +23,21 @@ export interface ReceiptRequestMessage {
 /** Read-only price preview: content asks background (the sole host-permission holder) to GET /quote for the
  *  detected USDC amount, so the banner/popup can show the indicative ≈₺. Never triggers a payment. */
 export interface QuoteRequestMessage {
+  readonly paymentMethod?: 'card' | 'bank_transfer';
   readonly type: 'TROIA_QUOTE';
   readonly amountStroops: string;
 }
 
 export type ExtensionMessage =
-  IntentRequestMessage | StatusRequestMessage | ReceiptRequestMessage | QuoteRequestMessage;
+  | IntentRequestMessage
+  | StatusRequestMessage
+  | ReceiptRequestMessage
+  | QuoteRequestMessage
+  | {
+      readonly type: 'TROIA_SIMULATE_BANK';
+      readonly orderId: string;
+      readonly sandboxToken: string;
+    };
 
 export type { IntentOutcome, StatusOutcome, ReceiptOutcome, QuoteOutcome };
 

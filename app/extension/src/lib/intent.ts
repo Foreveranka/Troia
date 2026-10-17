@@ -6,8 +6,10 @@
 import type { Detection } from './adapter';
 import { deriveMemoHex } from './derive-memo';
 import { toStroops } from './amount';
+import type { BankTransferInstructions } from './bank-transfer';
 
 export interface IntentBody {
+  readonly paymentMethod?: 'card' | 'bank_transfer';
   readonly orderId: string;
   readonly destination: string;
   readonly amountStroops: string;
@@ -29,6 +31,8 @@ export type PublicStatus = 'pending' | 'processing' | 'completed' | 'failed' | '
 /** The successful POST /intent response. The extension opens paymentPageUrl (iyzico's hosted card page) in a
  *  new tab and then polls GET /status. */
 export interface IntentResponse {
+  readonly paymentMethod?: 'card' | 'bank_transfer';
+  readonly bankTransfer?: BankTransferInstructions;
   readonly orderId: string;
   readonly token: string;
   readonly paymentPageUrl?: string;
@@ -49,6 +53,12 @@ export type IntentUiAction = {
 };
 
 export function intentUiAction(response: IntentResponse): IntentUiAction {
+  if (response.paymentMethod === 'bank_transfer' && response.bankTransfer !== undefined)
+    return {
+      kind: 'open',
+      text: 'Banka tahsilatı bekleniyor. Havale bilgileri aşağıda.',
+      poll: true,
+    };
   if (typeof response.paymentPageUrl === 'string' && response.paymentPageUrl.length > 0) {
     // the background opened iyzico's hosted card page in a new tab
     return { kind: 'open', text: 'Opening the secure card form…', poll: true };

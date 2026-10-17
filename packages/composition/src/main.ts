@@ -29,6 +29,8 @@ import {
   WebhookAlertNotifier,
 } from './observability.js';
 import type { AlertSink } from './observability.js';
+import { buildBankTransferConfig } from './bank-transfer-config.js';
+import { TrMockAnchorProvider } from './tr-mock-anchor-provider.js';
 
 /** A poisoned durable log means nothing can be booked any more: every later tick would re-run the effects that
  *  precede the write — including on-chain mints — and record none of them. There is no safe way to continue, so
@@ -120,12 +122,21 @@ async function main(): Promise<void> {
     history: new YahooUsdTryHistory(),
   });
 
-  const server = createServer(deps);
+  const bankTransfer = buildBankTransferConfig(
+    env,
+    new LiveCexOracle({ policy: { maxAgeMs: 60_000, deviationThresholdBps: 50, minQuorum: 3 } }),
+    new YahooUsdTryHistory(),
+    { network: deps.network, dataDir },
+  );
+  if (bankTransfer?.provider instanceof TrMockAnchorProvider)
+    await bankTransfer.provider.checkReady();
+  const server = createServer({ ...deps, ...(bankTransfer === undefined ? {} : { bankTransfer }) });
   server.app.get('/healthz', async () => ({
     status: 'ok',
     network: 'stellar-testnet',
     pool: deployment.troyPool,
     fundingMode,
+    bankTransferMode: env.BANK_TRANSFER_MODE?.trim() || 'disabled',
   }));
 
   // D-17: metrics + alerting. GET /metrics serves the Prometheus text format; TROIA_ALERT_WEBHOOK_URL

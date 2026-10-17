@@ -24,6 +24,7 @@ import type { EngineDeps } from '../engine/events.js';
 import type { OrderRegistry } from '../http/order-registry.js';
 import type { KeyedMutex } from '../store/mutex.js';
 import { isDurableLogFailure } from '../ports.js';
+import { bankTransferEvent, initializeBankTransfer } from '../bank-transfer.js';
 
 /** The recoverable waits the worker resumes. The ChargeReversing (sale-void) re-poll needs a psp retrieve-status
  *  method that arrives with live iyzico in Phase 4.5, so a crash mid-reversal stays parked (fail-SAFE) until
@@ -72,6 +73,35 @@ export async function pollInFlight(
 
         // (A) Stuck-charge recovery: re-retrieve the direct-sale result and re-drive chargeEvent.
         if (state === 'SolvencyReserved') {
+          if (ctx.paymentMethod === 'bank_transfer') {
+            const provider = deps.bankTransfer;
+            if (provider === undefined) return 'skip';
+            if (ctx.bankTransfer == null) {
+              if (ctx.bankExpiresAtUnix === undefined) return 'skip';
+              const bankTransfer = await initializeBankTransfer(
+                ctx,
+                provider,
+                ctx.bankExpiresAtUnix,
+              );
+              if (bankTransfer !== null)
+                registry.put({ ...ctx, bankTransfer, token: bankTransfer.transferId }, state);
+              return 'polled';
+            }
+            const actual = await provider.retrieve(ctx.bankTransfer);
+            const { event, review } = bankTransferEvent(
+              ctx.bankTransfer,
+              actual,
+              deps.clock.nowUnix(),
+            );
+            const patched = {
+              ...ctx,
+              bankReview: review,
+              ...(event.type === 'chargeOk' ? { paymentId: ctx.bankTransfer.transferId } : {}),
+            };
+            const r = await advance(patched, state, event, deps);
+            registry.put(r.ctx, r.state);
+            return r.state !== state ? 'advanced' : 'polled';
+          }
           if (ctx.token === null) return 'skip'; // no form issued yet (should not happen in SolvencyReserved)
           const retrieved = await deps.psp.retrieveCheckoutFormResult({
             conversationId: ctx.conversationId,

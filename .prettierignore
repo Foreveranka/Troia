@@ -15,4 +15,5 @@ app/extension/src/lib/deployment.generated.ts
 .deploy
 data
 logs
+output
 app/gamestore/src/deployment.generated.ts

@@ -307,19 +307,24 @@ export async function simulateBankTransfer(
   const baseUrl = opts.baseUrl ?? BACKEND_BASE_URL;
   const doFetch = opts.fetchImpl ?? fetch;
   try {
-    const session = await fetchSessionToken(baseUrl, doFetch, POLL_TIMEOUT_MS);
-    if (!session.ok) return { ok: false };
-    const response = await fetchWithTimeout(
-      doFetch,
-      `${baseUrl}/sandbox/bank-transfer/${encodeURIComponent(orderId)}/simulate`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-troia-session': session.token },
-        body: JSON.stringify({ sandboxToken }),
-      },
-      opts.timeoutMs ?? INTENT_TIMEOUT_MS,
-    );
-    return { ok: response.status === 202 };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const session = await fetchSessionToken(baseUrl, doFetch, POLL_TIMEOUT_MS);
+      if (!session.ok) return { ok: false };
+      const response = await fetchWithTimeout(
+        doFetch,
+        `${baseUrl}/sandbox/bank-transfer/${encodeURIComponent(orderId)}/simulate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-troia-session': session.token },
+          body: JSON.stringify({ sandboxToken }),
+        },
+        opts.timeoutMs ?? INTENT_TIMEOUT_MS,
+      );
+      if (response.status !== 401) return { ok: response.status === 202 };
+      // A server restart rotates the session key. Keep the same order capability and refresh once.
+      resetSessionCache();
+    }
+    return { ok: false };
   } catch {
     return { ok: false };
   }

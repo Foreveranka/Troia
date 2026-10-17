@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getQuote, getReceipt, getStatus, postIntent, resetSessionCache } from '../src/lib/backend';
+import {
+  getQuote,
+  getReceipt,
+  getStatus,
+  postIntent,
+  resetSessionCache,
+  simulateBankTransfer,
+} from '../src/lib/backend';
 import type { IntentBody } from '../src/lib/intent';
 
 const BODY: IntentBody = {
@@ -315,5 +322,51 @@ describe('request timeouts', () => {
     const p = getQuote('620000000', { fetchImpl: hangingFetch, timeoutMs: 100 });
     await vi.advanceTimersByTimeAsync(100);
     await expect(p).resolves.toEqual({ ok: false, error: 'timeout' });
+  });
+});
+
+describe('IBAN simulation after a server restart', () => {
+  it('refreshes a rejected session once while retaining the same order and capability', async () => {
+    let sessions = 0;
+    let simulations = 0;
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const spy = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (url.endsWith('/session'))
+        return Response.json({ ...SESSION_JSON, token: `session-${++sessions}` });
+      simulations++;
+      return Response.json({}, { status: simulations === 1 ? 401 : 202 });
+    }) as unknown as typeof fetch;
+    expect(
+      await simulateBankTransfer('existing-order', 'a'.repeat(64), {
+        baseUrl: 'https://backend.test',
+        fetchImpl: spy,
+      }),
+    ).toEqual({ ok: true });
+    expect(sessions).toBe(2);
+    expect(simulations).toBe(2);
+    const requests = calls.filter((c) => c.url.endsWith('/simulate'));
+    expect(requests.map((c) => c.url)).toEqual(
+      Array(2).fill('https://backend.test/sandbox/bank-transfer/existing-order/simulate'),
+    );
+    expect(requests.map((c) => c.init?.body)).toEqual(
+      Array(2).fill(JSON.stringify({ sandboxToken: 'a'.repeat(64) })),
+    );
+    expect(requests[1]?.init?.headers).toMatchObject({ 'x-troia-session': 'session-2' });
+  });
+  it('does not retry authorization failures indefinitely or retry an incorrect capability', async () => {
+    for (const status of [401, 403]) {
+      resetSessionCache();
+      let attempts = 0;
+      const spy = (async (url: string) => {
+        if (url.endsWith('/session')) return Response.json(SESSION_JSON);
+        attempts++;
+        return Response.json({}, { status });
+      }) as unknown as typeof fetch;
+      expect(
+        await simulateBankTransfer('existing-order', 'a'.repeat(64), { fetchImpl: spy }),
+      ).toEqual({ ok: false });
+      expect(attempts).toBe(status === 401 ? 2 : 1);
+    }
   });
 });
